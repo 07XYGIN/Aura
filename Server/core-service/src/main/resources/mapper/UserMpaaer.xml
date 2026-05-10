@@ -4,9 +4,9 @@
 <mapper namespace="com.example.springboot_test.mapper.userMapper">
 
     <select id="findUser"
-            parameterType="com.example.springboot_test.DTO.UserDto"
-            resultType="com.example.springboot_test.DTO.UserDto">
-        SELECT username, password, email, sex, age FROM users
+            parameterType="com.example.springboot_test.Entity.Users"
+            resultType="com.example.springboot_test.Entity.Users">
+        SELECT id, username, password,  email, sex, age FROM users
         <where>
             <if test="email != null and email != ''">
                 AND email = #{email}
@@ -28,8 +28,8 @@
             resultType="com.example.springboot_test.DTO.UserDto">
         SELECT * FROM users
         <where>
-            <if test="username != null and username != ''">
-                AND username = #{username}
+            <if test="id != null and id != ''">
+                AND id = #{id} ::uuid
             </if>
         </where>
     </select>
@@ -57,7 +57,7 @@
     </delete>
 
     <update id="updateUser">
-        UPDATE "user"
+        UPDATE users
         <set>
             <if test="email != null and email != ''">email = #{email},</if>
             <if test="sex != null">sex = #{sex},</if>
