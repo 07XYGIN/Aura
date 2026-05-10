@@ -13,6 +13,7 @@ request.interceptors.request.use(function (config) {
     }
     return config;
 }, function (error) {
+    console.error(error)
     return Promise.reject(error);
 });
 
@@ -43,6 +44,7 @@ request.interceptors.response.use(function (response) {
     }
     return response.data;
 }, function (error) {
+    console.error(error)
     ElMessage.error(error.message || '请求失败');
     return Promise.reject(error);
 });

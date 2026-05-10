@@ -59,7 +59,6 @@ const handleLogout = async () => {
         </el-menu>
 
         <div class="header-actions">
-          <el-button type="primary" plain>新建</el-button>
           <el-button @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>

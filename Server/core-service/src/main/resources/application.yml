@@ -2,10 +2,10 @@ spring:
   application:
     name: springboot_test
   datasource:
-    url: jdbc:mysql://localhost:3306/system?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
-    username: root
+    url: jdbc:postgresql://localhost:5432/Aura?currentSchema=public
+    username: postgres
     password: 123456
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: org.postgresql.Driver
   data:
     redis:
       host: localhost
@@ -14,6 +14,8 @@ spring:
       password:
 mybatis:
   mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
 
 jwt:
   secret-key: abcdefghijklmnopqrstuvwxyz123456xygin0608

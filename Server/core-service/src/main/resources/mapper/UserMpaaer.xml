@@ -2,15 +2,16 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.example.springboot_test.mapper.userMapper">
+
     <select id="findUser"
             parameterType="com.example.springboot_test.DTO.UserDto"
             resultType="com.example.springboot_test.DTO.UserDto">
-        SELECT username , password , email , sex , age FROM user
+        SELECT username, password, email, sex, age FROM users
         <where>
             <if test="email != null and email != ''">
                 AND email = #{email}
             </if>
-            <if test="sex != null and sex != ''">
+            <if test="sex != null">
                 AND sex = #{sex}
             </if>
             <if test="age != null and age != ''">
@@ -21,9 +22,11 @@
             </if>
         </where>
     </select>
-    <select id="findUserInfo" parameterType="com.example.springboot_test.DTO.UserDto"
+
+    <select id="findUserInfo"
+            parameterType="com.example.springboot_test.DTO.UserDto"
             resultType="com.example.springboot_test.DTO.UserDto">
-        SELECT * FROM user
+        SELECT * FROM users
         <where>
             <if test="username != null and username != ''">
                 AND username = #{username}
@@ -32,41 +35,36 @@
     </select>
 
     <insert id="insertUser" parameterType="com.example.springboot_test.DTO.UserDto">
-        INSERT INTO user
+        INSERT INTO users
         <trim prefix="(" suffix=")" suffixOverrides=",">
             username,
             password,
             <if test="email != null and email != ''">email,</if>
-            <if test="sex != null and sex != ''">sex,</if>
+            <if test="sex != null">sex,</if>
             <if test="age != null and age != ''">age,</if>
         </trim>
         <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
             #{username},
             #{password},
             <if test="email != null and email != ''">#{email},</if>
-            <if test="sex != null and sex != ''">#{sex},</if>
-            <if test="age != null and age != ''">#{age},</if>
+            <if test="sex != null">#{sex},</if>
+            <if test="age != null">#{age},</if>
         </trim>
     </insert>
 
     <delete id="deleteUser">
-        delete from user where username = #{username}
+        DELETE FROM users WHERE username = #{username}
     </delete>
 
     <update id="updateUser">
-        UPDATE user SET
-        <if test="email != null and email != ''">
-            email = #{email},
-        </if>
-        <if test="sex != null and sex != ''">
-            sex = #{sex},
-        </if>
-        <if test="age != null and age != ''">
-            age = #{age},
-        </if>
-        <if test="username != null and username != ''">
-            username = #{username}
-        </if>
+        UPDATE "user"
+        <set>
+            <if test="email != null and email != ''">email = #{email},</if>
+            <if test="sex != null">sex = #{sex},</if>
+            <if test="age != null">age = #{age},</if>
+            <if test="username != null and username != ''">username = #{username},</if>
+        </set>
         WHERE username = #{username}
     </update>
+
 </mapper>

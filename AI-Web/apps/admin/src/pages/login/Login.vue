@@ -11,21 +11,6 @@
           <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
         </el-form-item>
 
-        <el-form-item label="年龄">
-          <el-input-number v-model="form.age" :min="1" :max="120" placeholder="请输入年龄" />
-        </el-form-item>
-
-        <el-form-item label="性别">
-          <el-radio-group v-model="form.gender">
-            <el-radio value="male">男</el-radio>
-            <el-radio value="female">女</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item label="邮箱">
-          <el-input v-model="form.email" type="email" placeholder="请输入邮箱" />
-        </el-form-item>
-
         <el-form-item>
           <el-button type="primary" native-type="submit" class="w-full">登录</el-button>
         </el-form-item>
@@ -45,14 +30,8 @@ import { useRouter } from 'vue-router'
 import type { FormInstance } from 'element-plus'
 import { login } from '@/api/user'
 import {useUserStore} from "@/store/modules/user.ts";
+import type {LoginForm} from '@ai-web/types/main.ts'
 const user = useUserStore()
-interface LoginForm {
-  username: string
-  password: string
-  age: number
-  gender: string
-  email: string
-}
 
 const form = reactive<LoginForm>({
   username: '',
@@ -66,7 +45,7 @@ const formRef = ref<FormInstance>()
 const router = useRouter()
 const loginSubmit = async (data:LoginForm)=>{
   const {token} = await login(data)
-  if(!token) return 
+  if(!token) return
   user.setToken(token)
   await router.push('/')
 }

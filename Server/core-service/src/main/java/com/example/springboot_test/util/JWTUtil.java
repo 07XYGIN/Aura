@@ -29,9 +29,9 @@ public class JWTUtil {
     /**
      * 生成token逻辑
      * */
-    public String generateToken(String username) {
+    public String generateToken(String userName) {
         return Jwts.builder()
-                .subject(username)
+                .subject(userName)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expireTime))
                 .signWith(getKey())

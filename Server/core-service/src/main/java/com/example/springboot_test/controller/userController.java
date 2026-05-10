@@ -58,7 +58,7 @@ public class userController {
     }
 
     @DeleteMapping("deleteuser/{username}")
-    public Response<?> logoutUser(@Valid @PathVariable String username){
+    public Response<UserDto> logoutUser(@Valid @PathVariable String username){
         loginService.LogoutUser(username);
         return Response.ok();
     }

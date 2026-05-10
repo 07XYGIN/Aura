@@ -16,5 +16,5 @@ public class UserDto {
 
     private Integer age;
 
-    private String sex;
+    private Integer sex;
 }
