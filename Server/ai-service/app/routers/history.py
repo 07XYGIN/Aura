@@ -27,10 +27,9 @@ async def history(userId:Any):
     result = get_session_history(userId)
     for msg in result.messages:
         frontend_messages.append({
-            "type": msg.type,   
+            "type": msg.type,
             "content": msg.content
         })
     response_success.data = frontend_messages
     return response_success
-
 

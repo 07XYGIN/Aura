@@ -1,48 +1,35 @@
-
-from langchain.agents import create_agent
-
-from langchain_ollama import ChatOllama
-from langgraph.graph import END, StateGraph,add_messages
-
-from typing import TypedDict
-
-model = ChatOllama(
-    model='qwen3:0.6b',
-)
-
-class GirlState(TypedDict):
-    human_message:str
-    ai_message:str
+from typing import Annotated
+from typing_extensions import TypedDict
+from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.graph import StateGraph, add_messages, END
+from ..config import llm
+from .prompt import SYSTEM_PROMPT
 
 
-def main(state:GirlState):
-    state['human_message'] = 'hi my name is ' + state['human_message'] + ' I love you'
-    return state
-
-def llm(state:GirlState):
-    llm = create_agent(
-        model,
-        system_prompt='你是我的女朋友,使用中文回复我的消息'
-    )
-    
-    result = llm.invoke({'messages':state['human_message']})
-    state['ai_message'] = result['messages'][-1].content
-    return state
+class AuraState(TypedDict):
+    messages: Annotated[list, add_messages]
 
 
-graph = StateGraph(GirlState)
-
-graph.add_node("main",main)
-graph.add_node("agent",llm)
-
-graph.set_entry_point("main")
-graph.add_edge("main",'agent')
-
-graph.set_finish_point("agent")
-
-app = graph.compile()
-
-result = app.invoke({'human_message':"Gin"})
+def call_model(state: AuraState) -> AuraState:
+    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    print(messages)
+    response = llm.invoke(messages)
+    return {"messages": [response]}
 
 
-print(result)
+def build_graph():
+    workflow = StateGraph(AuraState)
+    workflow.add_node("chat", call_model)
+    workflow.set_entry_point("chat")
+    workflow.add_edge("chat", END)
+    return workflow.compile()
+
+
+aura = build_graph()
+
+
+def aura_agent(human_prompt: str) -> str:
+    result = aura.invoke({
+        "messages": [HumanMessage(content=human_prompt)]
+    })
+    return result["messages"][-1].content
