@@ -5,8 +5,8 @@ load_dotenv()
 
 
 llm = ChatOllama(
-    model="qwen3:0.6b",
-    temperature=2,
+    model="qwen3:8b",
+    temperature=1,
 )
 
 HOST = os.getenv('DB_HOST')
