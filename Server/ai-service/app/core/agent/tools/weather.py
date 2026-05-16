@@ -9,7 +9,7 @@ load_dotenv()
 @tool
 def get_weather()-> dict[str, str]:
     """
-        当用户主动询问天气信息时 如 "今天天气怎么样?"、”帮我查看天气“时 使用该tool
+        当用户主动询问天气信息时 如 "今天天气怎么样?"、”帮我查看天气“等问题时使用该tool
         根据location获取指定地点的天气,返回obj天气信息 默认为北京
         status:状态   1 请求成功 0 请求失败
         info: 信息    接口的返回信息

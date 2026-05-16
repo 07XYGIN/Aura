@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from langchain_postgres import PGVector
 from langchain_community.embeddings import DashScopeEmbeddings
 
-from app.core.database import SYNC_DATABASE_URL
+from app.core.config import SYNC_DATABASE_URL
 load_dotenv()
 embeddings = DashScopeEmbeddings(
     model="text-embedding-v4"

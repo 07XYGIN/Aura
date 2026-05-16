@@ -3,6 +3,9 @@ from fastapi import APIRouter
 
 from app.schemas.response import response_success
 from app.utils.history import get_session_history
+
+from app.core.agent.agent_graph import aura, get_history
+
 router = APIRouter(
     prefix='/api/history',
     tags=['聊天记录']
@@ -23,13 +26,6 @@ async def del_history(userId:Any):
         summary='获取指定ID聊天记录'
 )
 async def history(userId:Any):
-    frontend_messages = []
-    result = get_session_history(userId)
-    for msg in result.messages:
-        frontend_messages.append({
-            "type": msg.type,
-            "content": msg.content
-        })
-    response_success.data = frontend_messages
+    state = get_history(userId)
+    response_success.data = state
     return response_success
-
