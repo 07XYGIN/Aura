@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.schemas.response import response_success
 from app.model.User import User
 from app.core.exceptions import UnicornException
-from app.core.agent.momery.term_memory import get_vector_store
+# from app.core.agent.tools.term_memory import get_vector_store
 
 
 router = APIRouter(
@@ -43,20 +43,20 @@ async def logout(userid:UUID,db: AsyncSession = Depends(get_db)):
     return response_success
 
 
-@router.delete('/delMemory/{user_id}',response_model=response_success,tags=['记忆'],summary='根据角色删除全部记忆')
-async def del_mem(user_id:str):
-    vector_store = get_vector_store(user_id)
-    results = vector_store.similarity_search(f"user_id:{user_id}", k=1000)
-    vector_ids = [doc.id for doc in results] 
-    vector_store.delete(vector_ids) 
-    return response_success
+# @router.delete('/delMemory/{user_id}',response_model=response_success,tags=['记忆'],summary='根据角色删除全部记忆')
+# async def del_mem(user_id:str):
+#     vector_store = get_vector_store(user_id)
+#     results = vector_store.similarity_search(f"user_id:{user_id}", k=1000)
+#     vector_ids = [doc.id for doc in results]
+#     vector_store.delete(vector_ids)
+#     return response_success
 
-@router.get('/memoryList/',response_model=response_success,tags=['记忆'],summary='获取记忆列表')
-async def get_memory_list(user_id:str):
-    vector_store = get_vector_store(user_id)
-    results = vector_store.similarity_search(f"user_id:{user_id}", k=50)
-    memory_list = [doc for doc in results] 
-    response_success.data = memory_list
-    return response_success
+# @router.get('/memoryList/',response_model=response_success,tags=['记忆'],summary='获取记忆列表')
+# async def get_memory_list(user_id:str):
+#     vector_store = get_vector_store(user_id)
+#     results = vector_store.similarity_search(f"user_id:{user_id}", k=50)
+#     memory_list = [doc for doc in results]
+#     response_success.data = memory_list
+#     return response_success
 
 

@@ -9,11 +9,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, add_messages, END
 from .prompt import SYSTEM_PROMPT
 from .tools.weather import get_weather
+from .tools.memery import save_memory_tool
+from .tools.search_memery import search_memory_tool
 from app.core.config import llm
 class AuraState(TypedDict):
     messages: Annotated[list, add_messages]
 
-tools = [get_weather]
+tools = [get_weather,save_memory_tool,search_memory_tool]
 
 llm_with_tools = llm.bind_tools(tools)
 
@@ -45,15 +47,16 @@ def build_graph(checkpointers:Checkpointer):
 
 aura: CompiledStateGraph = None
 
-def aura_agent(human_prompt: str) -> str:
-    config = {
+def aura_agent(human_prompt: str,userId:str) -> str:
+    config:RunnableConfig = {
         "configurable": {
-            "thread_id": "1"
+            "thread_id": userId,
+            "user_id":userId
         }
     }
     result = aura.invoke({
         "messages": [HumanMessage(content=human_prompt)]
-    },config)
+        },config)
     return result["messages"][-1].content
 
 def get_history(user_id: str) -> list:
