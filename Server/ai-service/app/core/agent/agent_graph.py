@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Any, Generator
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -47,17 +47,19 @@ def build_graph(checkpointers:Checkpointer):
 
 aura: CompiledStateGraph = None
 
-def aura_agent(human_prompt: str,userId:str) -> str:
+def aura_agent(human_prompt: str,userId:str) -> Generator[Any, Any, None]:
     config:RunnableConfig = {
         "configurable": {
             "thread_id": userId,
             "user_id":userId
         }
     }
-    result = aura.invoke({
-        "messages": [HumanMessage(content=human_prompt)]
-        },config)
-    return result["messages"][-1].content
+    inputs = {"messages": [HumanMessage(content=human_prompt)]}
+
+    for chunk, metadata in aura.stream(inputs, config, stream_mode="messages"):
+        if chunk.content and metadata["langgraph_node"] == "chat":
+            logging.info(f"Chunk: {chunk}")
+            yield chunk.content
 
 def get_history(user_id: str) -> list:
     """

@@ -2617,7 +2617,7 @@ requires-dist = [
     { name = "langchain-ollama", specifier = ">=1.0.1" },
     { name = "langchain-openai", specifier = ">=1.1.6" },
     { name = "langchain-postgres", specifier = ">=0.0.16" },
-    { name = "langgraph", specifier = ">=1.0.6" },
+    { name = "langgraph", extras = ["all"], specifier = ">=1.0.6" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.1.0" },
     { name = "openai", specifier = ">=2.14.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
