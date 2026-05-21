@@ -118,36 +118,37 @@ Server/                       # 后端
 
 ### ✅ 已完成
 - [x] 登录、注册、获取用户信息、修改用户信息、用户注销、用户退出登录
-
-### 🔨 进行中（Phase 1）
 - [x] 项目架构设计 & Monorepo 搭建
 - [x] Spring Boot 用户注册 / 登录（JWT 鉴权）
 - [x] Admin 后台登录页（Vue3）
-- [ ] 会话管理 CRUD（Spring Boot）
-- [ ] 消息存储与查询
+- [x] 会话管理 CRUD（Spring Boot）
+- [x] 消息存储与查询
+- [x] FastAPI 基础服务搭建
+- [x] LangGraph 多轮对话流编排
+- [x] 长/短期记忆 文本向量化
+
+### 🔨 进行中
+
 - [ ] Admin 会话列表 & 消息详情页
+- [ ] 流式输出（SSE）
+- [ ] 情感识别模块
+
 
 ### 📋 规划中
 
-**Phase 2 · 接入 AI**
-- [ ] FastAPI 基础服务搭建
-- [ ] LangGraph 多轮对话流编排
-- [ ] 流式输出（SSE）
-- [ ] 情感识别模块
-- [ ] 记忆引擎（向量存储 + TTL 管理）
 
-**Phase 3 · BFF 层**
+**BFF 层**
 - [ ] NestJS 项目初始化
 - [ ] 聚合 Spring Boot + FastAPI 接口
 - [ ] 统一鉴权与响应格式
 - [ ] 移动端 / PC 端差异化响应裁剪
 
-**Phase 4 · React PC Web**
+** React PC Web**
 - [ ] 使用 React 从零搭建聊天界面
 - [ ] 流式消息渲染
 - [ ] 对话历史分页
 
-**Phase 5 · React Native 移动端**
+** React Native 移动端**
 - [ ] RN 项目初始化
 - [ ] 核心聊天界面
 - [ ] 消息推送
