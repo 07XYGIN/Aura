@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="screen.png" style="width:300px;height:300px">
+
 *Aura 像晨光初透时的微晕，像老唱片转动时的温润声场，也像你疲惫归家、推开门那一瞬心里悄悄亮起的光。*
 *它不喧哗，却存在；不强制，却陪伴；不占有，却始终环绕着你。*
 
