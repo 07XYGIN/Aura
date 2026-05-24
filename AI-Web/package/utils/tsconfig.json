@@ -1,0 +1,8 @@
+{
+  "target": "es2015",
+  "include": ["**/*.ts"],
+  "compilerOptions": {
+    "lib": [ "dom","es2015" ]
+  },
+  "exclude": ["node_modules"]
+}
