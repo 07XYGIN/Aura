@@ -1,49 +1,56 @@
 'use client'
 
-import type { ComponentProps, ComponentType, FormEvent, ReactNode } from 'react'
+import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useState } from 'react'
-import { LoaderCircle, LockKeyhole, Mail, UserRound } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
+import type { LoginForm as LoginFormValues } from '@ai-web/types'
+import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 type AuthMode = 'login' | 'register'
-
-function AuthField({
-  label,
-  icon: Icon,
-  children,
-}: {
-  label: string
-  icon: ComponentType<{ className?: string }>
-  children: ReactNode
-}) {
-  return (
-    <label className="space-y-2">
-      <Label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--aura-text-muted)]">
-        {label}
-      </Label>
-      <div className="group flex items-center gap-3 rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface-muted)] px-4 py-3 transition-all duration-300 focus-within:border-[var(--aura-border-strong)] focus-within:shadow-[0_0_0_1px_var(--aura-border-strong)]">
-        <Icon className="h-5 w-5 shrink-0 text-[var(--aura-text-soft)] transition-colors group-focus-within:text-[var(--aura-primary)]" />
-        {children}
-      </div>
-    </label>
-  )
-}
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const [mode, setMode] = useState<AuthMode>('login')
   const [submitting, setSubmitting] = useState(false)
+  const [formData, setFormData] = useState<Partial<LoginFormValues>>({
+    username: '',
+    password: '',
+    email: '',
+  })
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitting(true)
 
-    window.setTimeout(() => {
+    try {
+      const response = await user.login<unknown>('/user/Login', formData)
+
+      toast.success('Success', {
+        description: response.message,
+        position: 'top-center',
+      })
+    } catch {
+      toast.error('Login failed', {
+        description: 'Please verify your account information and try again.',
+        position: 'top-center',
+      })
+    } finally {
       setSubmitting(false)
-    }, 1200)
+    }
   }
 
   return (
@@ -78,31 +85,40 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <AuthField label="Username" icon={UserRound}>
+            <Field orientation="horizontal">
+              <User />
               <Input
                 type="text"
+                name="username"
                 placeholder={mode === 'login' ? 'Enter your username' : 'Choose a username'}
-                className="h-auto border-0 bg-transparent px-0 py-0 text-sm text-[var(--aura-text)] shadow-none placeholder:text-[var(--aura-text-soft)] focus-visible:ring-0"
+                value={formData.username ?? ''}
+                onChange={handleChange}
               />
-            </AuthField>
+            </Field>
 
             {mode === 'register' ? (
-              <AuthField label="Email Address" icon={Mail}>
+              <Field orientation="horizontal">
+                <Mail />
                 <Input
                   type="email"
+                  name="email"
                   placeholder="you@example.com"
-                  className="h-auto border-0 bg-transparent px-0 py-0 text-sm text-[var(--aura-text)] shadow-none placeholder:text-[var(--aura-text-soft)] focus-visible:ring-0"
+                  value={formData.email ?? ''}
+                  onChange={handleChange}
                 />
-              </AuthField>
+              </Field>
             ) : null}
 
-            <AuthField label="Password" icon={LockKeyhole}>
+            <Field orientation="horizontal">
+              <LockKeyhole />
               <Input
                 type="password"
+                name="password"
                 placeholder={mode === 'login' ? 'Enter your password' : 'Create a password'}
-                className="h-auto border-0 bg-transparent px-0 py-0 text-sm text-[var(--aura-text)] shadow-none placeholder:text-[var(--aura-text-soft)] focus-visible:ring-0"
+                value={formData.password ?? ''}
+                onChange={handleChange}
               />
-            </AuthField>
+            </Field>
 
             {mode === 'login' ? (
               <div className="flex flex-col gap-3 pt-1 text-sm text-[var(--aura-text-muted)] sm:flex-row sm:items-center sm:justify-between">

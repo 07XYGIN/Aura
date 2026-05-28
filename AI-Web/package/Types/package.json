@@ -2,6 +2,9 @@
   "name": "@ai-web/types",
   "version": "0.0.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts"
+  "main": "./main.ts",
+  "types": "./main.ts",
+  "exports": {
+    ".": "./main.ts"
+  }
 }
