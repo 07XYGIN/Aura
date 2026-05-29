@@ -2,25 +2,40 @@
 
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useState } from 'react'
-import { LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
+import { Cake, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
 import type { LoginForm as LoginFormValues } from '@ai-web/types'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 type AuthMode = 'login' | 'register'
+type AuthFormValues = Partial<
+  Omit<LoginFormValues, 'age' | 'gender'> & {
+    age: string
+    sex: 'male' | 'female' | 'other' | ''
+  }
+>
+
+const sexOptions = [
+  { label: '男', value: 'male' },
+  { label: '女', value: 'female' },
+  { label: '其他', value: 'other' },
+] as const
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const [mode, setMode] = useState<AuthMode>('login')
   const [submitting, setSubmitting] = useState(false)
-  const [formData, setFormData] = useState<Partial<LoginFormValues>>({
+  const [formData, setFormData] = useState<AuthFormValues>({
     username: '',
     password: '',
     email: '',
+    age: '',
+    sex: '',
   })
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -32,20 +47,44 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     }))
   }
 
+  const handleSexChange = (value: AuthFormValues['sex']) => {
+    setFormData((prev) => ({
+      ...prev,
+      sex: value,
+    }))
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitting(true)
 
-    try {
-      const response = await user.login<unknown>('/user/Login', formData)
+    const payload =
+      mode === 'register'
+        ? {
+            username: formData.username ?? '',
+            password: formData.password ?? '',
+            email: formData.email ?? '',
+            sex: formData.sex ?? '',
+            age: formData.age ? Number(formData.age) : undefined,
+          }
+        : {
+            username: formData.username ?? '',
+            password: formData.password ?? '',
+          }
 
-      toast.success('Success', {
+    try {
+      const response = await user.login<unknown>('/user/Login', payload)
+
+      toast.success(mode === 'login' ? 'Success' : 'Account created', {
         description: response.message,
         position: 'top-center',
       })
     } catch {
-      toast.error('Login failed', {
-        description: 'Please verify your account information and try again.',
+      toast.error(mode === 'login' ? 'Login failed' : 'Registration failed', {
+        description:
+          mode === 'login'
+            ? 'Please verify your account information and try again.'
+            : 'Please verify your registration information and try again.',
         position: 'top-center',
       })
     } finally {
@@ -97,16 +136,30 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
             </Field>
 
             {mode === 'register' ? (
-              <Field orientation="horizontal">
-                <Mail />
-                <Input
-                  type="email"
-                  name="email"
-                  placeholder="you@example.com"
-                  value={formData.email ?? ''}
-                  onChange={handleChange}
-                />
-              </Field>
+              <div className="space-y-5">
+                <Field orientation="horizontal">
+                  <Mail />
+                  <Input
+                    type="email"
+                    name="email"
+                    placeholder="you@example.com"
+                    value={formData.email ?? ''}
+                    onChange={handleChange}
+                  />
+                </Field>
+
+                <Field orientation="horizontal">
+                  <Cake />
+                  <Input
+                    type="number"
+                    min="0"
+                    name="age"
+                    placeholder="Enter your age"
+                    value={formData.age ?? ''}
+                    onChange={handleChange}
+                  />
+                </Field>
+              </div>
             ) : null}
 
             <Field orientation="horizontal">
@@ -119,6 +172,40 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                 onChange={handleChange}
               />
             </Field>
+
+            {mode === 'register' ? (
+              <RadioGroup
+                value={formData.sex ?? ''}
+                onValueChange={(value) => handleSexChange(value as AuthFormValues['sex'])}
+                className="grid grid-cols-3 gap-2"
+              >
+                {sexOptions.map((option) => {
+                  const isActive = formData.sex === option.value
+
+                  return (
+                    <label
+                      key={option.value}
+                      htmlFor={`sex-${option.value}`}
+                      className={cn(
+                        'flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface-muted)] px-4 py-3 text-sm text-[var(--aura-text-muted)] transition-all duration-200 hover:border-[var(--aura-border-strong)] hover:bg-[var(--aura-surface)] hover:text-[var(--aura-text)]',
+                        isActive &&
+                          'border-[var(--aura-border-strong)] bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
+                      )}
+                    >
+                      <span>{option.label}</span>
+                      <RadioGroupItem
+                        id={`sex-${option.value}`}
+                        value={option.value}
+                        className={cn(
+                          'border-[var(--aura-border-strong)] text-[var(--aura-primary)]',
+                          isActive && 'border-[var(--aura-primary)]',
+                        )}
+                      />
+                    </label>
+                  )
+                })}
+              </RadioGroup>
+            ) : null}
 
             {mode === 'login' ? (
               <div className="flex flex-col gap-3 pt-1 text-sm text-[var(--aura-text-muted)] sm:flex-row sm:items-center sm:justify-between">
