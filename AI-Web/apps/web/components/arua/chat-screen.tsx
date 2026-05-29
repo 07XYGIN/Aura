@@ -1,76 +1,244 @@
-import { MessageSquareText, SendHorizontal } from 'lucide-react'
+'use client'
+
+import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
+import { ImagePlus, Mic, Paperclip, SendHorizontal, Square } from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
+import { toast } from 'sonner'
 
 export function AruaChatScreen() {
+  const inputId = useId()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [message, setMessage] = useState('')
+  const [isListening, setIsListening] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+
+  useEffect(() => {
+    messagesRef.current?.scrollTo({
+      top: messagesRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [messages])
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setSelectedFiles(Array.from(event.target.files ?? []))
+  }
+
+  const handleVoiceInput = () => {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      toast.error('Voice input unavailable', {
+        description: 'This browser does not support speech recognition.',
+        position: 'top-center',
+      })
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'zh-CN'
+    recognition.continuous = false
+    recognition.interimResults = false
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? '')
+        .join('')
+        .trim()
+
+      if (transcript) {
+        setMessage((prev) => [prev.trim(), transcript].filter(Boolean).join('\n'))
+      }
+    }
+
+    recognition.onerror = () => {
+      toast.error('Voice input failed', {
+        description: 'Please try recording again.',
+        position: 'top-center',
+      })
+      setIsListening(false)
+    }
+
+    recognition.onend = () => {
+      setIsListening(false)
+    }
+
+    recognitionRef.current = recognition
+    setIsListening(true)
+    recognition.start()
+  }
+
+  const handleSubmit = () => {
+    const trimmedMessage = message.trim()
+
+    if (!trimmedMessage && selectedFiles.length === 0) {
+      return
+    }
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: `local-${Date.now()}`,
+        role: 'user',
+        content: trimmedMessage,
+        attachments: selectedFiles.map((file) => file.name),
+      },
+    ])
+    setMessage('')
+    setSelectedFiles([])
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <AruaAppShell
       active="chat"
+      hideHeader
       showDefaultAction={false}
-      title={<h2 className="text-2xl font-semibold tracking-tight text-[var(--aura-primary)]">Chat</h2>}
-      contentClassName="flex"
+      title={null}
+      contentClassName="relative min-h-0 flex-1 overflow-hidden p-0 sm:p-0 lg:p-0"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
-        <Card className="flex flex-1 rounded-[2rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_84%,transparent)] py-0 shadow-[0_30px_70px_-48px_var(--aura-glow)]">
-          <CardHeader className="border-b border-[var(--aura-border)] px-6 py-5 sm:px-8">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-[var(--aura-text-soft)]">
-              Conversation
-            </p>
-            <CardTitle className="mt-1 text-lg font-semibold text-[var(--aura-text)]">
-              Chat-only workspace
-            </CardTitle>
-            <CardDescription className="text-sm leading-6 text-[var(--aura-text-muted)]">
-              The conversation stream is intentionally empty until the backend chat service
-              is connected.
-            </CardDescription>
-          </CardHeader>
+      <section className="absolute inset-0 flex min-h-0 w-full flex-col overflow-hidden bg-[color-mix(in_srgb,var(--aura-surface-solid)_72%,transparent)]">
+        <div
+          ref={messagesRef}
+          className="aura-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-52 sm:px-8 lg:px-10"
+        >
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+            {messages.map((chatMessage) => {
+              const isUser = chatMessage.role === 'user'
 
-          <CardContent className="flex flex-1 flex-col px-4 py-6 sm:px-6">
-            <div className="flex flex-1 items-center justify-center rounded-[1.75rem] border border-dashed border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface)_72%,transparent)] p-8">
-              <div className="max-w-md text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-[var(--aura-primary-soft)] shadow-[0_18px_36px_-28px_var(--aura-glow)]">
-                  <MessageSquareText className="h-7 w-7 text-[var(--aura-primary)]" />
-                </div>
-                <h3 className="mt-6 text-xl font-semibold text-[var(--aura-text)]">
-                  No messages yet
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-[var(--aura-text-muted)]">
-                  Message history, assistant replies, and delivery states will render here
-                  after the chat API is connected.
-                </p>
-              </div>
-            </div>
+              return (
+                <div
+                  key={chatMessage.id}
+                  className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
+                >
+                  <div
+                    className={cn(
+                      'max-w-[82%] rounded-3xl px-4 py-3 text-sm leading-7 shadow-[0_18px_42px_-34px_var(--aura-glow)] sm:max-w-[72%]',
+                      isUser
+                        ? 'rounded-br-lg bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733]'
+                        : 'rounded-bl-lg border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text)]',
+                    )}
+                  >
+                    {chatMessage.content ? (
+                      <p className="break-words whitespace-pre-wrap">{chatMessage.content}</p>
+                    ) : null}
 
-            <div className="mt-6">
-              <Card className="rounded-[1.75rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_88%,transparent)] py-0 shadow-[0_24px_60px_-42px_var(--aura-glow)] backdrop-blur-xl">
-                <CardContent className="p-4">
-                  <Textarea
-                    rows={4}
-                    placeholder="Type your message here..."
-                    className="aura-scrollbar min-h-28 resize-none border-0 bg-transparent px-1 py-1 text-sm leading-7 text-[var(--aura-text)] shadow-none ring-0 focus-visible:border-0 focus-visible:ring-0"
-                  />
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs uppercase tracking-[0.24em] text-[var(--aura-text-soft)]">
-                      Sending will be enabled after backend integration
-                    </p>
-                    <Button
-                      type="button"
-                      size="lg"
-                      disabled
-                      className="rounded-full bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] px-5 text-sm font-semibold text-[#201733] opacity-60 shadow-[0_22px_36px_-24px_var(--aura-glow)] disabled:pointer-events-none disabled:opacity-60"
-                    >
-                      <SendHorizontal className="h-4 w-4" />
-                      Send
-                    </Button>
+                    {chatMessage.attachments?.length ? (
+                      <div
+                        className={cn(
+                          'mt-3 flex flex-wrap gap-2',
+                          isUser ? 'text-[#201733]/78' : 'text-[var(--aura-text-muted)]',
+                        )}
+                      >
+                        {chatMessage.attachments.map((attachment) => (
+                          <span
+                            key={attachment}
+                            className={cn(
+                              'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs',
+                              isUser ? 'bg-[#201733]/10' : 'bg-[var(--aura-surface-strong)]',
+                            )}
+                          >
+                            <ImagePlus className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{attachment}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_86%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-8 lg:px-10">
+          <div className="w-full max-w-4xl rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3">
+            {selectedFiles.length > 0 ? (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {selectedFiles.map((file) => (
+                  <div
+                    key={`${file.name}-${file.lastModified}`}
+                    className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)]"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5 shrink-0 text-[var(--aura-primary)]" />
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <Textarea
+              rows={3}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Message Arua..."
+              className="aura-scrollbar min-h-24 resize-none border-0 bg-transparent px-1 py-1 text-sm leading-7 text-[var(--aura-text)] shadow-none ring-0 focus-visible:border-0 focus-visible:ring-0"
+            />
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <input
+                  id={inputId}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                  aria-label="Upload image"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]',
+                    isListening && 'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
+                  )}
+                  aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+                  onClick={handleVoiceInput}
+                >
+                  {isListening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              </div>
+
+              <Button
+                type="button"
+                size="icon-lg"
+                disabled={!message.trim() && selectedFiles.length === 0}
+                className="rounded-full bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733] shadow-[0_18px_32px_-22px_var(--aura-glow)]"
+                aria-label="Send message"
+                onClick={handleSubmit}
+              >
+                <SendHorizontal className="h-4 w-4 translate-x-0.5" />
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </section>
     </AruaAppShell>
   )
 }

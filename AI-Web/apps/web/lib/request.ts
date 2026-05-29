@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import type { ApiResponse, RequestOptions } from '@/types/req'
+import type { ApiResponse, RequestOptions } from '@/types/api'
 
 async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, ...rest } = options

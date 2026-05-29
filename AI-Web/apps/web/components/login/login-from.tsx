@@ -3,7 +3,6 @@
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useState } from 'react'
 import { Cake, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
-import type { LoginForm as LoginFormValues } from '@ai-web/types'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,21 +10,14 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
+import type { AuthFormValues, AuthMode, SexOption } from '@/types/auth'
 import { toast } from 'sonner'
 
-type AuthMode = 'login' | 'register'
-type AuthFormValues = Partial<
-  Omit<LoginFormValues, 'age' | 'gender'> & {
-    age: string
-    sex: 'male' | 'female' | 'other' | ''
-  }
->
-
-const sexOptions = [
-  { label: '男', value: 'male' },
-  { label: '女', value: 'female' },
-  { label: '其他', value: 'other' },
-] as const
+const sexOptions: SexOption[] = [
+  { label: 'Male', value: 'male' },
+  { label: 'Female', value: 'female' },
+  { label: 'Other', value: 'other' },
+]
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const [mode, setMode] = useState<AuthMode>('login')
@@ -101,7 +93,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               type="button"
               onClick={() => setMode('login')}
               className={cn(
-                'border-b-2 px-2 pb-3 text-sm font-semibold uppercase tracking-[0.18em] transition-colors',
+                'border-b-2 px-2 pb-3 text-sm font-semibold tracking-[0.18em] uppercase transition-colors',
                 mode === 'login'
                   ? 'border-[var(--aura-primary)] text-[var(--aura-primary)]'
                   : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
@@ -113,7 +105,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               type="button"
               onClick={() => setMode('register')}
               className={cn(
-                'border-b-2 px-2 pb-3 text-sm font-semibold uppercase tracking-[0.18em] transition-colors',
+                'border-b-2 px-2 pb-3 text-sm font-semibold tracking-[0.18em] uppercase transition-colors',
                 mode === 'register'
                   ? 'border-[var(--aura-primary)] text-[var(--aura-primary)]'
                   : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
@@ -230,7 +222,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               size="lg"
               disabled={submitting}
               className={cn(
-                'flex w-full items-center justify-center gap-3 rounded-2xl px-5 text-sm font-semibold uppercase tracking-[0.28em] transition-all duration-300',
+                'flex w-full items-center justify-center gap-3 rounded-2xl px-5 text-sm font-semibold tracking-[0.28em] uppercase transition-all duration-300',
                 mode === 'login'
                   ? 'bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#241637] shadow-[0_26px_44px_-28px_var(--aura-glow)] hover:scale-[1.01]'
                   : 'bg-[var(--aura-primary-soft)] text-[var(--aura-text)] hover:border-[var(--aura-border-strong)]',

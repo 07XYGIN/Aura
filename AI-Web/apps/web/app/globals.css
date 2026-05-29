@@ -185,7 +185,8 @@
   input,
   textarea,
   select,
-  [data-slot='card'] {
+  [data-slot='card'],
+  [data-slot='radio-group-item'] {
     transition-property: background-color, border-color, color, box-shadow, opacity, transform;
     transition-duration: 220ms;
     transition-timing-function: ease;
@@ -298,14 +299,6 @@ html::view-transition-new(aura-sidebar) {
     360ms cubic-bezier(0.22, 1, 0.36, 1) both aura-page-enter;
 }
 
-html.theme-transition::view-transition-old(root) {
-  animation: 220ms ease both aura-theme-old;
-}
-
-html.theme-transition::view-transition-new(root) {
-  animation: 560ms cubic-bezier(0.22, 1, 0.36, 1) both aura-theme-new;
-}
-
 @keyframes aura-page-enter {
   from {
     opacity: 0;
@@ -369,30 +362,6 @@ html.theme-transition::view-transition-new(root) {
 
   to {
     transform: translateX(calc(var(--aura-slide-offset) * -0.75));
-  }
-}
-
-@keyframes aura-theme-old {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0.72;
-  }
-}
-
-@keyframes aura-theme-new {
-  from {
-    clip-path: circle(0 at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
-    filter: saturate(1.08) blur(10px);
-    opacity: 0.62;
-  }
-
-  to {
-    clip-path: circle(150vmax at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
-    filter: saturate(1) blur(0);
-    opacity: 1;
   }
 }
 

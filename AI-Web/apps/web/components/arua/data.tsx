@@ -1,21 +1,5 @@
-import type { LucideIcon } from 'lucide-react'
 import { BrainCircuit, MessageSquareText, Settings2 } from 'lucide-react'
-
-export type AruaNavKey = 'chat' | 'memories' | 'settings'
-
-export type AruaNavItem = {
-  key: AruaNavKey
-  label: string
-  href: string
-  icon: LucideIcon
-}
-
-export type SharedUserAccount = {
-  name: string
-  status: string
-  initials: string
-  description: string
-}
+import type { AruaNavItem, SharedUserAccount } from '@/types/arua'
 
 export const aruaNavItems: AruaNavItem[] = [
   { key: 'chat', label: 'AI Chat', href: '/', icon: MessageSquareText },

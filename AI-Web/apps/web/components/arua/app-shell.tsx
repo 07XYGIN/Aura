@@ -1,18 +1,9 @@
 import { ViewTransition } from 'react'
-import type { ReactNode } from 'react'
 import { CircleUserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { aruaNavItems, sharedUserAccount, type AruaNavKey } from '@/components/arua/data'
+import { aruaNavItems, sharedUserAccount } from '@/components/arua/data'
 import { RouteTransitionLink } from '@/components/arua/route-transition-link'
-
-type AruaShellProps = {
-  active: AruaNavKey
-  title: ReactNode
-  actions?: ReactNode
-  children: ReactNode
-  contentClassName?: string
-  showDefaultAction?: boolean
-}
+import type { AruaShellProps } from '@/types/arua'
 
 export function AruaAppShell({
   active,
@@ -20,6 +11,7 @@ export function AruaAppShell({
   actions,
   children,
   contentClassName,
+  hideHeader = false,
   showDefaultAction = true,
 }: AruaShellProps) {
   const activeIndex = aruaNavItems.findIndex((item) => item.key === active)
@@ -27,19 +19,19 @@ export function AruaAppShell({
   return (
     <div className="relative min-h-screen bg-[var(--aura-bg)] text-[var(--aura-text)]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-[-10rem] top-[-8rem] h-72 w-72 rounded-full bg-[var(--aura-gradient-start)] blur-3xl" />
-        <div className="absolute bottom-[-12rem] right-[-8rem] h-80 w-80 rounded-full bg-[var(--aura-gradient-end)] blur-3xl" />
-        <div className="absolute left-1/3 top-24 h-56 w-56 rounded-full bg-[color-mix(in_srgb,var(--aura-primary)_12%,transparent)] blur-3xl" />
+        <div className="absolute top-[-8rem] left-[-10rem] h-72 w-72 rounded-full bg-[var(--aura-gradient-start)] blur-3xl" />
+        <div className="absolute right-[-8rem] bottom-[-12rem] h-80 w-80 rounded-full bg-[var(--aura-gradient-end)] blur-3xl" />
+        <div className="absolute top-24 left-1/3 h-56 w-56 rounded-full bg-[color-mix(in_srgb,var(--aura-primary)_12%,transparent)] blur-3xl" />
       </div>
 
       <div className="relative flex min-h-screen flex-col lg:block">
         <aside
-          className="border-b border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_90%,transparent)] px-4 py-5 backdrop-blur-xl lg:fixed lg:inset-y-0 lg:w-80 lg:border-b-0 lg:border-r lg:px-6 lg:py-7"
+          className="border-b border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_90%,transparent)] px-4 py-5 backdrop-blur-xl lg:fixed lg:inset-y-0 lg:w-80 lg:border-r lg:border-b-0 lg:px-6 lg:py-7"
           style={{ viewTransitionName: 'aura-sidebar' }}
         >
           <div className="flex h-full flex-col">
             <div className="aura-panel rounded-[2rem] px-5 py-6 shadow-[0_24px_64px_-48px_var(--aura-glow)]">
-              <p className="text-xs uppercase tracking-[0.36em] text-[var(--aura-text-soft)]">
+              <p className="text-xs tracking-[0.36em] text-[var(--aura-text-soft)] uppercase">
                 Companion console
               </p>
               <div className="mt-3 space-y-1">
@@ -53,7 +45,7 @@ export function AruaAppShell({
             </div>
 
             <div className="mt-6 px-1">
-              <p className="text-xs uppercase tracking-[0.32em] text-[var(--aura-text-soft)]">
+              <p className="text-xs tracking-[0.32em] text-[var(--aura-text-soft)] uppercase">
                 Navigate
               </p>
             </div>
@@ -100,7 +92,7 @@ export function AruaAppShell({
                   <p className="truncate text-sm font-semibold text-[var(--aura-text)]">
                     {sharedUserAccount.name}
                   </p>
-                  <p className="truncate text-[11px] uppercase tracking-[0.24em] text-[var(--aura-text-soft)]">
+                  <p className="truncate text-[11px] tracking-[0.24em] text-[var(--aura-text-soft)] uppercase">
                     {sharedUserAccount.status}
                   </p>
                 </div>
@@ -112,25 +104,27 @@ export function AruaAppShell({
           </div>
         </aside>
 
-        <div className="flex flex-1 flex-col lg:ml-80">
-          <header
-            className="sticky top-0 z-20 flex items-center justify-between border-b border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_82%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-10"
-            style={{ viewTransitionName: 'aura-header' }}
-          >
-            <div className="min-w-0">{title}</div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              {actions ??
-                (showDefaultAction ? (
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--aura-border)] text-[var(--aura-text-muted)] transition-colors hover:text-[var(--aura-primary)]"
-                    aria-label="Open User Account"
-                  >
-                    <CircleUserRound className="h-5 w-5" />
-                  </button>
-                ) : null)}
-            </div>
-          </header>
+        <div className="flex min-h-screen flex-1 flex-col lg:ml-80">
+          {!hideHeader ? (
+            <header
+              className="sticky top-0 z-20 flex items-center justify-between border-b border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_82%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-10"
+              style={{ viewTransitionName: 'aura-header' }}
+            >
+              <div className="min-w-0">{title}</div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                {actions ??
+                  (showDefaultAction ? (
+                    <button
+                      type="button"
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--aura-border)] text-[var(--aura-text-muted)] transition-colors hover:text-[var(--aura-primary)]"
+                      aria-label="Open User Account"
+                    >
+                      <CircleUserRound className="h-5 w-5" />
+                    </button>
+                  ) : null)}
+              </div>
+            </header>
+          ) : null}
 
           <ViewTransition
             enter={{
@@ -147,7 +141,7 @@ export function AruaAppShell({
           >
             <main
               className={cn(
-                'aura-page flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10',
+                'aura-page min-h-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10',
                 contentClassName,
               )}
             >

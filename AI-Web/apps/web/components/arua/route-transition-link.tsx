@@ -2,11 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { ComponentProps, MouseEvent } from 'react'
+import type { MouseEvent } from 'react'
+import type { RouteTransitionLinkProps } from '@/types/arua'
 
 export const AURA_ROUTE_LOADING_EVENT = 'aura-route-loading-start'
-
-type RouteTransitionLinkProps = ComponentProps<typeof Link>
 
 function getPathnameFromHref(href: RouteTransitionLinkProps['href']) {
   if (typeof href === 'string') {
@@ -20,11 +19,7 @@ function getPathnameFromHref(href: RouteTransitionLinkProps['href']) {
   return ''
 }
 
-export function RouteTransitionLink({
-  href,
-  onClick,
-  ...props
-}: RouteTransitionLinkProps) {
+export function RouteTransitionLink({ href, onClick, ...props }: RouteTransitionLinkProps) {
   const pathname = usePathname()
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {

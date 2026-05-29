@@ -1,12 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
-
-type RouteLoadingIndicatorProps = {
-  label?: string
-  detail?: string
-  compact?: boolean
-}
+import type { RouteLoadingIndicatorProps } from '@/types/arua'
 
 export function RouteLoadingIndicator({
   label = 'Loading workspace',
@@ -26,7 +21,7 @@ export function RouteLoadingIndicator({
             <LoaderCircle className="h-5 w-5 animate-spin" />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-[var(--aura-text-soft)]">
+            <p className="text-[11px] tracking-[0.3em] text-[var(--aura-text-soft)] uppercase">
               Route transition
             </p>
             <p className="mt-1 text-base font-semibold text-[var(--aura-text)]">{label}</p>
