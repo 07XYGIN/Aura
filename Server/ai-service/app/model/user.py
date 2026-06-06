@@ -1,8 +1,12 @@
+from datetime import date
 import uuid
+
 from sqlalchemy import String, Date, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.core.database import Base
+
 
 class User(Base):
     __tablename__ = "login_user"
@@ -25,12 +29,12 @@ class User(Base):
         nullable=False
     )
 
-    create_at: Mapped[str] = mapped_column(
+    create_at: Mapped[date] = mapped_column(
         Date,
         server_default=text("(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')")
     )
 
-    code: Mapped[uuid.UUID] = mapped_column(
+    code: Mapped[str] = mapped_column(
         String(255),
         nullable=False
     )

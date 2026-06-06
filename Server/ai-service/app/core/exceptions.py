@@ -1,28 +1,31 @@
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
-class UnicornException(Exception):
-    def __init__(self, name: str):
-        self.name = name
+
+class BusinessException(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        self.message = message
+        self.status_code = status_code
+
 
 class LoginException(Exception):
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, message: str, status_code: int = 401):
+        self.message = message
+        self.status_code = status_code
 
-async def unicorn_exception_handler(
-    request: Request,
-    exc: UnicornException
-):
+
+async def business_exception_handler(_request: Request, exc: BusinessException):
     return JSONResponse(
-        status_code=500,
+        status_code=exc.status_code,
         content={
-            "message": f" {exc.name} 已存在",
-            "code": 500
+            "message": exc.message,
+            "code": exc.status_code,
         }
     )
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+
+async def validation_exception_handler(_request: Request, _exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
         content={
@@ -31,11 +34,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-async def loginerr(request: Request,exc: LoginException):
+
+async def login_exception_handler(_request: Request, exc: LoginException):
     return JSONResponse(
-            status_code=500,
-            content={
-                "message": f"{exc.name}",
-                "code": 500
-            }
-        )
+        status_code=exc.status_code,
+        content={
+            "message": exc.message,
+            "code": exc.status_code,
+        }
+    )

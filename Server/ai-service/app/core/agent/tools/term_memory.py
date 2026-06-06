@@ -1,16 +1,17 @@
-from dotenv import load_dotenv
-from langchain_postgres import PGVector
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.documents import Document
+from langchain_ollama import OllamaEmbeddings
+from langchain_postgres import PGVector
+
 from app.core.config import SYNC_DATABASE_URL
-load_dotenv()
+
 embeddings = OllamaEmbeddings(
     model="nomic-embed-text:latest"
 )
 
-def memory_vector_store():
+
+def get_memory_vector_store() -> PGVector:
     return PGVector(
-        embeddings=embeddings, 
+        embeddings=embeddings,
         collection_name="aura",
         connection=SYNC_DATABASE_URL,
         use_jsonb=True,
@@ -18,17 +19,7 @@ def memory_vector_store():
 
 
 def save_memory(user_id: str, content: str, title: str, create_time: str):
-    """
-    将Userid,title,create_time存到向量数据库作为长期记忆
-
-    :param user_id:
-    :param content:
-    :param title:
-    :param create_time:
-    :return:
-    """
-
-    store = memory_vector_store()
+    store = get_memory_vector_store()
     doc = Document(
         page_content=content,
         metadata={
@@ -41,15 +32,7 @@ def save_memory(user_id: str, content: str, title: str, create_time: str):
 
 
 def search_memory(user_id: str, query: str, k: int = 5) -> list[Document]:
-    """
-    根据userid过滤记忆取近k条
-    :param user_id:
-    :param query:
-    :param k:
-    :return:
-    """
-
-    store = memory_vector_store()
+    store = get_memory_vector_store()
     return store.similarity_search(
         query,
         k=k,

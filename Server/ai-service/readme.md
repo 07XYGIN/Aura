@@ -42,7 +42,7 @@
 
 ### 👤 用户与历史
 - 邀请码注册与登录校验
-- Passlib/bcrypt 密码哈希
+- Passlib + Argon2 密码哈希
 - 按 `code` 请求头查询用户信息
 - 按 `userId` 查询或清空聊天历史
 - 统一成功响应与自定义异常处理
@@ -120,7 +120,7 @@ ai-service/
 - Python 3.12+
 - uv
 - PostgreSQL，并启用 pgvector
-- Ollama，本地准备 `qwen3:8b`、`qwen3:0.6b`、`nomic-embed-text:latest`
+- Ollama，本地准备 `qwen3:8b`、`nomic-embed-text:latest`
 - 高德地图 API Key，用于天气工具
 
 ### 配置

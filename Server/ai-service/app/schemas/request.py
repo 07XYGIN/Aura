@@ -1,17 +1,24 @@
-from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-class request_msg(BaseModel):
+
+class MessageRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     message: str
-    userId:str
+    user_id: str = Field(alias="userId")
 
 
-class register_from(BaseModel):
-    userName:str
-    password:str
-    code:str
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
 
-class login_from(BaseModel):
-    userName:str
-    password:str
-    code:str
+    user_name: str = Field(alias="userName")
+    password: str
+    code: str
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_name: str = Field(alias="userName")
+    password: str
+    code: str

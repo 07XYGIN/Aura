@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
-class Memery(BaseModel):
+
+class Memory(BaseModel):
     save: bool
     title: str
     content: str

@@ -1,23 +1,29 @@
-import uvicorn
 import logging
-from fastapi import FastAPI, APIRouter
 from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
-from app.routers import msg, login, history, user
-from app.core.agent import agent_graph
-from app.core.config import SYNC_DATABASE_URL  # 新增
+
+from app.core.config import SYNC_DATABASE_URL
 from app.core.exceptions import (
-    unicorn_exception_handler, UnicornException,
-    validation_exception_handler, loginerr, LoginException
+    BusinessException,
+    LoginException,
+    business_exception_handler,
+    login_exception_handler,
+    validation_exception_handler,
 )
+from app.core.agent import agent_graph
+from app.routers import msg, login, history, user
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
     datefmt="%Y-%m-%d %H:%M:%S"
 )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,7 +38,7 @@ async def lifespan(app: FastAPI):
     logging.info('程序关闭')
 
 
-def create_app():
+def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
@@ -47,9 +53,9 @@ def create_app():
         app.include_router(router)
 
     exception_handlers = [
-        (UnicornException, unicorn_exception_handler),
-        (LoginException, loginerr),
-        (RequestValidationError, validation_exception_handler)
+        (BusinessException, business_exception_handler),
+        (LoginException, login_exception_handler),
+        (RequestValidationError, validation_exception_handler),
     ]
     for exc_type, handler in exception_handlers:
         app.add_exception_handler(exc_type, handler)

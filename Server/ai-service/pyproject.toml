@@ -1,35 +1,23 @@
 [project]
-name = "server"
+name = "ai-service"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Aura FastAPI AI service"
+readme = "readme.md"
 requires-python = ">=3.12"
 dependencies = [
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",
-    "bcrypt>=5.0.0",
-    "dashscope>=1.25.9",
-    "dotenv>=0.9.9",
     "fastapi>=0.127.0",
-    "ipython>=9.12.0",
-    "langchain>=1.2.3",
-    "langchain-community>=0.4.1",
     "langchain-core>=1.2.5",
-    "langchain-huggingface>=1.2.0",
     "langchain-ollama>=1.0.1",
-    "langchain-openai>=1.1.6",
     "langchain-postgres>=0.0.16",
-    "langgraph[all]>=1.0.6",
+    "langgraph>=1.0.6",
     "langgraph-checkpoint-postgres>=3.1.0",
-    "openai>=2.14.0",
-    "passlib[bcrypt]>=1.7.4",
-    "postgres>=4.0",
-    "psycopg2-binary>=2.9.11",
-    "psycopg[binary,pool]>=3.3.2",
-    "python-multipart>=0.0.22",
-    "rich>=14.2.0",
-    "sentence-transformers>=5.2.0",
+    "passlib>=1.7.4",
+    "psycopg[binary]>=3.3.2",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
     "sqlalchemy>=2.0.45",
-    "sse-starlette>=3.1.2",
     "uvicorn[standard]>=0.40.0",
 ]
