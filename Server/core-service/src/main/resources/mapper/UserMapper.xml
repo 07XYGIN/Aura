@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.example.springboot_test.mapper.userMapper">
+<mapper namespace="com.aura.core.mapper.UserMapper">
 
     <select id="findUser"
-            parameterType="com.example.springboot_test.Entity.Users"
-            resultType="com.example.springboot_test.Entity.Users">
-        SELECT id, username, password,  email, sex, age FROM users
+            parameterType="com.aura.core.entity.Users"
+            resultType="com.aura.core.entity.Users">
+        SELECT id, username, password, email, sex, age FROM users
         <where>
             <if test="email != null and email != ''">
                 AND email = #{email}
@@ -24,8 +24,8 @@
     </select>
 
     <select id="findUserInfo"
-            parameterType="com.example.springboot_test.DTO.UserDto"
-            resultType="com.example.springboot_test.DTO.UserDto">
+            parameterType="com.aura.core.dto.UserDto"
+            resultType="com.aura.core.dto.UserDto">
         SELECT * FROM users
         <where>
             <if test="id != null and id != ''">
@@ -34,7 +34,7 @@
         </where>
     </select>
 
-    <insert id="insertUser" parameterType="com.example.springboot_test.DTO.UserDto">
+    <insert id="insertUser" parameterType="com.aura.core.dto.UserDto">
         INSERT INTO users
         <trim prefix="(" suffix=")" suffixOverrides=",">
             username,

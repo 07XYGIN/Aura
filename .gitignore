@@ -45,5 +45,8 @@ test/
 
 **/test
 
+!Server/core-service/src/test/
+!Server/core-service/src/test/**
+
 
 PRINCIPLES.md

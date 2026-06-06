@@ -1,4 +1,5 @@
-package com.example.springboot_test.DTO;
+package com.aura.core.dto;
+
 import jakarta.validation.constraints.*;
 import lombok.Data;
 

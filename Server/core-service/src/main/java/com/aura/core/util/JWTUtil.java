@@ -1,4 +1,4 @@
-package com.example.springboot_test.util;
+package com.aura.core.util;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -18,17 +18,10 @@ public class JWTUtil {
     @Value("${jwt.expire-time}")
     private long expireTime;
 
-    /*
-    * 加密
-    * */
-
     private SecretKey getKey() {
         return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
 
-    /**
-     * 生成token逻辑
-     * */
     public String generateToken(String userName) {
         return Jwts.builder()
                 .subject(userName)
@@ -38,9 +31,6 @@ public class JWTUtil {
                 .compact();
     }
 
-    /**
-     * 从token解析用户名
-     * */
     public String getUsernameFromToken(String token) {
         return Jwts.parser()
                 .verifyWith(getKey())
@@ -50,9 +40,6 @@ public class JWTUtil {
                 .getSubject();
     }
 
-    /**
-     * 验证token是否有效
-     * */
     public boolean validateToken(String token) {
         try {
             Jwts.parser().verifyWith(getKey()).build().parseSignedClaims(token);

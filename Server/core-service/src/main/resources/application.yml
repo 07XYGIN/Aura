@@ -1,22 +1,22 @@
 spring:
   application:
-    name: springboot_test
+    name: aura-core-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/Aura?currentSchema=public
-    username: postgres
-    password: 123456
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:Aura}?currentSchema=${DB_SCHEMA:public}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   data:
     redis:
-      host: localhost
-      port: 6379
-      database: 0
-      password:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   configuration:
     map-underscore-to-camel-case: true
 
 jwt:
-  secret-key: abcdefghijklmnopqrstuvwxyz123456xygin0608
-  expire-time: 86400000
+  secret-key: ${JWT_SECRET_KEY:change-me-to-a-strong-32-byte-secret-key}
+  expire-time: ${JWT_EXPIRE_TIME:86400000}

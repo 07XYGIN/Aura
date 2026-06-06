@@ -1,7 +1,6 @@
-package com.example.springboot_test.Entity;
+package com.aura.core.entity;
 
 import lombok.Data;
-
 
 @Data
 public class Users {
