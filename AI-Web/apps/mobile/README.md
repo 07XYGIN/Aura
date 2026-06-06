@@ -1,97 +1,154 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 💖 Aura Mobile
 
-# Getting Started
+<div align="center">
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+*Aura 的 React Native 移动端骨架，面向后续 Android / iOS 陪伴式聊天体验。*
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+![React Native](https://img.shields.io/badge/React_Native-0.85.3-20232A?logo=react&logoColor=61DAFB)
+![React](https://img.shields.io/badge/React-19.2.3-61DAFB?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178C6?logo=typescript&logoColor=white)
+![Android](https://img.shields.io/badge/Android-ready-3DDC84?logo=android&logoColor=white)
+![iOS](https://img.shields.io/badge/iOS-ready-000000?logo=apple&logoColor=white)
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+</div>
 
-```sh
-# Using npm
-npm start
+---
 
-# OR using Yarn
-yarn start
+## 📖 简介
+
+**Aura Mobile** 是 `AI-Web` Monorepo 下的 React Native CLI 移动端应用。当前已经删除 React Native 默认模板屏幕、模板测试和 `@react-native/new-app-screen` 依赖，只保留可启动的基础骨架：`index.js` 入口、`App.tsx` 空容器、Android / iOS 原生工程与 Metro 配置。
+
+---
+
+## ✨ 功能介绍
+
+### 📱 当前骨架
+- React Native 0.85.3 工程保留
+- Android Gradle 工程与 iOS Xcode 工程保留
+- `SafeAreaProvider` 与 `StatusBar` 保留在入口中
+- `App.tsx` 只渲染一个全屏空容器，等待后续业务页面接入
+
+### 🧹 已清理模板
+- 删除 `@react-native/new-app-screen`
+- 删除 `__tests__/App.test.tsx`
+- 删除 `jest.config.js`
+- 删除默认模板屏幕文案和示例渲染
+
+### 🔮 业务规划
+- 聊天首页：接入 AI Service SSE 或 BFF 代理后的流式对话
+- 登录注册：复用核心服务用户体系
+- 记忆与设置：移动端查看长期记忆、配置偏好和账户状态
+- 本地缓存：保存登录态、最近会话和用户偏好
+
+---
+
+## 🏗️ 技术架构
+
+```
+┌──────────────────────────────┐
+│           index.js            │
+│      AppRegistry register     │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│           App.tsx             │
+│ SafeAreaProvider / StatusBar  │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│     Empty React Native View   │
+│      等待业务页面接入          │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│ Android / iOS Native Runtime  │
+└──────────────────────────────┘
 ```
 
-## Step 2: Build and run your app
+---
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+## 📁 项目结构
 
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```
+apps/mobile/
+├── App.tsx                         # React Native 空应用骨架
+├── index.js                        # AppRegistry 注册入口
+├── package.json                    # 脚本与依赖
+├── metro.config.js                 # Metro 配置
+├── android/                        # Android 原生工程
+├── ios/                            # iOS 原生工程与 Podfile
+└── ...
 ```
 
-### iOS
+---
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## 🚀 快速开始
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### 环境要求
+- Node.js 22.11+（当前 `package.json` engines 要求）
+- pnpm 10+
+- Android Studio + Android SDK（运行 Android）
+- Xcode + CocoaPods（运行 iOS，仅 macOS）
 
-```sh
+请先完成 React Native 官方本地开发环境配置。
+
+### 安装依赖
+
+```bash
+cd AI-Web
+pnpm install
+```
+
+### 启动 Metro
+
+```bash
+pnpm --filter mobile start
+```
+
+### 运行 Android
+
+```bash
+pnpm --filter mobile android
+```
+
+### 运行 iOS
+
+首次安装或原生依赖变更后：
+
+```bash
+cd AI-Web/apps/mobile/ios
 bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
 bundle exec pod install
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+启动应用：
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+```bash
+cd AI-Web
+pnpm --filter mobile ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### 检查
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+```bash
+pnpm --filter mobile lint
+```
 
-## Step 3: Modify your app
+---
 
-Now that you have successfully run the app, let's make changes!
+## 🗺️ 里程碑
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### ✅ 已完成
+- [x] React Native 0.85.3 工程初始化
+- [x] Android / iOS 原生工程生成
+- [x] 默认模板屏幕与测试模板删除
+- [x] `App.tsx` 收敛为可启动空骨架
+- [x] Monorepo workspace 包接入
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+### 🔨 进行中
+- [ ] 搭建移动端聊天页面与输入区
+- [ ] 接入登录注册和 token 存储
+- [ ] 接入 AI 对话流、历史记录和记忆数据
+- [ ] 增加移动端导航、主题和本地缓存

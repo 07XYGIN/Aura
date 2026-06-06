@@ -1,150 +1,174 @@
-# Core Service - 核心认证服务
+# 💖 Aura Core Service
 
-Spring Boot 3.3.5 构建的轻量级用户认证与管理微服务，提供 JWT 令牌认证、Redis 会话缓存和 PostgreSQL 数据持久化。
+<div align="center">
 
-## 技术栈
+*Aura 的核心业务服务，负责用户认证、资料管理、JWT 令牌与 Redis 会话缓存。*
 
-### 框架与核心
-- **Spring Boot** 3.3.5 - 企业级 Java 框架
-- **Java** 17 - 编程语言
-- **Maven** 3.x - 项目构建工具
+---
 
-### 数据库与 ORM
-- **PostgreSQL** - 关系型数据库
-- **MyBatis** 3.0.3 - SQL 映射框架
+![Java](https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)
+![Maven](https://img.shields.io/badge/Maven-3.x-C71A36?logo=apachemaven&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Aura-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-token_cache-FF4438?logo=redis&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT-0.12.6-000000?logo=jsonwebtokens&logoColor=white)
 
-### 认证与安全
-- **JWT (JJWT)** 0.12.6 - 令牌认证
-- **Spring Security Crypto** - BCrypt 密码加密
-- **自定义 AuthInterceptor** - 请求验证拦截器
+</div>
 
-### 缓存
-- **Redis** - 会话/令牌存储
+---
 
-### 工具库
-- **Jakarta Validation** - Bean 数据验证
-- **Lombok** - 代码生成（Getter/Setter）
-- **JetBrains Annotations** - 代码注解
+## 📖 简介
 
-## 已实现功能
+**Core Service** 是 Aura 的 Spring Boot 核心认证服务，提供用户注册、登录、登出、资料查询、资料更新和账户删除能力。服务使用 PostgreSQL 持久化用户数据，使用 Redis 缓存登录令牌，并通过自定义拦截器完成 Bearer Token 校验。
 
-### 1. 用户管理
-- **注册**：创建新用户账户，支持邮箱验证和密码加密
-- **登录**：用户认证并颁发 JWT 令牌
-- **登出**：通过从 Redis 删除令牌来使其失效
-- **获取用户信息**：查询用户资料（需认证）
-- **更新用户信息**：修改邮箱、年龄、性别等
-- **删除用户**：删除用户账户
+---
 
-### 2. 认证与授权
-- 基于 JWT 的令牌认证（24 小时过期）
-- 通过 AuthInterceptor 在所有端点进行令牌验证（除 `/user/Login` 和 `/user/register`）
-- Redis 支持的令牌黑名单用于登出功能
-- Bearer 令牌方案（Authorization 请求头）
+## ✨ 功能介绍
 
-### 3. 数据库模式
+### 👤 用户管理
+- 用户注册：保存用户名、密码、邮箱、性别、年龄等基础资料
+- 用户登录：校验密码后签发 JWT，并写入 Redis 缓存
+- 用户登出：删除 `token:{userId}` 缓存，使令牌失效
+- 用户信息：根据 Authorization Header 解析用户 ID 并返回资料
+- 资料更新：支持邮箱、性别、年龄、用户名等字段更新
+- 账户删除：按用户名删除用户记录
 
-**Users 表：**
-```
-- id (UUID)
-- username (唯一标识符)
-- password (BCrypt 加密)
-- email (邮箱验证)
-- sex (性别)
-- age (年龄)
-```
+### 🔐 认证与安全
+- BCrypt 密码哈希存储
+- JJWT 生成和解析 JWT 令牌
+- `AuthInterceptor` 拦截受保护接口
+- `/user/Login` 与 `/user/register` 放行，其余接口默认需要鉴权
+- Jakarta Validation + `GlobalExceptionHandler` 返回 422 参数错误
 
-## API 端点
+### 🔌 API 端点
 
 | 方法 | 端点 | 认证 | 功能 |
 |------|------|------|------|
 | POST | `/user/register` | 否 | 用户注册 |
-| POST | `/user/Login` | 否 | 用户登录 |
-| GET | `/user/logout/{userId}` | 是 | 令牌失效 |
-| GET | `/user/userInfo` | 是 | 获取用户资料 |
-| PUT | `/user/updateInfo` | 是 | 更新用户信息 |
+| POST | `/user/Login` | 否 | 用户登录，返回 JWT |
+| GET | `/user/logout/{userId}` | 是 | 登出并删除 Redis 令牌 |
+| GET | `/user/userInfo` | 是 | 获取当前用户资料 |
+| PUT | `/user/updateInfo` | 是 | 更新用户资料 |
 | DELETE | `/user/deleteuser/{username}` | 是 | 删除用户账户 |
 
-## 项目结构
+---
+
+## 🏗️ 技术架构
+
+```
+┌──────────────────────────────┐
+│       Web / Admin / BFF       │
+└───────────────┬──────────────┘
+                │ HTTP + Bearer Token
+┌───────────────▼──────────────┐
+│        userController         │
+│   注册 / 登录 / 资料 / 注销    │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│        AuthInterceptor        │
+│   登录注册放行，其余接口鉴权    │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│          LoginService         │
+│   业务编排 / 密码校验 / JWT     │
+└───────┬────────────────┬─────┘
+        │                │
+┌───────▼────────┐ ┌─────▼─────────────┐
+│ PostgreSQL      │ │ Redis              │
+│ users 表        │ │ token:{userId}     │
+└────────────────┘ └───────────────────┘
+```
+
+---
+
+## 📁 项目结构
 
 ```
 core-service/
-├── pom.xml                                    # Maven 配置
+├── pom.xml
+├── mvnw / mvnw.cmd
 ├── src/main/
 │   ├── java/com/example/springboot_test/
-│   │   ├── SpringbootTestApplication.java    # 应用入口
-│   │   ├── controller/
-│   │   │   └── userController.java           # REST API 端点
-│   │   ├── service/
-│   │   │   └── LoginService.java             # 业务逻辑
-│   │   ├── mapper/
-│   │   │   └── userMapper.java               # MyBatis 数据访问
-│   │   ├── Entity/
-│   │   │   └── Users.java                    # 数据库实体
-│   │   ├── DTO/
-│   │   │   └── UserDto.java                  # 数据传输对象
-│   │   ├── util/
-│   │   │   ├── Crypto.java                   # 密码加密（BCrypt）
-│   │   │   ├── JWTUtil.java                  # JWT 令牌生成/验证
-│   │   │   └── RedisUtil.java                # Redis 操作
-│   │   ├── interceptor/
-│   │   │   └── AuthInterceptor.java          # 请求认证拦截器
-│   │   ├── config/
-│   │   │   └── WebConfig.java                # Web 配置与 CORS
-│   │   └── common/
-│   │       └── Response.java                 # 标准化 API 响应
+│   │   ├── SpringbootTestApplication.java     # 应用入口
+│   │   ├── controller/userController.java     # 用户 REST API
+│   │   ├── service/LoginService.java          # 用户业务逻辑
+│   │   ├── interceptor/AuthInterceptor.java   # 请求鉴权拦截器
+│   │   └── ...
 │   └── resources/
-│       ├── application.yml                   # 应用配置
-│       └── mapper/UserMapper.xml             # MyBatis SQL 映射
-└── target/                                   # 构建输出
+│       ├── application.yml                    # 本地应用配置
+│       └── mapper/UserMpaaer.xml              # MyBatis SQL 映射
+└── ...
 ```
 
-## 配置
+---
 
-**数据库**：PostgreSQL localhost:5432，数据库 `Aura`
-**Redis**：localhost:6379，数据库 0
-**JWT 过期时间**：24 小时（86400000 毫秒）
+## 🚀 快速开始
 
-## 快速开始
-
-### 前置条件
+### 环境要求
 - Java 17+
-- Maven 3.x
-- PostgreSQL
-- Redis
+- Maven 3.x，或使用仓库内 `mvnw`
+- PostgreSQL，本地数据库名默认为 `Aura`
+- Redis，本地端口默认为 `6379`
 
-### 构建
+### 配置
 
-```bash
-mvn clean package
+本地配置位于 `src/main/resources/application.yml`：
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/Aura?currentSchema=public
+  data:
+    redis:
+      host: localhost
+      port: 6379
+jwt:
+  expire-time: 86400000
 ```
+
+生产环境建议将数据库密码和 JWT 密钥迁移到环境变量或安全配置中心。
 
 ### 运行
 
 ```bash
-java -jar target/springboot-test-1.0.jar
+cd Server/core-service
+./mvnw spring-boot:run
 ```
 
-或使用 Maven：
+Windows PowerShell：
+
+```powershell
+cd Server/core-service
+.\mvnw.cmd spring-boot:run
+```
+
+服务默认运行在 `http://localhost:8080`。
+
+### 构建与测试
+
 ```bash
-mvn spring-boot:run
+./mvnw test
+./mvnw clean package
+java -jar target/springboot_test-0.0.1-SNAPSHOT.jar
 ```
 
-服务运行在 `http://localhost:8080`
+---
 
-## 架构模式
+## 🗺️ 里程碑
 
-- **Controller 层**：处理 HTTP 请求的 REST 端点
-- **Service 层**：业务逻辑（LoginService）
-- **数据访问层**：MyBatis 映射器接口与 XML SQL 定义
-- **工具层**：JWT、加密、Redis 操作
-- **拦截器模式**：请求级别的认证验证
-- **DTO 模式**：层间数据传输与验证
+### ✅ 已完成
+- [x] Spring Boot 3.3.5 项目搭建
+- [x] 用户注册、登录、登出接口
+- [x] BCrypt 密码加密与 JWT 令牌生成
+- [x] Redis 令牌缓存与失效处理
+- [x] 用户资料查询、更新和删除
+- [x] MyBatis Mapper 与 PostgreSQL `users` 表访问
+- [x] 统一响应结构和参数校验异常处理
 
-## 安全特性
-
-- BCrypt 密码加密存储
-- JWT 令牌 24 小时有效期
-- Redis 令牌黑名单机制
-- 请求拦截器强制认证
-- 标准化错误响应处理
+### 🔨 进行中
+- [ ] 生产环境密钥外置与配置分层
+- [ ] 与 NestJS BFF 的统一鉴权链路
+- [ ] 会话、消息等业务模块扩展
+- [ ] 接口测试与集成测试补齐

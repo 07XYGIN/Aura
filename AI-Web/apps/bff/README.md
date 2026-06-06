@@ -1,98 +1,125 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 💖 Aura BFF
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+<div align="center">
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+*Aura 的 Backend For Frontend 聚合层骨架，后续用于统一承接多端请求。*
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E?logo=nestjs&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-3178C6?logo=typescript&logoColor=white)
+![RxJS](https://img.shields.io/badge/RxJS-7.x-B7178C?logo=reactivex&logoColor=white)
 
-## Project setup
+</div>
 
-```bash
-$ pnpm install
+---
+
+## 📖 简介
+
+**Aura BFF** 是 `AI-Web` Monorepo 下的 NestJS 服务，定位为前端应用与后端微服务之间的请求聚合层。当前已经删除 NestJS 默认 Controller、Service、单元测试和 e2e 模板，只保留可启动的基础骨架：`main.ts` 与空的 `AppModule`。
+
+---
+
+## ✨ 功能介绍
+
+### ✅ 当前能力
+- NestJS 应用入口保留在 `src/main.ts`
+- `AppModule` 保留为空模块，便于后续按业务拆分模块
+- 支持开发启动、生产构建、格式化和 lint
+- 默认不再提供 `GET /` 模板接口
+
+### 🧩 目标职责
+- 为 Web / PC / Admin / Mobile 提供统一 API 前缀
+- 聚合 `core-service` 的用户认证与资料接口
+- 代理 `ai-service` 的 SSE 流式对话接口
+- 统一处理 token、错误响应、DTO 和接口版本
+- 面向不同客户端裁剪响应结构，减少前端重复适配
+
+---
+
+## 🏗️ 技术架构
+
+```
+┌──────────────────────────────────────┐
+│ Web / PC / Admin / Mobile             │
+└──────────────────┬───────────────────┘
+                   │ HTTP / SSE
+┌──────────────────▼───────────────────┐
+│              NestJS BFF               │
+│       main.ts + AppModule skeleton    │
+└──────────────┬────────────────┬──────┘
+               │                │
+┌──────────────▼────────┐ ┌─────▼────────────────┐
+│ Spring Boot Core       │ │ FastAPI AI Service    │
+│ 用户认证 / 用户资料     │ │ AI 对话 / 记忆 / 历史  │
+└───────────────────────┘ └──────────────────────┘
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ pnpm run start
+## 📁 项目结构
 
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+```
+apps/bff/
+├── src/
+│   ├── main.ts                    # Nest 应用启动入口
+│   └── app.module.ts              # 空根模块骨架
+├── package.json
+├── nest-cli.json
+└── ...
 ```
 
-## Run tests
+---
+
+## 🚀 快速开始
+
+### 环境要求
+- Node.js 18+
+- pnpm 10+
+
+### 安装依赖
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+cd AI-Web
+pnpm install
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 运行开发服务
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm dev:bff
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+或直接过滤当前包：
 
-## Resources
+```bash
+pnpm --filter @ai-web/bff start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+服务默认监听 `http://localhost:3000`，也可以通过 `PORT` 环境变量修改端口。
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### 构建与检查
 
-## Support
+```bash
+pnpm --filter @ai-web/bff build
+pnpm --filter @ai-web/bff lint
+pnpm --filter @ai-web/bff format
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## 🗺️ 里程碑
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### ✅ 已完成
+- [x] NestJS 11 基础工程搭建
+- [x] 默认 Controller / Service / 测试模板删除
+- [x] 保留 `main.ts` 与空 `AppModule` 骨架
+- [x] Monorepo workspace 包接入
 
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### 🔨 进行中
+- [ ] 设计 BFF API 前缀与模块拆分
+- [ ] 代理 Core Service 用户认证与用户资料接口
+- [ ] 代理 AI Service SSE 对话接口
+- [ ] 增加鉴权 Guard、DTO、统一错误响应
+- [ ] 增加生产部署配置

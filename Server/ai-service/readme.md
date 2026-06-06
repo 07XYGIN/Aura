@@ -1,144 +1,181 @@
-# AI Service - AI 对话服务
+# 💖 Aura AI Service
 
-FastAPI 异步 Web 框架构建的 AI 对话代理服务，集成 LangGraph 工作流编排、持久化记忆系统和多用户支持。
+<div align="center">
 
-## 技术栈
+*Aura 的 AI 对话服务，负责 LangGraph 编排、SSE 流式输出、工具调用、长期记忆和聊天历史。*
 
-### 框架与服务器
-- **FastAPI** 0.127.0 - 现代异步 Web 框架
-- **Uvicorn** 0.40.0 - ASGI 服务器
-- **Starlette** 0.50.0 - Web 框架基础
+---
 
-### AI/LLM
-- **LangGraph** - 代理工作流编排与状态管理
-- **LangChain** - LLM 框架与工具集成
-- **ChatOllama** - 本地 LLM 集成（Qwen 3 8B 用于对话，0.6B 用于记忆）
-- **Sentence Transformers** - 语义记忆嵌入
+![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.127+-009688?logo=fastapi&logoColor=white)
+![Uvicorn](https://img.shields.io/badge/Uvicorn-0.40+-499848)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Qwen3-000000?logo=ollama&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white)
 
-### 数据库
-- **PostgreSQL** - 主数据存储，支持异步操作
-- **SQLAlchemy 2.0** - 异步 ORM
-- **asyncpg** 0.31.0 - 异步 PostgreSQL 驱动
-- **pgvector** 0.3.6 - 向量存储扩展
+</div>
 
-### 安全与工具库
-- **Passlib** 1.7.4 + **bcrypt** 5.0.0 - 密码哈希
-- **python-dotenv** - 环境配置
-- **Pydantic** - 数据验证
+---
 
-## 已实现功能
+## 📖 简介
 
-### 1. 用户认证与管理
-- 邀请码验证的用户注册
-- bcrypt 密码加密的安全登录
-- 用户信息查询（创建时间、ID、用户名）
-- 账户删除/登出
+**AI Service** 是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，使用 Ollama 本地模型处理多轮对话，并将响应以 Server-Sent Events（SSE）形式返回客户端。服务同时负责用户注册/登录、聊天历史读取、长期记忆写入与语义检索。
 
-### 2. 对话 AI 代理
-- 基于 LangGraph 状态机的多轮对话
-- 工具调用能力（外部集成）
-- 系统提示词驱动的行为
-- 通过 Server-Sent Events (SSE) 流式响应
+---
 
-### 3. 记忆系统
-- 自动提取和存储重要用户信息
-- 基于向量的语义记忆检索
-- 用户隔离的记忆存储
-- 双模型方案：主模型用于对话，小模型用于记忆提取
+## ✨ 功能介绍
 
-### 4. 工具集成
-- **天气工具** - 通过高德地图 API 获取实时天气
-- **记忆工具** - 保存和搜索用户记忆
-- 可扩展的工具框架
+### 🤖 AI 对话
+- 基于 LangGraph `StateGraph` 编排聊天节点与工具节点
+- 使用 `qwen3:8b` 作为主要对话模型
+- 支持天气查询、记忆保存、记忆搜索等工具调用
+- 使用 PostgreSQL Checkpointer 持久化对话状态
+- `/api/send/sse/` 通过 SSE 持续输出模型响应片段
 
-### 5. 聊天历史
-- PostgreSQL 支持的对话持久化
-- 用户隔离的线程管理
-- 历史记录查询和删除接口
-- 自动状态检查点
+### 🧠 记忆系统
+- `save_memory_tool` 分析用户消息并抽取值得长期保存的信息
+- `search_memory_tool` 按用户隔离检索历史记忆
+- `PGVector` + PostgreSQL/pgvector 存储语义向量
+- `nomic-embed-text:latest` 用于记忆 Embedding
+- 记忆 metadata 包含 `user_id`、`title`、`create_time`
 
-### 6. API 端点
+### 👤 用户与历史
+- 邀请码注册与登录校验
+- Passlib/bcrypt 密码哈希
+- 按 `code` 请求头查询用户信息
+- 按 `userId` 查询或清空聊天历史
+- 统一成功响应与自定义异常处理
+
+### 🔌 API 端点
 
 | 方法 | 端点 | 功能 |
 |------|------|------|
 | POST | `/api/register` | 用户注册 |
 | POST | `/api/login` | 用户登录 |
-| GET | `/api/user/info` | 获取用户信息 |
-| DELETE | `/api/user/logout` | 账户删除 |
-| POST | `/api/send/sse/` | 发送消息（流式响应） |
-| GET | `/api/history/{userId}` | 获取聊天历史 |
-| DELETE | `/api/history/{userId}` | 清空聊天历史 |
+| GET | `/api/user/info` | 根据 `code` Header 获取用户信息 |
+| DELETE | `/api/user/logout?userid={uuid}` | 删除账户 |
+| POST | `/api/send/sse/` | 发送消息并返回 SSE 流式响应 |
+| GET | `/api/history/{userId}` | 获取指定用户聊天历史 |
+| DELETE | `/api/history/{userId}` | 清空指定用户聊天历史 |
 
-## 项目结构
+---
+
+## 🏗️ 技术架构
+
+```
+┌──────────────────────────────┐
+│       Web / PC / BFF          │
+└───────────────┬──────────────┘
+                │ HTTP / SSE
+┌───────────────▼──────────────┐
+│            FastAPI            │
+│ login / user / msg / history  │
+└───────────────┬──────────────┘
+                │
+┌───────────────▼──────────────┐
+│          LangGraph            │
+│     chat node ↔ tool node      │
+└───────┬──────────────┬───────┘
+        │              │
+┌───────▼───────┐ ┌────▼──────────────────┐
+│ ChatOllama     │ │ Tools                 │
+│ qwen3:8b       │ │ weather / memory      │
+└───────┬───────┘ └────┬──────────────────┘
+        │              │
+┌───────▼──────────────▼──────┐
+│ PostgreSQL + pgvector        │
+│ Checkpoint / User / Memory   │
+└──────────────────────────────┘
+```
+
+---
+
+## 📁 项目结构
 
 ```
 ai-service/
-├── main.py                          # FastAPI 应用入口
+├── main.py                              # FastAPI 应用入口与生命周期
+├── pyproject.toml                       # uv / Python 项目依赖
+├── uv.lock                              # 锁定依赖版本
 ├── app/
 │   ├── core/
-│   │   ├── agent/
-│   │   │   ├── agent_graph.py      # LangGraph 工作流定义
-│   │   │   ├── prompt.py           # 系统提示词
-│   │   │   └── tools/              # 工具实现
-│   │   │       ├── memery.py       # 记忆保存工具
-│   │   │       ├── search_memery.py # 记忆搜索工具
-│   │   │       └── term_memory.py  # 记忆管理
-│   │   └── config.py               # 配置（LLM、数据库、API 密钥）
-│   ├── model/
-│   │   └── User.py                 # 用户数据库模型
-│   ├── schemas/
-│   │   └── momery.py               # 记忆数据模式
-│   └── routers/
-│       ├── login.py                # 认证端点
-│       ├── user.py                 # 用户管理端点
-│       ├── msg.py                  # 消息处理端点
-│       └── history.py              # 聊天历史端点
-└── requirements.txt                # Python 依赖
+│   │   └── agent/
+│   │       ├── agent_graph.py           # LangGraph 工作流
+│   │       ├── prompt.py                # 系统提示词与记忆提示词
+│   │       └── tools/                   # 天气、记忆等工具
+│   ├── routers/
+│   │   ├── msg.py                       # SSE 消息接口
+│   │   └── ...
+│   ├── schemas/                         # 请求、响应、记忆模型
+│   └── ...
+└── ...
 ```
 
-## 快速开始
+---
 
-### 前置条件
-- Python 3.8+
-- PostgreSQL
-- Ollama（含 Qwen 模型）
+## 🚀 快速开始
 
-### 安装
-
-```bash
-pip install -r requirements.txt
-```
+### 环境要求
+- Python 3.12+
+- uv
+- PostgreSQL，并启用 pgvector
+- Ollama，本地准备 `qwen3:8b`、`qwen3:0.6b`、`nomic-embed-text:latest`
+- 高德地图 API Key，用于天气工具
 
 ### 配置
 
-创建 `.env` 文件：
+在 `Server/ai-service/.env` 中配置本地环境变量：
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=Aura
+DB_USER=postgres
+DB_PASSWORD=your_password
+amap_key=your_amap_key
 ```
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/ai_service
-AMAP_API_KEY=your_amap_api_key
+
+### 安装依赖
+
+```bash
+cd Server/ai-service
+uv sync
 ```
 
 ### 运行
 
 ```bash
-uvicorn main:app --reload
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-服务运行在 `http://localhost:8000`
+服务默认运行在 `http://127.0.0.1:8000`。`main.py` 中的 CORS 当前放行 `http://localhost:5173`，用于本地前端联调。
 
-## 核心工作流
+### 调试接口
 
-1. 用户通过 `/api/send/sse/` 发送消息
-2. LangGraph 路由到聊天节点
-3. LLM 使用系统提示词和可用工具处理消息
-4. 如需工具调用，路由到工具节点执行
-5. 工具结果反馈给 LLM
-6. 响应通过 SSE 流式返回客户端
-7. 对话状态持久化到 PostgreSQL
-8. 重要信息自动提取并存储到记忆系统
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/send/sse/ \
+  -H "Content-Type: application/json" \
+  -d "{\"message\":\"你好，Aura\",\"userId\":\"demo-user\"}"
+```
 
-## 数据持久化
+---
 
-- **用户数据**：PostgreSQL User 表
-- **对话状态**：PostgreSQL + LangGraph 检查点
-- **记忆向量**：PostgreSQL + pgvector 扩展
-- **用户隔离**：thread_id = userId 用于状态管理
+## 🗺️ 里程碑
+
+### ✅ 已完成
+- [x] FastAPI 应用工厂、生命周期与路由组织
+- [x] 用户注册、登录、用户信息、注销接口
+- [x] LangGraph 对话状态机与工具节点
+- [x] SSE 流式响应接口
+- [x] PostgreSQL Checkpointer 对话状态持久化
+- [x] PGVector 长期记忆保存与检索
+- [x] 天气工具、高德 API 接入
+- [x] 自定义异常与请求参数校验处理
+
+### 🔨 进行中
+- [ ] 前端登录态与 AI 服务用户体系打通
+- [ ] 记忆列表、记忆删除等管理接口恢复
+- [ ] 流式响应的端到端客户端渲染
+- [ ] Docker Compose 与数据库初始化脚本
+- [ ] 测试用例与生产部署配置

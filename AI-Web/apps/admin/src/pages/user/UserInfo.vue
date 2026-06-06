@@ -73,7 +73,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { logout, updateUserInfo, logoutUser } from '@/api/user'
+import { updateUserInfo, logoutUser } from '@/api/user'
 import { useUserStore } from '@/store/modules/user'
 import type { UserInfo } from '@/type/user'
 

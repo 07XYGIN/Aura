@@ -30,7 +30,7 @@ import { useRouter } from 'vue-router'
 import type { FormInstance } from 'element-plus'
 import { login } from '@/api/user'
 import {useUserStore} from "@/store/modules/user.ts";
-import type {LoginForm} from '@ai-web/types/main.ts'
+import type {LoginForm} from '@ai-web/types'
 const user = useUserStore()
 
 const form = reactive<LoginForm>({
