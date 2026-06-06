@@ -5,9 +5,9 @@
     { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
-    "baseUrl": "admin",
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["admin/src/*"]
+      "@/*": ["src/*"]
     }
   }
 }

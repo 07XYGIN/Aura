@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { MessageCircleDashed, Radiation, SettingsIcon } from 'lucide-vue-next';
+
 import {
   Sidebar,
   SidebarContent,
@@ -14,8 +16,6 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '../ui/sidebar';
-import Theme from './theme.vue';
-import { SettingsIcon,MessageCircleDashed,Radiation } from 'lucide-vue-next'
 </script>
 
 <template>
@@ -25,10 +25,8 @@ import { SettingsIcon,MessageCircleDashed,Radiation } from 'lucide-vue-next'
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg">
-              <div
-                class="flex aspect-square size-8 items-center justify-center rounded-lg text-sidebar-primary-foreground"
-              ></div>
-              <div class="flex flex-1 text-left text-sm leading-tight justify-between items-center">
+              <div class="flex aspect-square size-8 items-center justify-center rounded-lg text-sidebar-primary-foreground" />
+              <div class="flex flex-1 items-center justify-between text-left text-sm leading-tight">
                 <span class="truncate font-semibold">Aura</span>
               </div>
             </SidebarMenuButton>
@@ -43,19 +41,19 @@ import { SettingsIcon,MessageCircleDashed,Radiation } from 'lucide-vue-next'
                 <SidebarMenuButton as-child>
                   <router-link to="/">
                     <MessageCircleDashed />
-                    <span>对话</span>
+                    <span>Chat</span>
                   </router-link>
                 </SidebarMenuButton>
                 <SidebarMenuButton as-child>
                   <router-link to="/memory">
                     <Radiation />
-                    <span>记忆</span>
+                    <span>Memory</span>
                   </router-link>
                 </SidebarMenuButton>
                 <SidebarMenuButton as-child>
                   <router-link to="/seting">
                     <SettingsIcon />
-                    <span>设置</span>
+                    <span>Settings</span>
                   </router-link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -67,15 +65,13 @@ import { SettingsIcon,MessageCircleDashed,Radiation } from 'lucide-vue-next'
       <SidebarRail />
     </Sidebar>
     <SidebarInset>
-      <header
-        class="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear sticky top-0 bg-background z-10"
-      >
+      <header class="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear">
         <div class="flex items-center gap-2 px-4">
           <SidebarTrigger class="-ml-1" />
         </div>
       </header>
       <main class="h-full">
-        <router-view></router-view>
+        <router-view />
       </main>
     </SidebarInset>
   </SidebarProvider>

@@ -1,1 +1,0 @@
-{"root":["./auto-imports.d.ts","./components.d.ts","./vite.config.ts","./src/app.vue","./src/main.ts","./src/api/user.ts","./src/pages/home/home.vue","./src/pages/layout/layout.vue","./src/pages/login/login.vue","./src/pages/register/register.vue","./src/router/index.ts","./src/store/user.ts","./src/type/user.ts","./src/utils/requests.ts"],"errors":true,"version":"5.9.3"}

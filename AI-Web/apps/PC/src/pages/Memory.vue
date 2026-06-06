@@ -1,59 +1,60 @@
 <template>
   <div class="p-5">
-    <Momery :memory="momeryList" :loading="loading" @del-data="defData"/>
+    <MemoryList :memory="memoryList" :loading="loading" @del-data="deleteMemory" />
   </div>
 </template>
 
 <script setup lang="ts">
-import Momery from '../components/pages/Momery.vue';
-import { delSinglList, getMomeryList } from '../api/msg';
-import {ref,onMounted} from 'vue'
+import { onMounted, ref } from 'vue';
+
+import { deleteMemoryItem, getMemoryList } from '../api/msg';
+import MemoryList from '../components/pages/MemoryList.vue';
 import useUserStore from '../store/modules';
-const getUserInfo = useUserStore();
-const loading = ref<boolean>(false)
+
 export interface MemoryMetadata {
-    title: string
-    content: string
-    create_time: string
-    timestamp:string
+  title: string;
+  content: string;
+  create_time: string;
+  timestamp: string;
 }
 
 export interface MemoryDocument {
-    id: string
-    metadata: MemoryMetadata
-    page_content: string
-    type: 'Document'
-}
-const momeryList = ref<Array<MemoryDocument>>([])
-const setMomery = async()=>{
-  if(getUserInfo.userinfo.userId){
-    try{
-      loading.value = true
-      const {data} = await getMomeryList({user_id:getUserInfo.userinfo.userId})
-      momeryList.value = data
-  }finally{
-    loading.value = false
-  }
-}
-}
-const defData = async(id:string)=>{
-  if(getUserInfo.userinfo.userId){
-    try{
-      await delSinglList(getUserInfo.userinfo.userId,id)
-      await setMomery()
-    }
-    finally{
-      loading.value = false
-    }
-  }
+  id: string;
+  metadata: MemoryMetadata;
+  page_content: string;
+  type: 'Document';
 }
 
-onMounted(
-  async()=>{
-    await getUserInfo.UserInfo();
-    setMomery()
+const userStore = useUserStore();
+const loading = ref(false);
+const memoryList = ref<MemoryDocument[]>([]);
+
+const loadMemory = async () => {
+  if (!userStore.userinfo.userId) return;
+
+  try {
+    loading.value = true;
+    const { data } = await getMemoryList({ user_id: userStore.userinfo.userId });
+    memoryList.value = data;
+  } finally {
+    loading.value = false;
   }
-)
+};
+
+const deleteMemory = async (id: string) => {
+  if (!userStore.userinfo.userId) return;
+
+  try {
+    loading.value = true;
+    await deleteMemoryItem(userStore.userinfo.userId, id);
+    await loadMemory();
+  } finally {
+    loading.value = false;
+  }
+};
+
+onMounted(async () => {
+  await userStore.UserInfo();
+  await loadMemory();
+});
 </script>
-
-<style lang="scss" scoped></style>
