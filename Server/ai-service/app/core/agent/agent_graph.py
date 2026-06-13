@@ -1,4 +1,3 @@
-import logging
 from typing import Annotated, Any, Generator, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -34,7 +33,6 @@ def call_model(state: AuraState) -> AuraState:
 
 def should_continue(state: AuraState) -> str:
     last_message = state["messages"][-1]
-    logging.info("last_message: %s", last_message)
     if getattr(last_message, "tool_calls", None):
         return "tools"
     return END
@@ -67,7 +65,6 @@ def aura_agent(human_prompt: str, user_id: str) -> Generator[Any, None, None]:
 
     for chunk, metadata in aura.stream(inputs, config, stream_mode="messages"):
         if chunk.content and metadata.get("langgraph_node") == "chat":
-            logging.info("Chunk: %s", chunk)
             yield chunk.content
 
 

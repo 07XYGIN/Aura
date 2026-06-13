@@ -9,7 +9,7 @@ interface ConnectOptions {
 }
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 
-function useSse(url: string, options: requestOptions = {}) {
+export function UseSse(url: string, options: requestOptions = {}) {
     const {headers,onMessage,onError } = options;
     let ctrl: AbortController | null = null; 
     // 连接
@@ -49,4 +49,3 @@ function useSse(url: string, options: requestOptions = {}) {
     }
 }
 
-export default useSse;

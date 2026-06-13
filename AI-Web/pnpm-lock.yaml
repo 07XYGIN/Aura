@@ -357,6 +357,9 @@ importers:
       '@ai-web/types':
         specifier: workspace:*
         version: link:../../package/Types
+      '@ai-web/utils':
+        specifier: workspace:*
+        version: link:../../package/utils
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.4
