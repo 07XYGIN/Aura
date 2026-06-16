@@ -67,7 +67,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
 
     if (mode === 'register') {
         try {
-            const {message} = await user.register<unknown>('/user/register', payload)
+            const {message} = await user.register<unknown>('/api/user/register', payload)
             toast.success('Account created', {
                 description: message,
                 position: 'top-center',
@@ -83,7 +83,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
         }
     } else {
         try {
-            const response = await user.login<unknown>('/user/login', payload)
+            const response = await user.login<unknown>('/api/user/login', payload)
 
             toast.success('Success', {
                 description: response.message,

@@ -6,7 +6,7 @@ import type { User, LoginResponse } from "@/type/user";
  * */
 export const register = (data:User)=>{
     return request({
-        url:"/user/register",
+        url:"/api/user/register",
         method:"POST",
         data
     })
@@ -17,7 +17,7 @@ export const register = (data:User)=>{
 * */
 export const login = (data:User): Promise<LoginResponse> =>{
     return request({
-        url:"/user/Login",
+        url:"/api/user/login",
         method:"POST",
         data
     });
@@ -29,7 +29,7 @@ export const login = (data:User): Promise<LoginResponse> =>{
 
 export const logout = (id:string)=>{
     return request({
-        url:`/user/logout/${id}`,
+        url:`/api/user/logout/${id}`,
         method:"GET",
     })
 }
@@ -40,7 +40,7 @@ export const logout = (id:string)=>{
 
 export const getUserInfo = ()=>{
     return request({
-        url:"/user/userInfo",
+        url:"/api/user/userInfo",
         method:"GET",
     })
 }
@@ -51,7 +51,7 @@ export const getUserInfo = ()=>{
 
 export const updateUserInfo = (data:User)=>{
     return request ({
-        url:"/user/updateInfo",
+        url:"/api/user/updateInfo",
         method:"PUT",
         data
     })
@@ -63,7 +63,7 @@ export const updateUserInfo = (data:User)=>{
 
 export const logoutUser = (userId:string)=>{
     return request ({
-        url:`/user/deleteuser/${userId}`,
+        url:`/api/user/${userId}`,
         method:"DELETE"
     })
 }

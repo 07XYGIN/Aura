@@ -23,7 +23,7 @@ export const useUserStore = create<UserState>()(
             userInfo: {},
             setToken: (token) => set({ token }),
             getUserInfo: async () => {
-                const response = await user.getUserInfo<User>('/user/userInfo')
+                const response = await user.getUserInfo<User>('/api/user/userInfo')
                 set({ userInfo: response.data })
             },
         }),

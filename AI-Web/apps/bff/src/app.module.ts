@@ -7,11 +7,13 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { AppConfigModule } from './config/config.module'
 import { RedisModule } from './redis/redis.module'
 import { UserController } from './user/user.controller'
+import { UserService } from './user/user.service'
 
 @Module({
     imports: [AppConfigModule, RedisModule, AuthModule],
     controllers: [UserController],
     providers: [
+        UserService,
         {
             provide: APP_GUARD,
             useClass: AuthGuard,

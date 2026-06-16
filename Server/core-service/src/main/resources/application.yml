@@ -12,6 +12,9 @@ spring:
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
       password: ${REDIS_PASSWORD:}
+server:
+  servlet:
+    context-path: /api
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   configuration:
