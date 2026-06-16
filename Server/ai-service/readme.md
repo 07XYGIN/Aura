@@ -40,21 +40,16 @@
 - `nomic-embed-text:latest` 用于记忆 Embedding
 - 记忆 metadata 包含 `user_id`、`title`、`create_time`
 
-### 👤 用户与历史
-- 邀请码注册与登录校验
-- Passlib + Argon2 密码哈希
-- 按 `code` 请求头查询用户信息
+### 👤 用户边界与历史
+- 用户注册、登录、资料、注销等接口统一由 Java `core-service` 提供
+- AI Service 只保留 AI 对话、记忆、聊天历史等能力
 - 按 `userId` 查询或清空聊天历史
-- 统一成功响应与自定义异常处理
+- 统一成功响应与参数校验异常处理
 
 ### 🔌 API 端点
 
 | 方法 | 端点 | 功能 |
 |------|------|------|
-| POST | `/api/register` | 用户注册 |
-| POST | `/api/login` | 用户登录 |
-| GET | `/api/user/info` | 根据 `code` Header 获取用户信息 |
-| DELETE | `/api/user/logout?userid={uuid}` | 删除账户 |
 | POST | `/api/send/sse/` | 发送消息并返回 SSE 流式响应 |
 | GET | `/api/history/{userId}` | 获取指定用户聊天历史 |
 | DELETE | `/api/history/{userId}` | 清空指定用户聊天历史 |

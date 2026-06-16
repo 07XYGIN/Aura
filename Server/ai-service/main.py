@@ -9,14 +9,10 @@ from langgraph.checkpoint.postgres import PostgresSaver
 
 from app.core.config import SYNC_DATABASE_URL
 from app.core.exceptions import (
-    BusinessException,
-    LoginException,
-    business_exception_handler,
-    login_exception_handler,
     validation_exception_handler,
 )
 from app.core.agent import agent_graph
-from app.routers import msg, login, history, user
+from app.routers import msg, history
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,13 +44,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         max_age=86400
     )
-    routers: list[APIRouter] = [login.router, user.router, msg.router, history.router]
+    routers: list[APIRouter] = [msg.router, history.router]
     for router in routers:
         app.include_router(router)
 
     exception_handlers = [
-        (BusinessException, business_exception_handler),
-        (LoginException, login_exception_handler),
         (RequestValidationError, validation_exception_handler),
     ]
     for exc_type, handler in exception_handlers:
