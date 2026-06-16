@@ -3,6 +3,8 @@ package com.aura.core.dto;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
+import java.util.UUID;
+
 @Data
 public class UserDto {
 
@@ -18,4 +20,6 @@ public class UserDto {
     private Integer age;
 
     private Integer sex;
+
+    private String id;
 }

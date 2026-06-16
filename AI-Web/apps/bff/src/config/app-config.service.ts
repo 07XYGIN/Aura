@@ -34,6 +34,10 @@ export class AppConfigService {
         return this.get('CORE_SERVICE_URL', 'http://127.0.0.1:8080')
     }
 
+    get aiServiceUrl(): string {
+        return this.get('AI_SERVICE_URL', 'http://127.0.0.1:8000')
+    }
+
     private get(key: string, fallback: string): string {
         return process.env[key] || fallback
     }

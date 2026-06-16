@@ -18,6 +18,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/user/UserInfo.vue'),
         meta: { title: '个人中心' },
       },
+      {
+        path: 'memory',
+        name: 'memoryManage',
+        component: () => import('@/pages/memory/MemoryManage.vue'),
+        meta: { title: '记忆管理' },
+      },
     ],
   },
   {

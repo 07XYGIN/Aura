@@ -45,6 +45,10 @@ const handleLogout = async () => {
           <el-icon><User /></el-icon>
           <span>个人中心</span>
         </el-menu-item>
+        <el-menu-item index="/memory">
+          <el-icon><Memo /></el-icon>
+          <span>记忆管理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 

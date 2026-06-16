@@ -6,7 +6,7 @@
 
     <el-card class="content-card" shadow="never">
       <template #header>首页内容区</template>
-      <el-empty description="这里是右侧主内容区域，可继续接入业务模块" />
+      <el-empty description="无数据" />
     </el-card>
   </div>
 </template>

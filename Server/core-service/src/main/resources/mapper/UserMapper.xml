@@ -26,9 +26,9 @@
     <select id="findUserInfo"
             parameterType="com.aura.core.dto.UserDto"
             resultType="com.aura.core.dto.UserDto">
-        SELECT * FROM users
+        SELECT id::varchar AS id,username,age,sex,email FROM users
         <where>
-            <if test="id != null and id != ''">
+            <if test="id != null">
                 AND id = #{id} ::uuid
             </if>
         </where>

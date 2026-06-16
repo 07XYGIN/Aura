@@ -12,7 +12,7 @@ from app.core.exceptions import (
     validation_exception_handler,
 )
 from app.core.agent import agent_graph
-from app.routers import msg, history
+from app.routers import msg, history,memory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         max_age=86400
     )
-    routers: list[APIRouter] = [msg.router, history.router]
+    routers: list[APIRouter] = [msg.router, history.router,memory.router]
     for router in routers:
         app.include_router(router)
 

@@ -3,7 +3,7 @@ import {ElMessage} from "element-plus";
 import { useUserStore } from "@/store/modules/user";
 import router from '@/router'
 const request = axios.create({
-    baseURL: 'http://localhost:8080',
+    baseURL: 'http://localhost:3000',
 });
 
 request.interceptors.request.use(function (config) {

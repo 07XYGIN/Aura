@@ -1,7 +1,23 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Put } from '@nestjs/common'
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Headers,
+    HttpCode,
+    Param,
+    Post,
+    Put,
+    Query,
+    Req,
+} from '@nestjs/common'
+import type { Request } from 'express'
 import { Public } from '../common/decorators/public.decorator'
 import type { ApiResponse } from '../common/interfaces/api-response.interface'
+import type { AuthUser } from '../auth/interfaces/auth-user.interface'
 import { UserService } from './user.service'
+
+type RequestWithUser = Request & { user: AuthUser }
 
 @Controller('user')
 export class UserController {
@@ -32,6 +48,15 @@ export class UserController {
     @Get('userInfo')
     getUserInfo(@Headers('authorization') authorization?: string): Promise<ApiResponse> {
         return this.userService.getUserInfo(authorization)
+    }
+
+    @Get('memoryList')
+    getMemoryList(
+        @Req() request: RequestWithUser,
+        @Query('page') page = '1',
+        @Query('pageSize') pageSize = '10',
+    ): Promise<ApiResponse> {
+        return this.userService.getMemoryList(request.user.userId, page, pageSize)
     }
 
     @Put('updateInfo')

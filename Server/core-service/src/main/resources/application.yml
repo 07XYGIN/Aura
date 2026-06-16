@@ -23,3 +23,7 @@ mybatis:
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-to-a-strong-32-byte-secret-key}
   expire-time: ${JWT_EXPIRE_TIME:86400000}
+
+logging:
+  level:
+    com.aura.core.mapper: trace
