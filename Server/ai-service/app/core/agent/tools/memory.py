@@ -14,7 +14,8 @@ from app.schemas.memory import Memory
 @tool
 def save_memory_tool(message: str, config: RunnableConfig) -> str:
     """
-    分析用户消息，如果包含重要信息则提取摘要保存到记忆库。
+    分析用户消息；如果包含重要、可长期保存的信息，就提取摘要并保存到记忆库。
+    适合在用户表达稳定偏好、个人资料、重要日期、计划或长期情绪线索时调用。
     """
     user_id = config["configurable"].get("user_id")
     if not user_id:
@@ -31,7 +32,7 @@ def save_memory_tool(message: str, config: RunnableConfig) -> str:
     res = chain.invoke({"input": message})
     logging.info("memory save decision: %s", res.save)
     if not res.save:
-        logging.info("不是关键信息，跳过")
+        logging.info("不是关键长期信息，跳过记忆保存")
         return "不需要记忆"
 
     save_memory(

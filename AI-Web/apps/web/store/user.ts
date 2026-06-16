@@ -5,6 +5,7 @@ import { user } from '@/apis/user'
 interface UserState {
     token: string
     setToken: (token: string) => void
+    logout: () => void
     userInfo: User
     getUserInfo: () => Promise<void>
 }
@@ -22,6 +23,7 @@ export const useUserStore = create<UserState>()(
             token: '',
             userInfo: {},
             setToken: (token) => set({ token }),
+            logout: () => set({ token: '', userInfo: {} }),
             getUserInfo: async () => {
                 const response = await user.getUserInfo<User>('/api/user/userInfo')
                 set({ userInfo: response.data })

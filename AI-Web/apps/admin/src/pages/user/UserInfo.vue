@@ -5,7 +5,6 @@
         <p class="eyebrow">个人中心</p>
         <h1>账号资料</h1>
       </div>
-
     </section>
 
     <section class="profile-layout">
@@ -30,7 +29,7 @@
       <section class="profile-form-panel">
         <div class="panel-header">
           <h2>基础信息</h2>
-          <el-tag type="info" effect="plain">仅前端保存</el-tag>
+          <el-tag type="info" effect="plain">前端保存</el-tag>
         </div>
 
         <el-form :model="form" label-width="92px" class="profile-form">
@@ -48,8 +47,8 @@
 
           <el-form-item label="性别">
             <el-radio-group v-model="form.sex">
-              <el-radio :value="'0'">男</el-radio>
-              <el-radio :value="'1'">女</el-radio>
+              <el-radio :value="0">男</el-radio>
+              <el-radio :value="1">女</el-radio>
             </el-radio-group>
           </el-form-item>
 
@@ -73,7 +72,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { updateUserInfo, logoutUser } from '@/api/user'
+import { logoutUser, updateUserInfo } from '@/api/user'
 import { useUserStore } from '@/store/modules/user'
 import type { UserInfo } from '@/type/user'
 
@@ -104,6 +103,7 @@ const sexLabel = computed(() => (form.sex === 1 ? '女' : '男'))
 
 const handleSave = () => {
   updateUserInfo(form).then(() => {
+    userStore.updateUserInfo(form)
     ElMessage.success('个人信息已保存')
   })
 }
@@ -126,14 +126,12 @@ const handleLogout = async () => {
   logoutLoading.value = true
   try {
     if (userInfo.value.username) {
-      logoutUser(userInfo.value.username).then(()=>{
-        userStore.clearToken()
-        logoutLoading.value = false
-        router.push('/login')
-      })
+      await logoutUser(userInfo.value.username)
     }
+    userStore.clearToken()
+    await router.push('/login')
   } finally {
-
+    logoutLoading.value = false
   }
 }
 
@@ -245,7 +243,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
-
   .page-title,
   .panel-header {
     align-items: flex-start;

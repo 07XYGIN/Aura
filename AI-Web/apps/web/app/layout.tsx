@@ -7,6 +7,7 @@ import { RouteTransitionOverlay } from '@/components/arua/route-transition-overl
 import React from 'react'
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 import { Toaster } from '@/components/ui/sonner'
+import { I18nProvider } from '@/lib/i18n'
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
@@ -42,9 +43,11 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col overflow-x-hidden bg-[var(--aura-bg)] text-[var(--aura-text)]">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-          {children}
-          <Toaster />
-          <RouteTransitionOverlay />
+          <I18nProvider>
+            {children}
+            <Toaster />
+            <RouteTransitionOverlay />
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

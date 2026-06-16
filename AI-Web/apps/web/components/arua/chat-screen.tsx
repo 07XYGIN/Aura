@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
-import { ImagePlus, Mic, Paperclip, SendHorizontal, Square } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { ImagePlus, Mic, Paperclip, SendHorizontal, Square, Trash2 } from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -10,7 +10,92 @@ import { cn } from '@/lib/utils'
 import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
+import { useI18n } from '@/lib/i18n'
+import { aura, type AuraHistoryMessage } from '@/apis/aura'
+
+type EmotionPayload = {
+    user_emotion?: string
+    aura_mood?: string
+    label?: string
+    name?: string
+    type?: string
+    mood?: string
+    confidence?: number
+    score?: number
+    valence?: number
+    arousal?: number
+    [key: string]: unknown
+}
+
+type ChatStreamChunk = {
+    content?: string
+    event?: string
+    emotion?: EmotionPayload
+}
+
+const mapHistoryMessage = (item: AuraHistoryMessage, index: number): ChatMessage | null => {
+    if (!item.content) {
+        return null
+    }
+
+    const role = item.senderType ?? (item.role === 'aura' ? 'assistant' : item.role)
+
+    if (role !== 'user' && role !== 'assistant') {
+        return null
+    }
+
+    return {
+        id: item.id ?? `history-${index}-${role}`,
+        role,
+        content: item.content,
+    }
+}
+
+const buildChatSseUrl = () => {
+    const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
+
+    return `${baseUrl.replace(/\/+$/, '')}/api/chat/sse`
+}
+
+const getEmotionLabel = (emotion: EmotionPayload) => {
+    if (emotion.aura_mood || emotion.user_emotion) {
+        return [
+            emotion.aura_mood ? `Aura ${emotion.aura_mood}` : null,
+            emotion.user_emotion ? `You ${emotion.user_emotion}` : null,
+        ]
+            .filter(Boolean)
+            .join(' / ')
+    }
+
+    const label = emotion.label ?? emotion.name ?? emotion.type ?? emotion.mood
+
+    if (label) {
+        return label
+    }
+
+    return 'Emotion updated'
+}
+
+const getEmotionDetail = (emotion: EmotionPayload) => {
+    const confidence = emotion.confidence ?? emotion.score
+
+    if (typeof confidence === 'number') {
+        return `${Math.round(confidence * 100)}%`
+    }
+
+    if (typeof emotion.valence === 'number') {
+        return `Valence ${emotion.valence.toFixed(2)}`
+    }
+
+    if (typeof emotion.arousal === 'number') {
+        return `Arousal ${emotion.arousal.toFixed(2)}`
+    }
+
+    return null
+}
+
 export function AruaChatScreen() {
+    const { t } = useI18n()
     const inputId = useId()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const messagesRef = useRef<HTMLDivElement>(null)
@@ -20,64 +105,148 @@ export function AruaChatScreen() {
     const [isListening, setIsListening] = useState(false)
     const [isStreaming, setIsStreaming] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+    const [latestEmotion, setLatestEmotion] = useState<EmotionPayload | null>(null)
+    const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
+    const [isClearingHistory, setIsClearingHistory] = useState(false)
+    const token = useUserStore((state) => state.token)
     const getUserInfo = useUserStore((state) => state.getUserInfo)
+    const loadHistoryMessages = useCallback(
+        async (options?: { showError?: boolean; cancelled?: () => boolean }) => {
+            if (!token) {
+                return
+            }
+
+            try {
+                const response = await aura.getCurrentMessages()
+
+                if (options?.cancelled?.()) {
+                    return
+                }
+
+                const historyMessages = (response.data ?? [])
+                    .map(mapHistoryMessage)
+                    .filter((item): item is ChatMessage => Boolean(item))
+
+                setMessages(historyMessages)
+            } catch {
+                if (options?.cancelled?.()) {
+                    return
+                }
+
+                if (options?.showError === false) {
+                    return
+                }
+
+                toast.error(t('chat.historyLoadFailed'), {
+                    description: t('chat.tryAgain'),
+                    position: 'top-center',
+                })
+            }
+        },
+        [t, token],
+    )
+
     useEffect(() => {
-        getUserInfo()
-    }, [getUserInfo])
+        if (!token) {
+            return
+        }
+
+        getUserInfo().catch(() => {
+            toast.error(t('chat.accountSyncFailed'), {
+                description: t('chat.accountSyncFailedDescription'),
+                position: 'top-center',
+            })
+        })
+    }, [getUserInfo, t, token])
+    useEffect(() => {
+        if (!token) {
+            return
+        }
+
+        let cancelled = false
+
+        void loadHistoryMessages({
+            cancelled: () => cancelled,
+        })
+
+        return () => {
+            cancelled = true
+        }
+    }, [loadHistoryMessages, token])
     useEffect(() => {
         messagesRef.current?.scrollTo({
             top: messagesRef.current.scrollHeight,
             behavior: 'smooth',
         })
     }, [messages])
-    const { connect } = UseSse('http://127.0.0.1:8000/api/send/sse/', {
-        onMessage: (data) => {
-            if (data === '[DONE]') {
-                setIsStreaming(false)
-                return
-            }
-
-            let parsed: { content?: string }
-
-            try {
-                parsed = JSON.parse(data) as { content?: string }
-            } catch {
-                toast.error('Message stream failed', {
-                    description: 'Arua returned an invalid stream chunk.',
-                    position: 'top-center',
-                })
-                return
-            }
-
-            const content = parsed.content ?? ''
-            if (!content) {
-                return
-            }
-
-            setMessages((currentMessages) =>
-                currentMessages.map((item, index) => {
-                    const isLastMessage = index === currentMessages.length - 1
-                    const isStreamingAssistant = isLastMessage && item.role === 'assistant'
-
-                    if (!isStreamingAssistant) {
-                        return item
+    const { connect, disconnect } = useMemo(
+        () =>
+            UseSse(buildChatSseUrl(), {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                onMessage: (data) => {
+                    if (data === '[DONE]') {
+                        setIsStreaming(false)
+                        void loadHistoryMessages({ showError: false })
+                        return
                     }
 
-                    return {
-                        ...item,
-                        content: item.content + content,
+                    let parsed: ChatStreamChunk
+
+                    try {
+                        parsed = JSON.parse(data) as ChatStreamChunk
+                    } catch {
+                        toast.error(t('chat.streamFailed'), {
+                            description: t('chat.invalidChunk'),
+                            position: 'top-center',
+                        })
+                        return
                     }
-                }),
-            )
-        },
-        onError: () => {
-            setIsStreaming(false)
-            toast.error('Message stream failed', {
-                description: 'Please try sending your message again.',
-                position: 'top-center',
-            })
-        },
-    })
+
+                    if (parsed.event === 'emotion' && parsed.emotion) {
+                        setLatestEmotion(parsed.emotion)
+                    }
+
+                    const content = parsed.content ?? ''
+                    if (!content) {
+                        return
+                    }
+
+                    setMessages((currentMessages) =>
+                        currentMessages.map((item, index) => {
+                            const isLastMessage = index === currentMessages.length - 1
+                            const isStreamingAssistant = isLastMessage && item.role === 'assistant'
+
+                            if (!isStreamingAssistant) {
+                                return item
+                            }
+
+                            return {
+                                ...item,
+                                content: item.content + content,
+                            }
+                        }),
+                    )
+                },
+                onError: () => {
+                    setIsStreaming(false)
+                    toast.error(t('chat.streamFailed'), {
+                        description: t('chat.tryAgain'),
+                        position: 'top-center',
+                    })
+                },
+            }),
+        [loadHistoryMessages, t, token],
+    )
+    useEffect(() => {
+        return () => {
+            disconnect()
+        }
+    }, [disconnect])
+    useEffect(() => {
+        if (!isStreaming) {
+            disconnect()
+        }
+    }, [disconnect, isStreaming])
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
         setSelectedFiles(Array.from(event.target.files ?? []))
     }
@@ -91,7 +260,7 @@ export function AruaChatScreen() {
         const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 
         if (!SpeechRecognition) {
-            toast.error('Voice input unavailable', {
+            toast.error(t('chat.voiceUnavailable'), {
                 description: 'This browser does not support speech recognition.',
                 position: 'top-center',
             })
@@ -115,8 +284,8 @@ export function AruaChatScreen() {
         }
 
         recognition.onerror = () => {
-            toast.error('Voice input failed', {
-                description: 'Please try recording again.',
+            toast.error(t('chat.voiceFailed'), {
+                description: t('chat.voiceFailedDescription'),
                 position: 'top-center',
             })
             setIsListening(false)
@@ -141,6 +310,7 @@ export function AruaChatScreen() {
         const now = Date.now()
         const assistantMessageId = `assistant-${now}`
         setIsStreaming(true)
+        setLatestEmotion(null)
 
         setMessages((currentMessages) => [
             ...currentMessages,
@@ -166,10 +336,63 @@ export function AruaChatScreen() {
         connect({
             body: JSON.stringify({
                 message: trimmedMessage,
-                userId: '1',
             }),
         })
     }
+
+    const handleDeleteMessage = async (messageId: string) => {
+        if (isStreaming || deletingMessageId) {
+            return
+        }
+
+        setDeletingMessageId(messageId)
+
+        try {
+            if (!messageId.startsWith('local-') && !messageId.startsWith('assistant-')) {
+                await aura.deleteCurrentMessage(messageId)
+            }
+
+            setMessages((currentMessages) =>
+                currentMessages.filter((chatMessage) => chatMessage.id !== messageId),
+            )
+            toast.success(t('chat.messageDeleted'), {
+                position: 'top-center',
+            })
+        } catch {
+            toast.error(t('chat.deleteFailed'), {
+                description: t('chat.tryAgain'),
+                position: 'top-center',
+            })
+        } finally {
+            setDeletingMessageId(null)
+        }
+    }
+
+    const handleClearHistory = async () => {
+        if (isStreaming || isClearingHistory || messages.length === 0) {
+            return
+        }
+
+        setIsClearingHistory(true)
+
+        try {
+            await aura.clearCurrentMessages()
+            setMessages([])
+            setLatestEmotion(null)
+            toast.success(t('chat.historyCleared'), {
+                position: 'top-center',
+            })
+        } catch {
+            toast.error(t('chat.clearHistoryFailed'), {
+                description: t('chat.tryAgain'),
+                position: 'top-center',
+            })
+        } finally {
+            setIsClearingHistory(false)
+        }
+    }
+
+    const emotionDetail = latestEmotion ? getEmotionDetail(latestEmotion) : null
 
     return (
         <AruaAppShell
@@ -192,7 +415,7 @@ export function AruaChatScreen() {
                                 <div
                                     key={chatMessage.id}
                                     className={cn(
-                                        'flex w-full',
+                                        'group/message flex w-full',
                                         isUser ? 'justify-end' : 'justify-start',
                                     )}
                                 >
@@ -238,6 +461,21 @@ export function AruaChatScreen() {
                                             </div>
                                         ) : null}
                                     </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        disabled={isStreaming || deletingMessageId === chatMessage.id}
+                                        className={cn(
+                                            'mx-1 self-center rounded-full text-[var(--aura-text-muted)] opacity-0 transition-opacity hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)] group-hover/message:opacity-100 focus-visible:opacity-100',
+                                            isUser ? 'order-first' : 'order-last',
+                                        )}
+                                        aria-label={t('chat.deleteMessage')}
+                                        title={t('chat.deleteMessage')}
+                                        onClick={() => handleDeleteMessage(chatMessage.id)}
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
                                 </div>
                             )
                         })}
@@ -264,12 +502,12 @@ export function AruaChatScreen() {
                             rows={3}
                             value={message}
                             onChange={(event) => setMessage(event.target.value)}
-                            placeholder="Message Arua..."
+                            placeholder={t('chat.placeholder')}
                             className="aura-scrollbar min-h-24 resize-none border-0 bg-transparent px-1 py-1 text-sm leading-7 text-[var(--aura-text)] shadow-none ring-0 focus-visible:border-0 focus-visible:ring-0"
                         />
 
-                        <div className="mt-3 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                                 <input
                                     id={inputId}
                                     ref={fileInputRef}
@@ -284,7 +522,7 @@ export function AruaChatScreen() {
                                     variant="ghost"
                                     size="icon"
                                     className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                                    aria-label="Upload image"
+                                    aria-label={t('chat.uploadImage')}
                                     onClick={() => fileInputRef.current?.click()}
                                 >
                                     <Paperclip className="h-4 w-4" />
@@ -299,7 +537,7 @@ export function AruaChatScreen() {
                                             'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
                                     )}
                                     aria-label={
-                                        isListening ? 'Stop voice input' : 'Start voice input'
+                                        isListening ? t('chat.stopVoice') : t('chat.startVoice')
                                     }
                                     onClick={handleVoiceInput}
                                 >
@@ -309,6 +547,37 @@ export function AruaChatScreen() {
                                         <Mic className="h-4 w-4" />
                                     )}
                                 </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={isStreaming || isClearingHistory || messages.length === 0}
+                                    className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                                    aria-label={t('chat.clearHistory')}
+                                    title={t('chat.clearHistory')}
+                                    onClick={handleClearHistory}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                                {latestEmotion ? (
+                                    <div
+                                        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)] sm:max-w-[18rem]"
+                                        title={getEmotionLabel(latestEmotion)}
+                                    >
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--aura-primary)]" />
+                                        <span className="shrink-0 text-[var(--aura-text-soft)]">
+                                            {t('chat.emotion')}
+                                        </span>
+                                        <span className="min-w-0 truncate">
+                                            {getEmotionLabel(latestEmotion)}
+                                        </span>
+                                        {emotionDetail ? (
+                                            <span className="shrink-0 text-[var(--aura-text-muted)]/75">
+                                                {emotionDetail}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                             </div>
 
                             <Button
@@ -318,7 +587,7 @@ export function AruaChatScreen() {
                                     isStreaming || (!message.trim() && selectedFiles.length === 0)
                                 }
                                 className="rounded-full bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733] shadow-[0_18px_32px_-22px_var(--aura-glow)]"
-                                aria-label="Send message"
+                                aria-label={t('chat.send')}
                                 onClick={handleSubmit}
                             >
                                 <SendHorizontal className="h-4 w-4 translate-x-0.5" />

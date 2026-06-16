@@ -1,24 +1,48 @@
 from typing import Annotated, Any, Generator, TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph, add_messages
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer
 
 from app.core.config import llm
+from app.core.emotion import derive_emotion_state, format_emotion_context
+from .protocol import (
+    content_event,
+    derive_memory_candidate,
+    derive_relationship_delta,
+    emotion_event,
+    memory_candidate_event,
+    relationship_delta_event,
+)
 from .prompt import SYSTEM_PROMPT
+from .tools.datetime_tools import get_current_datetime
+from .tools.emotional_support import get_emotional_support_advice
 from .tools.memory import save_memory_tool
+from .tools.proactive import draft_proactive_message, plan_daily_greetings
+from .tools.relationship import get_relationship_status
 from .tools.search_memory import search_memory_tool
 from .tools.weather import get_weather
 
 
 class AuraState(TypedDict):
     messages: Annotated[list, add_messages]
+    emotion: dict
 
 
-tools = [get_weather, save_memory_tool, search_memory_tool]
+tools = [
+    get_weather,
+    save_memory_tool,
+    search_memory_tool,
+    get_current_datetime,
+    get_relationship_status,
+    get_emotional_support_advice,
+    plan_daily_greetings,
+    draft_proactive_message,
+]
 
 llm_with_tools = llm.bind_tools(tools)
 
@@ -26,7 +50,8 @@ tool_node = ToolNode(tools)
 
 
 def call_model(state: AuraState) -> AuraState:
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    system_prompt = SYSTEM_PROMPT + format_emotion_context(state.get("emotion"))
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 
@@ -51,9 +76,16 @@ def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
 aura: CompiledStateGraph | None = None
 
 
-def aura_agent(human_prompt: str, user_id: str) -> Generator[Any, None, None]:
+def aura_agent(
+    human_prompt: str,
+    user_id: str,
+    emotion_state: dict | None = None,
+) -> Generator[Any, None, None]:
     if aura is None:
         raise RuntimeError("Aura graph has not been initialized.")
+
+    if emotion_state is None:
+        emotion_state = derive_emotion_state(human_prompt).to_dict()
 
     config: RunnableConfig = {
         "configurable": {
@@ -61,11 +93,18 @@ def aura_agent(human_prompt: str, user_id: str) -> Generator[Any, None, None]:
             "user_id": user_id,
         }
     }
-    inputs = {"messages": [HumanMessage(content=human_prompt)]}
+    inputs = {
+        "messages": [HumanMessage(content=human_prompt)],
+        "emotion": emotion_state,
+    }
+
+    yield emotion_event(emotion_state)
+    yield memory_candidate_event(derive_memory_candidate(human_prompt, emotion_state))
+    yield relationship_delta_event(derive_relationship_delta(human_prompt, emotion_state))
 
     for chunk, metadata in aura.stream(inputs, config, stream_mode="messages"):
         if chunk.content and metadata.get("langgraph_node") == "chat":
-            yield chunk.content
+            yield content_event(str(chunk.content))
 
 
 def get_history(user_id: str) -> list:
@@ -87,12 +126,71 @@ def get_history(user_id: str) -> list:
     for msg in messages:
         if msg.type == "human":
             history.append({
+                "id": getattr(msg, "id", None) or f"human-{len(history)}",
                 "role": "user",
                 "content": msg.content
             })
         elif msg.type == "ai" and msg.content:
             history.append({
+                "id": getattr(msg, "id", None) or f"ai-{len(history)}",
                 "role": "aura",
                 "content": msg.content
             })
     return history
+
+
+def delete_history_message(user_id: str, message_id: str) -> bool:
+    if aura is None:
+        raise RuntimeError("Aura graph has not been initialized.")
+
+    normalized_message_id = message_id.strip()
+    if not normalized_message_id:
+        return False
+
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": user_id,
+        }
+    }
+    state = aura.get_state(config)
+    messages = state.values.get("messages", []) if state and state.values else []
+
+    if not any(getattr(msg, "id", None) == normalized_message_id for msg in messages):
+        return False
+
+    aura.update_state(
+        config,
+        {
+            "messages": [
+                RemoveMessage(id=normalized_message_id, content=""),
+            ]
+        },
+    )
+    return True
+
+
+def clear_history(user_id: str) -> int:
+    if aura is None:
+        raise RuntimeError("Aura graph has not been initialized.")
+
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": user_id,
+        }
+    }
+    state = aura.get_state(config)
+    messages = state.values.get("messages", []) if state and state.values else []
+    removable_count = len(messages)
+
+    if removable_count == 0:
+        return 0
+
+    aura.update_state(
+        config,
+        {
+            "messages": [
+                RemoveMessage(id=REMOVE_ALL_MESSAGES, content=""),
+            ]
+        },
+    )
+    return removable_count

@@ -39,10 +39,10 @@ export class UserController {
 
     @Get('logout/:userId')
     logout(
-        @Param('userId') userId: string,
+        @Req() request: RequestWithUser,
         @Headers('authorization') authorization?: string,
     ): Promise<ApiResponse> {
-        return this.userService.logout(userId, authorization)
+        return this.userService.logout(request.user.userId, authorization)
     }
 
     @Get('userInfo')

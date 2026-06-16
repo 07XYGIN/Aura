@@ -5,6 +5,11 @@ import { Separator as SeparatorPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+function withoutReactKey<T extends object>(props: T): Omit<T, "key"> {
+  const { key: _key, ...rest } = props as T & { key?: React.Key | null }
+  return rest
+}
+
 function Separator({
   className,
   orientation = "horizontal",
@@ -20,7 +25,7 @@ function Separator({
         "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
         className
       )}
-      {...props}
+      {...withoutReactKey(props)}
     />
   )
 }

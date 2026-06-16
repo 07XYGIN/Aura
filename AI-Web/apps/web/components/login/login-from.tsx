@@ -14,12 +14,14 @@ import type { AuthFormValues, AuthMode, SexOption } from '@/types/auth'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
 import { useRouter } from "next/navigation";
+import { useI18n } from '@/lib/i18n'
 const sexOptions: SexOption[] = [
   { label: 'Male', value: '1' },
   { label: 'Female', value: '2' },
 ]
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
+  const { t } = useI18n()
   const [mode, setMode] = useState<AuthMode>('login')
   const [submitting, setSubmitting] = useState(false)
   const [formData, setFormData] = useState<AuthFormValues>({
@@ -31,6 +33,13 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   })
   const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
+  const handleForgotPassword = () => {
+    toast.info(t('auth.forgotPasswordPending'), {
+      description: t('auth.forgotPasswordDescription'),
+      position: 'top-center',
+    })
+  }
+
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
 
@@ -68,14 +77,14 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     if (mode === 'register') {
         try {
             const {message} = await user.register<unknown>('/api/user/register', payload)
-            toast.success('Account created', {
+            toast.success(t('auth.accountCreated'), {
                 description: message,
                 position: 'top-center',
             })
 
         } catch {
-            toast.error('Registration failed', {
-                description: 'Please verify your registration information and try again.',
+            toast.error(t('auth.registrationFailed'), {
+                description: t('auth.verifyRegister'),
                 position: 'top-center',
             })
         } finally {
@@ -84,19 +93,26 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     } else {
         try {
             const response = await user.login<unknown>('/api/user/login', payload)
+            if (!response.token) {
+                toast.error(t('auth.loginFailed'), {
+                    description: response.message || t('auth.verifyLogin'),
+                    position: 'top-center',
+                })
+                return
+            }
 
-            toast.success('Success', {
+            toast.success(t('auth.success'), {
                 description: response.message,
                 position: 'top-center',
             })
             setToken(response.token)
             router.replace('/')
         } catch {
-            toast.error(mode === 'login' ? 'Login failed' : 'Registration failed', {
+            toast.error(mode === 'login' ? t('auth.loginFailed') : t('auth.registrationFailed'), {
                 description:
                     mode === 'login'
-                        ? 'Please verify your account information and try again.'
-                        : 'Please verify your registration information and try again.',
+                        ? t('auth.verifyLogin')
+                        : t('auth.verifyRegister'),
                 position: 'top-center',
             })
         } finally {
@@ -121,7 +137,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
               )}
             >
-              Login
+              {t('auth.login')}
             </button>
             <button
               type="button"
@@ -133,7 +149,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
               )}
             >
-              Register
+              {t('auth.register')}
             </button>
           </div>
 
@@ -143,7 +159,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               <Input
                 type="text"
                 name="username"
-                placeholder={mode === 'login' ? 'Enter your username' : 'Choose a username'}
+                placeholder={mode === 'login' ? t('auth.usernameLogin') : t('auth.usernameRegister')}
                 value={formData.username ?? ''}
                 onChange={handleChange}
               />
@@ -156,7 +172,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   <Input
                     type="email"
                     name="email"
-                    placeholder="you@example.com"
+                    placeholder={t('auth.email')}
                     value={formData.email ?? ''}
                     onChange={handleChange}
                   />
@@ -168,7 +184,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                     type="number"
                     min="0"
                     name="age"
-                    placeholder="Enter your age"
+                    placeholder={t('auth.age')}
                     value={formData.age ?? ''}
                     onChange={handleChange}
                   />
@@ -181,7 +197,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               <Input
                 type="password"
                 name="password"
-                placeholder={mode === 'login' ? 'Enter your password' : 'Create a password'}
+                placeholder={mode === 'login' ? t('auth.passwordLogin') : t('auth.passwordRegister')}
                 value={formData.password ?? ''}
                 onChange={handleChange}
               />
@@ -206,7 +222,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                           'border-[var(--aura-border-strong)] bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
                       )}
                     >
-                      <span>{option.label}</span>
+                      <span>{t(option.label === 'Male' ? 'auth.male' : 'auth.female')}</span>
                       <RadioGroupItem
                         id={`sex-${option.value}`}
                         value={option.value}
@@ -228,13 +244,14 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                     type="checkbox"
                     className="h-4 w-4 rounded border-[var(--aura-border)] bg-[var(--aura-surface-strong)] text-[var(--aura-primary)]"
                   />
-                  <span>Remember me</span>
+                  <span>{t('auth.rememberMe')}</span>
                 </label>
                 <button
                   type="button"
+                  onClick={handleForgotPassword}
                   className="text-left text-[var(--aura-primary)] transition-colors hover:text-[var(--aura-secondary)]"
                 >
-                  Forgot password?
+                  {t('auth.forgotPassword')}
                 </button>
               </div>
             ) : null}
@@ -252,17 +269,17 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               )}
             >
               {submitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : null}
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
+              {mode === 'login' ? t('auth.signIn') : t('auth.createAccount')}
             </Button>
           </form>
         </CardContent>
       </Card>
 
       <p className="px-6 text-center text-base leading-8 text-[var(--aura-text-muted)]">
-        Protected by secure encryption.
+        {t('auth.protected')}
         <br />
-        By continuing, you agree to our{' '}
-        <span className="text-[var(--aura-primary)]">Terms of Service</span>.
+        {t('auth.termsPrefix')}{' '}
+        <span className="text-[var(--aura-primary)]">{t('auth.terms')}</span>.
       </p>
     </div>
   )

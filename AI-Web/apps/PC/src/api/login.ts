@@ -12,6 +12,14 @@ export interface loginForm {
   code?: string | undefined;
 }
 
+export interface LoginResponse {
+  code?: number;
+  data?: string;
+  token?: string;
+  message?: string;
+  msg?: string;
+}
+
 export const register = (register: registerForm) => {
   return request({
     url: 'api/register',
@@ -20,7 +28,7 @@ export const register = (register: registerForm) => {
   });
 };
 
-export const login = (login: loginForm) => {
+export const login = (login: loginForm): Promise<LoginResponse> => {
   return request({
     url: 'api/login',
     method: 'POST',

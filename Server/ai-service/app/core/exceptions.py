@@ -8,6 +8,6 @@ async def validation_exception_handler(_request: Request, _exc: RequestValidatio
         status_code=422,
         content={
             "code": 422,
-            "message": "不合法的参数",
-        }
+            "message": "参数不合法",
+        },
     )

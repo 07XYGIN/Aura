@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common'
 @Injectable()
 export class AppConfigService {
     get port(): number {
-        return Number(this.get('PORT', '3000'))
+        return Number(this.get('PORT', '3001'))
     }
 
     get jwtSecretKey(): string {

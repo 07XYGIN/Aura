@@ -1,7 +1,7 @@
 <template>
-  <div class="register-container flex justify-center items-center h-screen bg-gradient-to-br from-blue-400 to-purple-600">
-    <div class="register-card bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">注册</h2>
+  <div class="register-container flex h-screen items-center justify-center bg-gradient-to-br from-blue-400 to-purple-600">
+    <div class="register-card w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
+      <h2 class="mb-6 text-center text-2xl font-bold text-gray-800">注册</h2>
       <el-form ref="formRef" :model="form" label-width="auto" @submit.prevent="onSubmit">
         <el-form-item label="用户名" prop="username" :rules="[{ required: true, message: '请输入用户名' }]">
           <el-input v-model="form.username" placeholder="请输入用户名" />
@@ -66,6 +66,6 @@ const onSubmit = async () => {
 }
 
 .register-card {
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 25px rgb(0 0 0 / 10%);
 }
 </style>

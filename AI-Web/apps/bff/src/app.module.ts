@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common'
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core'
+import { AuraModule } from './aura/aura.module'
 import { AuthGuard } from './auth/auth.guard'
 import { AuthModule } from './auth/auth.module'
+import { ChatModule } from './chat/chat.module'
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { AppConfigModule } from './config/config.module'
 import { RedisModule } from './redis/redis.module'
@@ -10,7 +13,7 @@ import { UserController } from './user/user.controller'
 import { UserService } from './user/user.service'
 
 @Module({
-    imports: [AppConfigModule, RedisModule, AuthModule],
+    imports: [AppConfigModule, RedisModule, AuthModule, ChatModule, AuraModule],
     controllers: [UserController],
     providers: [
         UserService,
@@ -21,6 +24,10 @@ import { UserService } from './user/user.service'
         {
             provide: APP_INTERCEPTOR,
             useClass: ResponseInterceptor,
+        },
+        {
+            provide: APP_INTERCEPTOR,
+            useClass: RequestLoggingInterceptor,
         },
         {
             provide: APP_FILTER,

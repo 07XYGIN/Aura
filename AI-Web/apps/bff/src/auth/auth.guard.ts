@@ -34,9 +34,9 @@ export class AuthGuard implements CanActivate {
 
         const token = this.extractBearerToken(request)
         const userId = this.resolveUserId(token)
-        const redisToken = await this.redisUtil.get(`token:${userId}`)
+        const revokedToken = await this.redisUtil.get(`revoked_token:${token}`)
 
-        if (!redisToken || redisToken !== token) {
+        if (revokedToken) {
             throw new UnauthorizedException('token已失效，请重新登录')
         }
 

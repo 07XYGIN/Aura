@@ -31,8 +31,14 @@ public class UserController {
     }
 
     @GetMapping("logout/{userId}")
-    public Response<String> logout(@PathVariable String userId) {
-        loginService.logout(userId);
+    public Response<String> logout(
+            @PathVariable String userId,
+            @RequestHeader("Authorization") String authHeader) {
+        String currentUserId = jwtUtil.getUsernameFromToken(authHeader.replace("Bearer ", ""));
+        if (!currentUserId.equals(userId)) {
+            return Response.error(403, "无权操作该账号");
+        }
+        loginService.logout(authHeader.replace("Bearer ", ""));
         return Response.ok();
     }
 

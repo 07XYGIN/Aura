@@ -1,7 +1,7 @@
 <template>
-  <div class="login-container flex justify-center items-center h-screen bg-gradient-to-br from-blue-400 to-purple-600">
-    <div class="login-card bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">登录</h2>
+  <div class="login-container flex h-screen items-center justify-center bg-gradient-to-br from-blue-400 to-purple-600">
+    <div class="login-card w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
+      <h2 class="mb-6 text-center text-2xl font-bold text-gray-800">登录</h2>
       <el-form ref="formRef" :model="form" label-width="auto" @submit.prevent="onSubmit">
         <el-form-item label="用户名" prop="username" :rules="[{ required: true, message: '请输入用户名' }]">
           <el-input v-model="form.username" placeholder="请输入用户名" />
@@ -16,9 +16,9 @@
         </el-form-item>
       </el-form>
 
-      <p class="text-center mt-4 text-gray-600">
+      <p class="mt-4 text-center text-gray-600">
         没有账号？
-        <span class="text-blue-500 cursor-pointer hover:underline" @click="goToRegister">去注册</span>
+        <span class="cursor-pointer text-blue-500 hover:underline" @click="goToRegister">去注册</span>
       </p>
     </div>
   </div>
@@ -27,10 +27,11 @@
 <script lang="ts" setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { FormInstance } from 'element-plus'
+import { ElMessage, type FormInstance } from 'element-plus'
 import { login } from '@/api/user'
-import {useUserStore} from "@/store/modules/user.ts";
-import type {LoginForm} from '@ai-web/types'
+import { useUserStore } from '@/store/modules/user'
+import type { LoginForm } from '@ai-web/types'
+
 const user = useUserStore()
 
 const form = reactive<LoginForm>({
@@ -43,12 +44,17 @@ const form = reactive<LoginForm>({
 
 const formRef = ref<FormInstance>()
 const router = useRouter()
-const loginSubmit = async (data:LoginForm)=>{
-  const {token} = await login(data)
-  if(!token) return
+
+const loginSubmit = async (data: LoginForm) => {
+  const { token, message } = await login(data)
+  if (!token) {
+    ElMessage.error(message || '用户名或密码错误')
+    return
+  }
   user.setToken(token)
   await router.push('/')
 }
+
 const onSubmit = () => {
   if (!formRef.value) return
 
@@ -70,6 +76,6 @@ const goToRegister = () => {
 }
 
 .login-card {
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 25px rgb(0 0 0 / 10%);
 }
 </style>

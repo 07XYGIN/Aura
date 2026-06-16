@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
-import { logout } from "@/api/user.ts";
+import { logout } from '@/api/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,7 +30,7 @@ const handleLogout = async () => {
 
 <template>
   <el-container class="layout-shell">
-    <el-aside width="220px" class="layout-aside">
+    <el-aside width="240px" class="layout-aside">
       <div class="brand text-center">Aura Admin</div>
       <el-menu
         :default-active="activeAside"
@@ -48,6 +48,34 @@ const handleLogout = async () => {
         <el-menu-item index="/memory">
           <el-icon><Memo /></el-icon>
           <span>记忆管理</span>
+        </el-menu-item>
+
+        <el-divider class="menu-divider" />
+        <div class="menu-group-title">Aura 管理</div>
+
+        <el-menu-item index="/aura/profiles">
+          <el-icon><UserFilled /></el-icon>
+          <span>用户画像</span>
+        </el-menu-item>
+        <el-menu-item index="/aura/personas">
+          <el-icon><Setting /></el-icon>
+          <span>人设配置</span>
+        </el-menu-item>
+        <el-menu-item index="/aura/relationships">
+          <el-icon><Connection /></el-icon>
+          <span>关系状态</span>
+        </el-menu-item>
+        <el-menu-item index="/aura/messages">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>会话消息</span>
+        </el-menu-item>
+        <el-menu-item index="/aura/emotions">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>情绪快照</span>
+        </el-menu-item>
+        <el-menu-item index="/aura/memories">
+          <el-icon><Collection /></el-icon>
+          <span>长期记忆列表</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -98,6 +126,18 @@ const handleLogout = async () => {
 .aside-menu {
   border-right: none;
   flex: 1;
+  overflow-y: auto;
+}
+
+.menu-divider {
+  margin: 10px 16px;
+}
+
+.menu-group-title {
+  padding: 8px 20px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .layout-header {

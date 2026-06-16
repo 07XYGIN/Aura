@@ -1,9 +1,11 @@
-import { ViewTransition } from 'react'
+'use client'
+
 import { CircleUserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { aruaNavItems, sharedUserAccount } from '@/components/arua/data'
 import { RouteTransitionLink } from '@/components/arua/route-transition-link'
 import type { AruaShellProps } from '@/types/arua'
+import { useI18n } from '@/lib/i18n'
 
 export function AruaAppShell({
   active,
@@ -14,6 +16,7 @@ export function AruaAppShell({
   hideHeader = false,
   showDefaultAction = true,
 }: AruaShellProps) {
+  const { t } = useI18n()
   const activeIndex = aruaNavItems.findIndex((item) => item.key === active)
 
   return (
@@ -32,21 +35,21 @@ export function AruaAppShell({
           <div className="flex h-full flex-col">
             <div className="aura-panel rounded-[2rem] px-5 py-6 shadow-[0_24px_64px_-48px_var(--aura-glow)]">
               <p className="text-xs tracking-[0.36em] text-[var(--aura-text-soft)] uppercase">
-                Companion console
+                {t('app.companionConsole')}
               </p>
               <div className="mt-3 space-y-1">
                 <h1 className="text-3xl font-bold tracking-tight text-[var(--aura-primary)]">
                   Arua
                 </h1>
                 <p className="text-sm leading-7 text-[var(--aura-text-muted)]">
-                  A calm AI workspace for conversation, memory, and personal tuning.
+                  {t('app.description')}
                 </p>
               </div>
             </div>
 
             <div className="mt-6 px-1">
               <p className="text-xs tracking-[0.32em] text-[var(--aura-text-soft)] uppercase">
-                Navigate
+                {t('app.navigate')}
               </p>
             </div>
 
@@ -77,7 +80,9 @@ export function AruaAppShell({
                           : 'text-[var(--aura-text-muted)] group-hover:text-[var(--aura-primary)]',
                       )}
                     />
-                    <span className="truncate font-medium">{item.label}</span>
+                    <span className="truncate font-medium">
+                      {t(item.label as Parameters<typeof t>[0])}
+                    </span>
                   </RouteTransitionLink>
                 )
               })}
@@ -90,15 +95,15 @@ export function AruaAppShell({
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[var(--aura-text)]">
-                    {sharedUserAccount.name}
+                    {t(sharedUserAccount.name as Parameters<typeof t>[0])}
                   </p>
                   <p className="truncate text-[11px] tracking-[0.24em] text-[var(--aura-text-soft)] uppercase">
-                    {sharedUserAccount.status}
+                    {t(sharedUserAccount.status as Parameters<typeof t>[0])}
                   </p>
                 </div>
               </div>
               <p className="mt-4 text-xs leading-6 text-[var(--aura-text-muted)]">
-                {sharedUserAccount.description}
+                {t(sharedUserAccount.description as Parameters<typeof t>[0])}
               </p>
             </div>
           </div>
@@ -126,28 +131,14 @@ export function AruaAppShell({
             </header>
           ) : null}
 
-          <ViewTransition
-            enter={{
-              'nav-forward': 'nav-forward',
-              'nav-back': 'nav-back',
-              default: 'page-fade',
-            }}
-            exit={{
-              'nav-forward': 'nav-forward',
-              'nav-back': 'nav-back',
-              default: 'page-fade',
-            }}
-            default="page-fade"
+          <main
+            className={cn(
+              'aura-page min-h-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10',
+              contentClassName,
+            )}
           >
-            <main
-              className={cn(
-                'aura-page min-h-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10',
-                contentClassName,
-              )}
-            >
-              {children}
-            </main>
-          </ViewTransition>
+            {children}
+          </main>
         </div>
       </div>
     </div>

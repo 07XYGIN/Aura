@@ -107,3 +107,54 @@ def list_memories_by_user(user_id: str, page: int = 1, page_size: int = 10) -> d
         "pageSize": page_size,
         "hasMore": offset + len(items) < total,
     }
+
+
+def delete_memory_by_id(user_id: str, memory_id: str) -> bool:
+    normalized_memory_id = memory_id.strip()
+    if not normalized_memory_id:
+        return False
+
+    with psycopg.connect(SYNC_DATABASE_URL) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM langchain_pg_embedding e
+                USING langchain_pg_collection c
+                WHERE e.collection_id = c.uuid
+                  AND c.name = %(collection_name)s
+                  AND e.cmetadata ->> 'user_id' = %(user_id)s
+                  AND e.id = %(memory_id)s
+                RETURNING e.id
+                """,
+                {
+                    "collection_name": MEMORY_COLLECTION_NAME,
+                    "user_id": user_id,
+                    "memory_id": normalized_memory_id,
+                },
+            )
+            deleted = cursor.fetchone() is not None
+        conn.commit()
+
+    return deleted
+
+
+def clear_memories_by_user(user_id: str) -> int:
+    with psycopg.connect(SYNC_DATABASE_URL) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM langchain_pg_embedding e
+                USING langchain_pg_collection c
+                WHERE e.collection_id = c.uuid
+                  AND c.name = %(collection_name)s
+                  AND e.cmetadata ->> 'user_id' = %(user_id)s
+                """,
+                {
+                    "collection_name": MEMORY_COLLECTION_NAME,
+                    "user_id": user_id,
+                },
+            )
+            deleted_count = cursor.rowcount
+        conn.commit()
+
+    return deleted_count

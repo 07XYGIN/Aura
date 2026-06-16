@@ -7,6 +7,7 @@ import com.aura.core.mapper.UserMapper;
 import com.aura.core.util.Crypto;
 import com.aura.core.util.JWTUtil;
 import com.aura.core.util.RedisUtil;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
@@ -17,12 +18,19 @@ public class LoginService {
     private final Crypto cipher;
     private final RedisUtil redisUtil;
     private final JWTUtil jwtUtil;
+    private final long jwtExpireTime;
 
-    public LoginService(UserMapper userMapper, Crypto cipher, RedisUtil redisUtil, JWTUtil jwtUtil) {
+    public LoginService(
+            UserMapper userMapper,
+            Crypto cipher,
+            RedisUtil redisUtil,
+            JWTUtil jwtUtil,
+            @Value("${jwt.expire-time}") long jwtExpireTime) {
         this.userMapper = userMapper;
         this.cipher = cipher;
         this.redisUtil = redisUtil;
         this.jwtUtil = jwtUtil;
+        this.jwtExpireTime = jwtExpireTime;
     }
 
     public void register(UserDto user) {
@@ -39,17 +47,16 @@ public class LoginService {
             return Response.error("密码错误");
         }
         String token = jwtUtil.generateToken(userinfo.getId());
-        redisUtil.set(
-                "token:" + userinfo.getId(),
-                token,
-                24,
-                TimeUnit.HOURS
-        );
         return Response.loginSuccess(token);
     }
 
-    public void logout(String userId) {
-        redisUtil.delete("token:" + userId);
+    public void logout(String token) {
+        redisUtil.set(
+                "revoked_token:" + token,
+                "1",
+                jwtExpireTime,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     public UserDto getUserInfo(String userId) {

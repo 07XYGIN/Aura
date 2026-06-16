@@ -7,8 +7,8 @@ from app.core.agent.tools.term_memory import search_memory
 @tool
 def search_memory_tool(query: str, config: RunnableConfig) -> str:
     """
-    根据关键词检索用户的历史记忆。
-    当用户问起之前说过的事情时使用。
+    根据关键词检索当前用户的历史长期记忆。
+    当用户询问过去说过的事、个人偏好、重要日期或关系经历时使用。
     """
     user_id = config["configurable"].get("user_id")
     if not user_id:

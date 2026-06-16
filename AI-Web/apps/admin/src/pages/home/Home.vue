@@ -1,24 +1,23 @@
 <template>
   <div class="home-page">
-    <el-row :gutter="20">
-
-    </el-row>
-
     <el-card class="content-card" shadow="never">
       <template #header>首页内容区</template>
-      <el-empty description="无数据" />
+      <el-empty description="暂无数据" />
     </el-card>
   </div>
 </template>
+
 <script setup lang="ts">
-import {useUserStore} from "@/store/modules/user.ts";
-import {onMounted} from "vue";
-const userInfo = useUserStore();
+import { onMounted } from 'vue'
+import { useUserStore } from '@/store/modules/user'
+
+const userInfo = useUserStore()
 
 onMounted(() => {
-  userInfo.getUser();
-});
+  userInfo.getUser()
+})
 </script>
+
 <style scoped>
 .home-page {
   display: flex;

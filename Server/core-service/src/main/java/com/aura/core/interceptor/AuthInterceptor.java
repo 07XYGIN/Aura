@@ -43,11 +43,9 @@ public class AuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        String username = jwtUtil.getUsernameFromToken(token);
+        String revokedToken = redisUtil.get("revoked_token:" + token);
 
-        String redisToken = redisUtil.get("token:" + username);
-
-        if (redisToken == null || !redisToken.equals(token)) {
+        if (revokedToken != null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"code\":401,\"message\":\"token已失效，请重新登录\"}");

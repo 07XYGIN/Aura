@@ -1,3 +1,5 @@
+'use client'
+
 import { Globe, ShieldCheck, Sparkles, UserRound } from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { AppearanceToggle } from '@/components/arua/appearance-toggle'
@@ -6,14 +8,34 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/lib/i18n'
+import { useUserStore } from '@/store/user'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 export function AruaSettingsScreen() {
+  const { locale, setLocale, t } = useI18n()
+  const logout = useUserStore((state) => state.logout)
+  const router = useRouter()
+
+  const handleSignOut = () => {
+    logout()
+    router.replace('/login')
+  }
+
+  const handleNotReady = () => {
+    toast.info(t('settings.notReady'), {
+      description: t('settings.notReadyDescription'),
+      position: 'top-center',
+    })
+  }
+
   return (
     <AruaAppShell
       active="settings"
       title={
         <h2 className="text-2xl font-semibold tracking-tight text-[var(--aura-primary)]">
-          Settings
+          {t('settings.title')}
         </h2>
       }
     >
@@ -25,16 +47,16 @@ export function AruaSettingsScreen() {
                 {sharedUserAccount.initials}
               </div>
               <p className="mt-5 text-[11px] tracking-[0.32em] text-[var(--aura-text-soft)] uppercase">
-                Account overview
+                {t('settings.accountOverview')}
               </p>
               <CardTitle className="mt-3 text-2xl font-semibold text-[var(--aura-text)]">
-                {sharedUserAccount.name}
+                {t(sharedUserAccount.name as Parameters<typeof t>[0])}
               </CardTitle>
               <p className="mt-2 text-sm font-medium text-[var(--aura-primary)]">
-                {sharedUserAccount.status}
+                {t(sharedUserAccount.status as Parameters<typeof t>[0])}
               </p>
               <p className="mt-3 text-sm leading-7 text-[var(--aura-text-muted)]">
-                {sharedUserAccount.description}
+                {t(sharedUserAccount.description as Parameters<typeof t>[0])}
               </p>
             </CardContent>
           </Card>
@@ -45,7 +67,7 @@ export function AruaSettingsScreen() {
             <div className="flex items-center gap-4">
               <UserRound className="h-6 w-6 text-[var(--aura-primary)]" />
               <h3 className="text-3xl font-semibold tracking-tight text-[var(--aura-text)]">
-                User profile
+                {t('settings.userProfile')}
               </h3>
             </div>
             <Card className="rounded-[1.75rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0 shadow-[0_20px_60px_-42px_var(--aura-glow)]">
@@ -53,35 +75,34 @@ export function AruaSettingsScreen() {
                 <div className="grid gap-6">
                   <div className="space-y-2">
                     <Label className="text-[11px] tracking-[0.24em] text-[var(--aura-text-muted)] uppercase">
-                      Display name
+                      {t('settings.displayName')}
                     </Label>
                     <Input
-                      placeholder="Will load from backend profile"
+                      placeholder={t('settings.displayNamePlaceholder')}
                       className="h-11 rounded-2xl border-[var(--aura-border)] bg-[var(--aura-surface-strong)] px-4 text-sm text-[var(--aura-text)]"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[11px] tracking-[0.24em] text-[var(--aura-text-muted)] uppercase">
-                      Email address
+                      {t('settings.email')}
                     </Label>
                     <Input
-                      placeholder="Will load from backend account"
+                      placeholder={t('settings.emailPlaceholder')}
                       className="h-11 rounded-2xl border-[var(--aura-border)] bg-[var(--aura-surface-strong)] px-4 text-sm text-[var(--aura-text)]"
                     />
                   </div>
                 </div>
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm leading-6 text-[var(--aura-text-muted)]">
-                    Form fields are ready, but persistence stays disabled until the profile API is
-                    connected.
+                    {t('settings.profileHint')}
                   </p>
                   <Button
                     type="button"
                     size="lg"
-                    disabled
+                    onClick={handleNotReady}
                     className="rounded-2xl bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] px-6 text-sm font-semibold text-[#251739] opacity-60 shadow-[0_20px_40px_-24px_var(--aura-glow)]"
                   >
-                    Save profile
+                    {t('settings.saveProfile')}
                   </Button>
                 </div>
               </CardContent>
@@ -92,17 +113,32 @@ export function AruaSettingsScreen() {
             <section className="space-y-4">
               <div className="flex items-center gap-3">
                 <Globe className="h-5 w-5 text-[var(--aura-secondary)]" />
-                <h4 className="text-2xl font-semibold text-[var(--aura-text)]">Language</h4>
+                <h4 className="text-2xl font-semibold text-[var(--aura-text)]">
+                  {t('settings.language')}
+                </h4>
               </div>
               <Card className="rounded-[1.5rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0">
                 <CardContent className="space-y-4 p-5">
-                  <Input
-                    placeholder="Language preference will sync from backend"
-                    className="h-11 rounded-2xl border-[var(--aura-border)] bg-[var(--aura-surface-strong)] px-4 text-sm text-[var(--aura-text)]"
-                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      type="button"
+                      variant={locale === 'zh-CN' ? 'default' : 'outline'}
+                      className="rounded-2xl"
+                      onClick={() => setLocale('zh-CN')}
+                    >
+                      中文
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={locale === 'en-US' ? 'default' : 'outline'}
+                      className="rounded-2xl"
+                      onClick={() => setLocale('en-US')}
+                    >
+                      English
+                    </Button>
+                  </div>
                   <p className="text-sm leading-7 text-[var(--aura-text-muted)]">
-                    Once connected, Arua will mirror the user account language and locale directly
-                    from persisted settings.
+                    {t('settings.languageHint')}
                   </p>
                 </CardContent>
               </Card>
@@ -111,7 +147,9 @@ export function AruaSettingsScreen() {
             <section className="space-y-4">
               <div className="flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-[var(--aura-secondary)]" />
-                <h4 className="text-2xl font-semibold text-[var(--aura-text)]">Appearance</h4>
+                <h4 className="text-2xl font-semibold text-[var(--aura-text)]">
+                  {t('settings.appearance')}
+                </h4>
               </div>
               <Card className="rounded-[1.5rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0">
                 <CardContent className="p-5">
@@ -125,7 +163,7 @@ export function AruaSettingsScreen() {
             <div className="flex items-center gap-4">
               <ShieldCheck className="h-6 w-6 text-[#ffb8b0]" />
               <h3 className="text-3xl font-semibold tracking-tight text-[var(--aura-text)]">
-                Security & account
+                {t('settings.security')}
               </h3>
             </div>
 
@@ -134,39 +172,39 @@ export function AruaSettingsScreen() {
                 <div className="flex flex-col gap-6 border-b border-[var(--aura-border)] pb-6 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h4 className="text-2xl font-semibold text-[var(--aura-text)]">
-                      Session controls
+                      {t('settings.sessions')}
                     </h4>
                     <p className="mt-2 text-sm leading-7 text-[var(--aura-text-muted)]">
-                      Sign-out and multi-device session management will activate with the auth
-                      backend.
+                      {t('settings.sessionsHint')}
                     </p>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="lg"
-                    disabled
+                    onClick={handleSignOut}
                     className="rounded-2xl border-[var(--aura-border-strong)] bg-transparent px-6 text-sm font-semibold text-[var(--aura-text)] disabled:opacity-60"
                   >
-                    Sign out
+                    {t('settings.signOut')}
                   </Button>
                 </div>
 
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="text-2xl font-semibold text-[#ffb8b0]">Danger zone</h4>
+                    <h4 className="text-2xl font-semibold text-[#ffb8b0]">
+                      {t('settings.dangerZone')}
+                    </h4>
                     <p className="mt-2 text-sm leading-7 text-[var(--aura-text-muted)]">
-                      Destructive account actions remain disabled until permission and audit flows
-                      are available from the backend.
+                      {t('settings.dangerHint')}
                     </p>
                   </div>
                   <Button
                     type="button"
                     size="lg"
-                    disabled
+                    onClick={handleNotReady}
                     className="rounded-2xl bg-[#ffb8b0] px-6 text-sm font-bold text-[#34151a] opacity-60 shadow-[0_20px_40px_-26px_rgba(255,184,176,0.65)]"
                   >
-                    Delete account
+                    {t('settings.deleteAccount')}
                   </Button>
                 </div>
               </CardContent>

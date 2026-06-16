@@ -1,0 +1,571 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aura.core.mapper.AuraMapper">
+
+    <select id="acquireUserTransactionLock" resultType="int">
+        SELECT 1 AS locked
+        FROM (
+            SELECT pg_advisory_xact_lock(hashtext(#{userId}))
+        ) lock_call
+    </select>
+
+    <insert id="upsertUserProfile" parameterType="com.aura.core.entity.UserProfile">
+        INSERT INTO user_profile (
+            user_id, display_name, birthday, pronouns, timezone, locale, preferences
+        ) VALUES (
+            CAST(#{userId} AS uuid), #{displayName}, #{birthday}, #{pronouns}, #{timezone}, #{locale}, COALESCE(CAST(#{preferences,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            birthday = EXCLUDED.birthday,
+            pronouns = EXCLUDED.pronouns,
+            timezone = EXCLUDED.timezone,
+            locale = EXCLUDED.locale,
+            preferences = EXCLUDED.preferences,
+            updated_at = now()
+    </insert>
+
+    <select id="findUserProfile" resultType="com.aura.core.entity.UserProfile">
+        SELECT
+            user_id::varchar AS user_id,
+            display_name,
+            birthday,
+            pronouns,
+            timezone,
+            locale,
+            preferences,
+            created_at,
+            updated_at
+        FROM user_profile
+        WHERE user_id = CAST(#{userId} AS uuid)
+    </select>
+
+    <insert id="upsertAuraProfile" parameterType="com.aura.core.entity.AuraProfile">
+        INSERT INTO aura_profile (
+            id, user_id, nickname, persona_summary, voice_style, appearance, boundaries
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), #{nickname}, #{personaSummary}, #{voiceStyle}, #{appearance}, #{boundaries}
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+            nickname = EXCLUDED.nickname,
+            persona_summary = EXCLUDED.persona_summary,
+            voice_style = EXCLUDED.voice_style,
+            appearance = EXCLUDED.appearance,
+            boundaries = EXCLUDED.boundaries,
+            updated_at = now()
+    </insert>
+
+    <select id="findAuraProfile" resultType="com.aura.core.entity.AuraProfile">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            nickname,
+            persona_summary,
+            voice_style,
+            appearance,
+            boundaries,
+            created_at,
+            updated_at
+        FROM aura_profile
+        WHERE id = CAST(#{id} AS uuid)
+    </select>
+
+    <select id="findLatestAuraProfile" resultType="com.aura.core.entity.AuraProfile">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            nickname,
+            persona_summary,
+            voice_style,
+            appearance,
+            boundaries,
+            created_at,
+            updated_at
+        FROM aura_profile
+        WHERE user_id = CAST(#{userId} AS uuid)
+        ORDER BY updated_at DESC
+        LIMIT 1
+    </select>
+
+    <insert id="upsertRelationshipState" parameterType="com.aura.core.entity.RelationshipState">
+        INSERT INTO relationship_state (
+            id, user_id, aura_profile_id, relationship_stage, intimacy_level, trust_level,
+            affection_level, conflict_level, current_mood, last_interaction_at, metadata
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), CAST(#{auraProfileId,jdbcType=VARCHAR} AS uuid), #{relationshipStage}, #{intimacyLevel}, #{trustLevel},
+            #{affectionLevel}, #{conflictLevel}, #{currentMood}, #{lastInteractionAt}, COALESCE(CAST(#{metadata,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+            aura_profile_id = EXCLUDED.aura_profile_id,
+            relationship_stage = EXCLUDED.relationship_stage,
+            intimacy_level = EXCLUDED.intimacy_level,
+            trust_level = EXCLUDED.trust_level,
+            affection_level = EXCLUDED.affection_level,
+            conflict_level = EXCLUDED.conflict_level,
+            current_mood = EXCLUDED.current_mood,
+            last_interaction_at = EXCLUDED.last_interaction_at,
+            metadata = EXCLUDED.metadata,
+            updated_at = now()
+    </insert>
+
+    <select id="findRelationshipState" resultType="com.aura.core.entity.RelationshipState">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            aura_profile_id::varchar AS aura_profile_id,
+            relationship_stage,
+            intimacy_level,
+            trust_level,
+            affection_level,
+            conflict_level,
+            current_mood,
+            last_interaction_at,
+            metadata,
+            created_at,
+            updated_at
+        FROM relationship_state
+        WHERE id = CAST(#{id} AS uuid)
+    </select>
+
+    <select id="findLatestRelationshipState" resultType="com.aura.core.entity.RelationshipState">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            aura_profile_id::varchar AS aura_profile_id,
+            relationship_stage,
+            intimacy_level,
+            trust_level,
+            affection_level,
+            conflict_level,
+            current_mood,
+            last_interaction_at,
+            metadata,
+            created_at,
+            updated_at
+        FROM relationship_state
+        WHERE user_id = CAST(#{userId} AS uuid)
+        ORDER BY updated_at DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertRelationshipEvent" parameterType="com.aura.core.entity.RelationshipEvent">
+        INSERT INTO relationship_event (
+            id, user_id, relationship_state_id, event_type, title, description, delta_intimacy,
+            delta_trust, delta_affection, delta_conflict, occurred_at, metadata
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), CAST(#{relationshipStateId,jdbcType=VARCHAR} AS uuid), #{eventType}, #{title}, #{description}, #{deltaIntimacy},
+            #{deltaTrust}, #{deltaAffection}, #{deltaConflict}, #{occurredAt}, COALESCE(CAST(#{metadata,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+    </insert>
+
+    <select id="listRelationshipEvents" resultType="com.aura.core.entity.RelationshipEvent">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            relationship_state_id::varchar AS relationship_state_id,
+            event_type,
+            title,
+            description,
+            delta_intimacy,
+            delta_trust,
+            delta_affection,
+            delta_conflict,
+            occurred_at,
+            metadata,
+            created_at
+        FROM relationship_event
+        WHERE user_id = CAST(#{userId} AS uuid)
+        ORDER BY occurred_at DESC, created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertConversationSession" parameterType="com.aura.core.entity.ConversationSession">
+        INSERT INTO conversation_session (
+            id, user_id, aura_profile_id, channel, title, status, started_at, ended_at, summary, metadata
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), CAST(#{auraProfileId,jdbcType=VARCHAR} AS uuid), #{channel}, #{title}, #{status}, #{startedAt}, #{endedAt}, #{summary}, COALESCE(CAST(#{metadata,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+    </insert>
+
+    <update id="updateConversationSession" parameterType="com.aura.core.entity.ConversationSession">
+        UPDATE conversation_session
+        <set>
+            <if test="auraProfileId != null and auraProfileId != ''">aura_profile_id = CAST(#{auraProfileId} AS uuid),</if>
+            <if test="channel != null and channel != ''">channel = #{channel},</if>
+            <if test="title != null">title = #{title},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="endedAt != null">ended_at = #{endedAt},</if>
+            <if test="summary != null">summary = #{summary},</if>
+            <if test="metadata != null">metadata = CAST(#{metadata} AS jsonb),</if>
+            updated_at = now()
+        </set>
+        WHERE id = CAST(#{id} AS uuid)
+    </update>
+
+    <select id="findConversationSession" resultType="com.aura.core.entity.ConversationSession">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            aura_profile_id::varchar AS aura_profile_id,
+            channel,
+            title,
+            status,
+            started_at,
+            ended_at,
+            summary,
+            metadata,
+            created_at,
+            updated_at
+        FROM conversation_session
+        WHERE id = CAST(#{id} AS uuid)
+    </select>
+
+    <select id="listConversationSessions" resultType="com.aura.core.entity.ConversationSession">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            aura_profile_id::varchar AS aura_profile_id,
+            channel,
+            title,
+            status,
+            started_at,
+            ended_at,
+            summary,
+            metadata,
+            created_at,
+            updated_at
+        FROM conversation_session
+        WHERE user_id = CAST(#{userId} AS uuid)
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertChatMessage" parameterType="com.aura.core.entity.ChatMessage">
+        INSERT INTO chat_message (
+            id, session_id, user_id, sender_type, sender_id, content, content_type,
+            emotion_label, token_count, metadata
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{sessionId} AS uuid), CAST(#{userId} AS uuid), #{senderType}, #{senderId}, #{content}, #{contentType},
+            #{emotionLabel}, #{tokenCount}, COALESCE(CAST(#{metadata,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+    </insert>
+
+    <select id="findChatMessage" resultType="com.aura.core.entity.ChatMessage">
+        SELECT
+            id::varchar AS id,
+            session_id::varchar AS session_id,
+            user_id::varchar AS user_id,
+            sender_type,
+            sender_id,
+            content,
+            content_type,
+            emotion_label,
+            token_count,
+            metadata,
+            created_at
+        FROM chat_message
+        WHERE id = CAST(#{id} AS uuid)
+    </select>
+
+    <select id="listChatMessages" resultType="com.aura.core.entity.ChatMessage">
+        SELECT
+            id::varchar AS id,
+            session_id::varchar AS session_id,
+            user_id::varchar AS user_id,
+            sender_type,
+            sender_id,
+            content,
+            content_type,
+            emotion_label,
+            token_count,
+            metadata,
+            created_at
+        FROM chat_message
+        WHERE session_id = CAST(#{sessionId} AS uuid)
+        ORDER BY created_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteChatMessagesByUser">
+        DELETE FROM chat_message
+        WHERE user_id = CAST(#{userId} AS uuid)
+    </delete>
+
+    <delete id="deleteEmptyConversationSessionsByUser">
+        DELETE FROM conversation_session cs
+        WHERE cs.user_id = CAST(#{userId} AS uuid)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM chat_message cm
+              WHERE cm.session_id = cs.id
+          )
+    </delete>
+
+    <insert id="insertEmotionSnapshot" parameterType="com.aura.core.entity.EmotionSnapshot">
+        INSERT INTO emotion_snapshot (
+            id, user_id, session_id, message_id, source, dominant_emotion, valence, arousal,
+            intensity, emotion_scores, reason
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), CAST(#{sessionId,jdbcType=VARCHAR} AS uuid), CAST(#{messageId,jdbcType=VARCHAR} AS uuid), #{source}, #{dominantEmotion}, #{valence}, #{arousal},
+            #{intensity}, COALESCE(CAST(#{emotionScores,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb), #{reason}
+        )
+    </insert>
+
+    <select id="listEmotionSnapshotsBySession" resultType="com.aura.core.entity.EmotionSnapshot">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            session_id::varchar AS session_id,
+            message_id::varchar AS message_id,
+            source,
+            dominant_emotion,
+            valence,
+            arousal,
+            intensity,
+            emotion_scores,
+            reason,
+            created_at
+        FROM emotion_snapshot
+        WHERE session_id = CAST(#{sessionId} AS uuid)
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertMemoryItem" parameterType="com.aura.core.entity.MemoryItem">
+        INSERT INTO memory_item (
+            id, user_id, aura_profile_id, source_session_id, source_message_id, memory_type,
+            title, content, salience, confidence, status, tags, metadata
+        ) VALUES (
+            CAST(#{id} AS uuid), CAST(#{userId} AS uuid), CAST(#{auraProfileId,jdbcType=VARCHAR} AS uuid), CAST(#{sourceSessionId,jdbcType=VARCHAR} AS uuid), CAST(#{sourceMessageId,jdbcType=VARCHAR} AS uuid), #{memoryType},
+            #{title}, #{content}, #{salience}, #{confidence}, #{status}, COALESCE(CAST(#{tags,jdbcType=VARCHAR} AS jsonb), '[]'::jsonb), COALESCE(CAST(#{metadata,jdbcType=VARCHAR} AS jsonb), '{}'::jsonb)
+        )
+    </insert>
+
+    <select id="listMemoryItems" resultType="com.aura.core.entity.MemoryItem">
+        SELECT
+            id::varchar AS id,
+            user_id::varchar AS user_id,
+            aura_profile_id::varchar AS aura_profile_id,
+            source_session_id::varchar AS source_session_id,
+            source_message_id::varchar AS source_message_id,
+            memory_type,
+            title,
+            content,
+            salience,
+            confidence,
+            status,
+            tags,
+            metadata,
+            last_recalled_at,
+            created_at,
+            updated_at
+        FROM memory_item
+        WHERE user_id = CAST(#{userId} AS uuid)
+        ORDER BY salience DESC, updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteMemoryItemsByUser">
+        DELETE FROM memory_item
+        WHERE user_id = CAST(#{userId} AS uuid)
+    </delete>
+
+    <sql id="adminUserFilter">
+        <where>
+            <if test="userId != null and userId != ''">
+                AND user_id = CAST(#{userId} AS uuid)
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    user_id::varchar ILIKE CONCAT('%', #{keyword}, '%')
+                    OR search_text ILIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="countAdminAuraProfiles" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                up.user_id,
+                CONCAT_WS(' ', up.display_name, up.locale, up.timezone, up.preferences::text) AS search_text
+            FROM user_profile up
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraProfiles" resultType="map">
+        SELECT
+            user_id::varchar AS "id",
+            user_id::varchar AS "userId",
+            display_name AS "nickname",
+            locale,
+            timezone,
+            updated_at AS "updatedAt"
+        FROM (
+            SELECT
+                up.*,
+                CONCAT_WS(' ', up.display_name, up.locale, up.timezone, up.preferences::text) AS search_text
+            FROM user_profile up
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminAuraPersonas" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                ap.user_id,
+                CONCAT_WS(' ', ap.nickname, ap.persona_summary, ap.voice_style, ap.boundaries) AS search_text
+            FROM aura_profile ap
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraPersonas" resultType="map">
+        SELECT
+            id::varchar AS "id",
+            user_id::varchar AS "userId",
+            nickname AS "name",
+            voice_style AS "tone",
+            boundaries AS "boundary",
+            'current' AS "version",
+            updated_at AS "updatedAt"
+        FROM (
+            SELECT
+                ap.*,
+                CONCAT_WS(' ', ap.nickname, ap.persona_summary, ap.voice_style, ap.boundaries) AS search_text
+            FROM aura_profile ap
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminAuraRelationships" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                rs.user_id,
+                CONCAT_WS(' ', rs.relationship_stage, rs.current_mood, rs.metadata::text) AS search_text
+            FROM relationship_state rs
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraRelationships" resultType="map">
+        SELECT
+            id::varchar AS "id",
+            user_id::varchar AS "userId",
+            relationship_stage AS "stage",
+            intimacy_level AS "affinityScore",
+            trust_level AS "trustScore",
+            last_interaction_at AS "lastInteractionAt",
+            updated_at AS "updatedAt"
+        FROM (
+            SELECT
+                rs.*,
+                CONCAT_WS(' ', rs.relationship_stage, rs.current_mood, rs.metadata::text) AS search_text
+            FROM relationship_state rs
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminAuraMessages" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                cm.user_id,
+                CONCAT_WS(' ', cm.sender_type, cm.content, cm.emotion_label, cm.metadata::text) AS search_text
+            FROM chat_message cm
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraMessages" resultType="map">
+        SELECT
+            id::varchar AS "id",
+            session_id::varchar AS "sessionId",
+            user_id::varchar AS "userId",
+            sender_type AS "role",
+            content,
+            created_at AS "createdAt"
+        FROM (
+            SELECT
+                cm.*,
+                CONCAT_WS(' ', cm.sender_type, cm.content, cm.emotion_label, cm.metadata::text) AS search_text
+            FROM chat_message cm
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminAuraEmotions" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                es.user_id,
+                CONCAT_WS(' ', es.dominant_emotion, es.reason, es.emotion_scores::text) AS search_text
+            FROM emotion_snapshot es
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraEmotions" resultType="map">
+        SELECT
+            id::varchar AS "id",
+            user_id::varchar AS "userId",
+            session_id::varchar AS "sessionId",
+            dominant_emotion AS "userEmotion",
+            source AS "auraMood",
+            intensity AS "confidence",
+            created_at AS "createdAt"
+        FROM (
+            SELECT
+                es.*,
+                CONCAT_WS(' ', es.dominant_emotion, es.reason, es.emotion_scores::text) AS search_text
+            FROM emotion_snapshot es
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminAuraMemories" resultType="long">
+        SELECT COUNT(*)
+        FROM (
+            SELECT
+                mi.user_id,
+                CONCAT_WS(' ', mi.title, mi.content, mi.memory_type, mi.tags::text, mi.metadata::text) AS search_text
+            FROM memory_item mi
+        ) source
+        <include refid="adminUserFilter" />
+    </select>
+
+    <select id="listAdminAuraMemories" resultType="map">
+        SELECT
+            id::varchar AS "id",
+            user_id::varchar AS "userId",
+            title,
+            content,
+            tags::text AS "tags",
+            memory_type AS "source",
+            created_at AS "createdAt"
+        FROM (
+            SELECT
+                mi.*,
+                CONCAT_WS(' ', mi.title, mi.content, mi.memory_type, mi.tags::text, mi.metadata::text) AS search_text
+            FROM memory_item mi
+        ) source
+        <include refid="adminUserFilter" />
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

@@ -1,51 +1,70 @@
+import { fetchEventSource } from '@microsoft/fetch-event-source';
+
 interface requestOptions {
     body?: BodyInit;
     headers?: Record<string, string>;
-    onMessage?:(data:string)=>void;
-    onError?:(data:string)=>void
+    onMessage?: (data: string) => void;
+    onError?: (data: unknown) => void;
 }
+
 interface ConnectOptions {
     body?: BodyInit;
 }
-import { fetchEventSource } from '@microsoft/fetch-event-source';
 
 export function UseSse(url: string, options: requestOptions = {}) {
-    const {headers,onMessage,onError } = options;
-    let ctrl: AbortController | null = null; 
-    // 连接
+    const { headers, onMessage, onError } = options;
+    let ctrl: AbortController | null = null;
+
     const connect = async (connectOptions?: ConnectOptions) => {
-        // 如果有旧连接则清除
+        // 连接前先清理旧连接，避免多个流同时写入同一段 UI。
         if (ctrl) {
             ctrl.abort();
         }
+
         ctrl = new AbortController();
-        fetchEventSource(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...headers
-            },
-            body:connectOptions?.body,
-            signal: ctrl.signal,
-            onmessage(ev){
-                onMessage?.(ev.data)
-            },
-            onerror(err) {
-                onError?.(err)
-                throw err
-            },
-        });
+        const currentCtrl = ctrl;
+
+        try {
+            await fetchEventSource(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...headers,
+                },
+                body: connectOptions?.body,
+                signal: currentCtrl.signal,
+                onmessage(ev) {
+                    onMessage?.(ev.data);
+                },
+                onerror(err) {
+                    throw err;
+                },
+                onclose() {
+                    if (ctrl === currentCtrl) {
+                        ctrl = null;
+                    }
+                },
+            });
+        } catch (err) {
+            if (!currentCtrl.signal.aborted) {
+                onError?.(err);
+            }
+        } finally {
+            if (ctrl === currentCtrl) {
+                ctrl = null;
+            }
+        }
     };
-    // 断开
-    const disconnect = ()=>{
+
+    const disconnect = () => {
         if (ctrl) {
             ctrl.abort();
             ctrl = null;
         }
-    }
+    };
+
     return {
         connect,
-        disconnect
-    }
+        disconnect,
+    };
 }
-

@@ -1,141 +1,77 @@
-# 💖 Aura Core Service
+# Aura Core Service
 
-<div align="center">
+Aura Core Service 是基于 Spring Boot 的核心业务服务，负责用户注册、登录、资料管理、JWT 签发和 Redis 登录态缓存。
 
-*Aura 的核心业务服务，负责用户认证、资料管理、JWT 令牌与 Redis 会话缓存。*
+## 技术栈
 
----
+- Java 17
+- Spring Boot 3.3.5
+- Maven
+- MyBatis
+- PostgreSQL
+- Redis
+- JWT / JJWT
+- BCrypt
 
-![Java](https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)
-![Maven](https://img.shields.io/badge/Maven-3.x-C71A36?logo=apachemaven&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Aura-4169E1?logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-token_cache-FF4438?logo=redis&logoColor=white)
-![JWT](https://img.shields.io/badge/JWT-0.12.6-000000?logo=jsonwebtokens&logoColor=white)
+## 当前能力
 
-</div>
+- 用户注册
+- 用户登录
+- JWT 签发
+- Redis 写入 `token:{userId}`
+- 用户退出登录
+- 当前用户资料查询
+- 用户资料更新
+- 用户删除
+- 请求鉴权拦截
+- 参数校验和统一响应
 
----
+## API
 
-## 📖 简介
+服务默认上下文路径：
 
-**Core Service** 是 Aura 的 Spring Boot 核心认证服务，提供用户注册、登录、登出、资料查询、资料更新和账户删除能力。服务使用 PostgreSQL 持久化用户数据，使用 Redis 缓存登录令牌，并通过自定义拦截器完成 Bearer Token 校验。
+```text
+/api
+```
 
----
-
-## ✨ 功能介绍
-
-### 👤 用户管理
-- 用户注册：保存用户名、密码、邮箱、性别、年龄等基础资料
-- 用户登录：校验密码后签发 JWT，并写入 Redis 缓存
-- 用户登出：删除 `token:{userId}` 缓存，使令牌失效
-- 用户信息：根据 Authorization Header 解析用户 ID 并返回资料
-- 资料更新：支持邮箱、性别、年龄、用户名等字段更新
-- 账户删除：按用户名删除用户记录
-
-### 🔐 认证与安全
-- BCrypt 密码哈希存储
-- JJWT 生成和解析 JWT 令牌
-- `AuthInterceptor` 拦截受保护接口
-- `/user/Login` 与 `/user/register` 放行，其余接口默认需要鉴权
-- Jakarta Validation + `GlobalExceptionHandler` 返回 422 参数错误
-
-### 🔌 API 端点
-
-| 方法 | 端点 | 认证 | 功能 |
-|------|------|------|------|
+| 方法 | 端点 | 鉴权 | 功能 |
+| --- | --- | --- | --- |
 | POST | `/user/register` | 否 | 用户注册 |
-| POST | `/user/Login` | 否 | 用户登录，返回 JWT |
-| GET | `/user/logout/{userId}` | 是 | 登出并删除 Redis 令牌 |
+| POST | `/user/login` | 否 | 用户登录，返回 JWT |
+| GET | `/user/logout/{userId}` | 是 | 退出登录并删除 Redis token |
 | GET | `/user/userInfo` | 是 | 获取当前用户资料 |
 | PUT | `/user/updateInfo` | 是 | 更新用户资料 |
-| DELETE | `/user/deleteuser/{username}` | 是 | 删除用户账户 |
+| DELETE | `/user/{username}` | 是 | 删除用户账号 |
 
----
+## 认证链路
 
-## 🏗️ 技术架构
-
-```
-┌──────────────────────────────┐
-│       Web / Admin / BFF       │
-└───────────────┬──────────────┘
-                │ HTTP + Bearer Token
-┌───────────────▼──────────────┐
-│        userController         │
-│   注册 / 登录 / 资料 / 注销    │
-└───────────────┬──────────────┘
-                │
-┌───────────────▼──────────────┐
-│        AuthInterceptor        │
-│   登录注册放行，其余接口鉴权    │
-└───────────────┬──────────────┘
-                │
-┌───────────────▼──────────────┐
-│          LoginService         │
-│   业务编排 / 密码校验 / JWT     │
-└───────┬────────────────┬─────┘
-        │                │
-┌───────▼────────┐ ┌─────▼─────────────┐
-│ PostgreSQL      │ │ Redis              │
-│ users 表        │ │ token:{userId}     │
-└────────────────┘ └───────────────────┘
+```text
+用户登录
+  -> Core Service 校验密码
+  -> 签发 JWT，sub = userId
+  -> 写入 Redis token:{userId}
+  -> 前端携带 Authorization: Bearer <token>
+  -> BFF / Core Service 校验 JWT 与 Redis token
 ```
 
----
+## 环境变量
 
-## 📁 项目结构
+`src/main/resources/application.yml` 已提供本地默认值，也支持环境变量覆盖。
 
-```
-core-service/
-├── pom.xml
-├── mvnw / mvnw.cmd
-├── src/main/
-│   ├── java/com/example/springboot_test/
-│   │   ├── SpringbootTestApplication.java     # 应用入口
-│   │   ├── controller/userController.java     # 用户 REST API
-│   │   ├── service/LoginService.java          # 用户业务逻辑
-│   │   ├── interceptor/AuthInterceptor.java   # 请求鉴权拦截器
-│   │   └── ...
-│   └── resources/
-│       ├── application.yml                    # 本地应用配置
-│       └── mapper/UserMpaaer.xml              # MyBatis SQL 映射
-└── ...
-```
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `DB_HOST` | `localhost` | PostgreSQL 主机 |
+| `DB_PORT` | `5432` | PostgreSQL 端口 |
+| `DB_NAME` | `Aura` | 数据库名 |
+| `DB_SCHEMA` | `public` | Schema |
+| `DB_USERNAME` | `postgres` | 数据库用户 |
+| `DB_PASSWORD` | `123456` | 数据库密码 |
+| `REDIS_HOST` | `localhost` | Redis 主机 |
+| `REDIS_PORT` | `6379` | Redis 端口 |
+| `JWT_SECRET_KEY` | `change-me-to-a-strong-32-byte-secret-key` | JWT 密钥 |
+| `JWT_EXPIRE_TIME` | `86400000` | JWT 过期时间，单位毫秒 |
 
----
-
-## 🚀 快速开始
-
-### 环境要求
-- Java 17+
-- Maven 3.x，或使用仓库内 `mvnw`
-- PostgreSQL，本地数据库名默认为 `Aura`
-- Redis，本地端口默认为 `6379`
-
-### 配置
-
-本地配置位于 `src/main/resources/application.yml`：
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/Aura?currentSchema=public
-  data:
-    redis:
-      host: localhost
-      port: 6379
-jwt:
-  expire-time: 86400000
-```
-
-生产环境建议将数据库密码和 JWT 密钥迁移到环境变量或安全配置中心。
-
-### 运行
-
-```bash
-cd Server/core-service
-./mvnw spring-boot:run
-```
+## 运行
 
 Windows PowerShell：
 
@@ -144,31 +80,22 @@ cd Server/core-service
 .\mvnw.cmd spring-boot:run
 ```
 
-服务默认运行在 `http://localhost:8080`。
+Linux / macOS：
 
-### 构建与测试
+```bash
+cd Server/core-service
+./mvnw spring-boot:run
+```
+
+服务默认运行在：
+
+```text
+http://localhost:8080/api
+```
+
+## 测试与构建
 
 ```bash
 ./mvnw test
 ./mvnw clean package
-java -jar target/springboot_test-0.0.1-SNAPSHOT.jar
 ```
-
----
-
-## 🗺️ 里程碑
-
-### ✅ 已完成
-- [x] Spring Boot 3.3.5 项目搭建
-- [x] 用户注册、登录、登出接口
-- [x] BCrypt 密码加密与 JWT 令牌生成
-- [x] Redis 令牌缓存与失效处理
-- [x] 用户资料查询、更新和删除
-- [x] MyBatis Mapper 与 PostgreSQL `users` 表访问
-- [x] 统一响应结构和参数校验异常处理
-
-### 🔨 进行中
-- [ ] 生产环境密钥外置与配置分层
-- [ ] 与 NestJS BFF 的统一鉴权链路
-- [ ] 会话、消息等业务模块扩展
-- [ ] 接口测试与集成测试补齐

@@ -5,6 +5,11 @@ import { RadioGroup as RadioGroupPrimitive } from 'radix-ui'
 import { CircleIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+function withoutReactKey<T extends object>(props: T): Omit<T, 'key'> {
+  const { key: _key, ...rest } = props as T & { key?: React.Key | null }
+  return rest
+}
+
 function RadioGroup({
   className,
   ...props
@@ -13,7 +18,7 @@ function RadioGroup({
     <RadioGroupPrimitive.Root
       data-slot="radio-group"
       className={cn('grid gap-3', className)}
-      {...props}
+      {...withoutReactKey(props)}
     />
   )
 }
@@ -29,7 +34,7 @@ function RadioGroupItem({
         'aspect-square size-4 shrink-0 rounded-full border border-input bg-transparent text-primary shadow-xs outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
-      {...props}
+      {...withoutReactKey(props)}
     >
       <RadioGroupPrimitive.Indicator
         data-slot="radio-group-indicator"

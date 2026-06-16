@@ -9,9 +9,9 @@ from langchain_core.tools import tool
 def get_weather() -> dict[str, str]:
     """
     当用户主动询问天气信息时使用。
-    默认查询北京天气；如果接口没有返回消息，不要编造天气信息。
+    默认查询北京天气；如果接口没有返回可用信息，不要编造天气。
     """
-    logging.info("命中查看天气的tool")
+    logging.info("命中天气查询工具")
     amap_key = os.getenv("amap_key")
     if not amap_key:
         return {
@@ -24,7 +24,7 @@ def get_weather() -> dict[str, str]:
         "key": amap_key,
         "extensions": "base",
     }
-    url = 'https://restapi.amap.com/v3/weather/weatherInfo'
+    url = "https://restapi.amap.com/v3/weather/weatherInfo"
     try:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()

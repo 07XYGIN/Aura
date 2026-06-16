@@ -2,9 +2,11 @@
 
 import { MoonStar, SunMedium } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { useI18n } from '@/lib/i18n'
 
 export function AppearanceToggle() {
   const { resolvedTheme, setTheme } = useTheme()
+  const { t } = useI18n()
   const isDark = resolvedTheme !== 'light'
 
   const handleToggle = () => {
@@ -17,17 +19,15 @@ export function AppearanceToggle() {
       onClick={handleToggle}
       aria-pressed={isDark}
       className="group w-full rounded-[1.5rem] border border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface)_76%,transparent)] p-4 text-left transition-all duration-300 hover:border-[var(--aura-border-strong)] hover:shadow-[0_20px_48px_-38px_var(--aura-glow)]"
-      aria-label="Toggle appearance"
+      aria-label={t('appearance.toggle')}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="text-base font-semibold text-[var(--aura-text)]">
-            {isDark ? 'Dark mode' : 'Light mode'}
+            {isDark ? t('appearance.dark') : t('appearance.light')}
           </p>
           <p className="text-sm leading-6 text-[var(--aura-text-muted)]">
-            {isDark
-              ? 'Deep surfaces with soft highlights for long sessions.'
-              : 'Brighter surfaces with the same calm accent palette.'}
+            {isDark ? t('appearance.darkDescription') : t('appearance.lightDescription')}
           </p>
         </div>
 

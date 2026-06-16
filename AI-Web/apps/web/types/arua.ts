@@ -1,5 +1,5 @@
 import type Link from 'next/link'
-import type { ComponentProps, ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
 export type AruaNavKey = 'chat' | 'memories' | 'settings'
@@ -34,7 +34,7 @@ export type RouteLoadingIndicatorProps = {
   compact?: boolean
 }
 
-export type RouteTransitionLinkProps = ComponentProps<typeof Link>
+export type RouteTransitionLinkProps = Omit<ComponentPropsWithoutRef<typeof Link>, 'key'>
 
 export type BrowserSpeechRecognition = {
   continuous: boolean

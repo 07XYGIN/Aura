@@ -3,18 +3,24 @@ import type { ApiResponse, RequestOptions } from '@/types/api'
 import { useUserStore } from '@/store/user'
 async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, ...rest } = options
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
-  const token = useUserStore.getState().token;
+  const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
+  const token = useUserStore.getState().token
 
-  const res = await fetch(`${baseUrl}${url}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    ...rest,
-  })
+  let res: Response
+
+  try {
+    res = await fetch(`${baseUrl.replace(/\/+$/, '')}${url}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      ...rest,
+    })
+  } catch {
+    throw new Error('Network request failed')
+  }
 
   if (res.status === 401) {
     throw new Error('Unauthorized')

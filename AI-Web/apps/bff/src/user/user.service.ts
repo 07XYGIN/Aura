@@ -91,7 +91,10 @@ export class UserService {
         return authorization ? { Authorization: authorization } : undefined
     }
 
-    private async forwardAi<T = unknown>(method: Method, path: string): Promise<PythonApiResponse<T>> {
+    private async forwardAi<T = unknown>(
+        method: Method,
+        path: string,
+    ): Promise<PythonApiResponse<T>> {
         try {
             const response = await axios.request<PythonApiResponse<T>>({
                 method,
@@ -104,7 +107,10 @@ export class UserService {
         }
     }
 
-    private throwProxyError(error: unknown, fallbackMessage = 'Java service request failed'): never {
+    private throwProxyError(
+        error: unknown,
+        fallbackMessage = 'Java service request failed',
+    ): never {
         if (axios.isAxiosError<unknown>(error)) {
             const statusCode = error.response?.status ?? 502
             const responseData = error.response?.data

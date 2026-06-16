@@ -24,6 +24,42 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/memory/MemoryManage.vue'),
         meta: { title: '记忆管理' },
       },
+      {
+        path: 'aura/profiles',
+        name: 'auraUserProfiles',
+        component: () => import('@/pages/aura/UserProfiles.vue'),
+        meta: { title: '用户画像' },
+      },
+      {
+        path: 'aura/personas',
+        name: 'auraPersonaConfigs',
+        component: () => import('@/pages/aura/PersonaConfigs.vue'),
+        meta: { title: '人设配置' },
+      },
+      {
+        path: 'aura/relationships',
+        name: 'auraRelationshipStates',
+        component: () => import('@/pages/aura/RelationshipStates.vue'),
+        meta: { title: '关系状态' },
+      },
+      {
+        path: 'aura/messages',
+        name: 'auraSessionMessages',
+        component: () => import('@/pages/aura/SessionMessages.vue'),
+        meta: { title: '会话消息' },
+      },
+      {
+        path: 'aura/emotions',
+        name: 'auraEmotionSnapshots',
+        component: () => import('@/pages/aura/EmotionSnapshots.vue'),
+        meta: { title: '情绪快照' },
+      },
+      {
+        path: 'aura/memories',
+        name: 'auraLongTermMemories',
+        component: () => import('@/pages/aura/LongTermMemories.vue'),
+        meta: { title: '长期记忆列表' },
+      },
     ],
   },
   {
