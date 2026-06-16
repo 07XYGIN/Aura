@@ -9,7 +9,7 @@ import { UseSse } from '@ai-web/utils/main'
 import { cn } from '@/lib/utils'
 import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
 import { toast } from 'sonner'
-
+import { useUserStore } from '@/store/user'
 export function AruaChatScreen() {
     const inputId = useId()
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -20,6 +20,10 @@ export function AruaChatScreen() {
     const [isListening, setIsListening] = useState(false)
     const [isStreaming, setIsStreaming] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+    const getUserInfo = useUserStore((state) => state.getUserInfo)
+    useEffect(() => {
+        getUserInfo()
+    }, [getUserInfo])
     useEffect(() => {
         messagesRef.current?.scrollTo({
             top: messagesRef.current.scrollHeight,

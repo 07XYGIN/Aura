@@ -12,11 +12,11 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import type { AuthFormValues, AuthMode, SexOption } from '@/types/auth'
 import { toast } from 'sonner'
-
+import { useUserStore } from '@/store/user'
+import { useRouter } from "next/navigation";
 const sexOptions: SexOption[] = [
-  { label: 'Male', value: 'male' },
-  { label: 'Female', value: 'female' },
-  { label: 'Other', value: 'other' },
+  { label: 'Male', value: '1' },
+  { label: 'Female', value: '2' },
 ]
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
@@ -29,7 +29,8 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     age: '',
     sex: '',
   })
-
+  const setToken = useUserStore((state) => state.setToken);
+  const router = useRouter();
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
 
@@ -51,37 +52,58 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     setSubmitting(true)
 
     const payload =
-      mode === 'register'
-        ? {
-            username: formData.username ?? '',
-            password: formData.password ?? '',
-            email: formData.email ?? '',
-            sex: formData.sex ?? '',
-            age: formData.age ? Number(formData.age) : undefined,
-          }
-        : {
-            username: formData.username ?? '',
-            password: formData.password ?? '',
-          }
+        mode === 'register'
+            ? {
+                  username: formData.username ?? '',
+                  password: formData.password ?? '',
+                  email: formData.email ?? '',
+                  sex: formData.sex ?? '',
+                  age: formData.age ? Number(formData.age) : undefined,
+              }
+            : {
+                  username: formData.username ?? '',
+                  password: formData.password ?? '',
+              }
 
-    try {
-      const response = await user.login<unknown>('/user/Login', payload)
+    if (mode === 'register') {
+        try {
+            const {message} = await user.register<unknown>('/user/register', payload)
+            toast.success('Account created', {
+                description: message,
+                position: 'top-center',
+            })
 
-      toast.success(mode === 'login' ? 'Success' : 'Account created', {
-        description: response.message,
-        position: 'top-center',
-      })
-    } catch {
-      toast.error(mode === 'login' ? 'Login failed' : 'Registration failed', {
-        description:
-          mode === 'login'
-            ? 'Please verify your account information and try again.'
-            : 'Please verify your registration information and try again.',
-        position: 'top-center',
-      })
-    } finally {
-      setSubmitting(false)
+        } catch {
+            toast.error('Registration failed', {
+                description: 'Please verify your registration information and try again.',
+                position: 'top-center',
+            })
+        } finally {
+          setSubmitting(false)
+        }
+    } else {
+        try {
+            const response = await user.login<unknown>('/user/login', payload)
+
+            toast.success('Success', {
+                description: response.message,
+                position: 'top-center',
+            })
+            setToken(response.token)
+            router.replace('/')
+        } catch {
+            toast.error(mode === 'login' ? 'Login failed' : 'Registration failed', {
+                description:
+                    mode === 'login'
+                        ? 'Please verify your account information and try again.'
+                        : 'Please verify your registration information and try again.',
+                position: 'top-center',
+            })
+        } finally {
+            setSubmitting(false)
+        }
     }
+    
   }
 
   return (
@@ -169,7 +191,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               <RadioGroup
                 value={formData.sex ?? ''}
                 onValueChange={(value) => handleSexChange(value as AuthFormValues['sex'])}
-                className="grid grid-cols-3 gap-2"
+                className="grid grid-cols-2 gap-2"
               >
                 {sexOptions.map((option) => {
                   const isActive = formData.sex === option.value

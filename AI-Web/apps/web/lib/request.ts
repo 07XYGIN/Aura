@@ -1,10 +1,10 @@
 import { toast } from 'sonner'
 import type { ApiResponse, RequestOptions } from '@/types/api'
-
+import { useUserStore } from '@/store/user'
 async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, ...rest } = options
   const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const token = useUserStore.getState().token;
 
   const res = await fetch(`${baseUrl}${url}`, {
     method,
@@ -17,10 +17,6 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<Ap
   })
 
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login'
-    }
-
     throw new Error('Unauthorized')
   }
 
