@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from langchain_core.tools import tool
+
+from .logging_utils import log_tool
 
 
 def _clamp(value: int, minimum: int = 0, maximum: int = 100) -> int:
@@ -6,12 +10,9 @@ def _clamp(value: int, minimum: int = 0, maximum: int = 100) -> int:
 
 
 @tool
+@log_tool
 def get_relationship_status(user_message: str = "") -> dict:
-    """
-    估算 Aura 与当前用户的关系状态、亲密度和回应建议。
-    当用户询问关系进展、亲密度、是否被在乎、相处状态，或需要情感关系判断时调用。
-    这是基于当前消息的确定性规则，不读取新数据库表。
-    """
+    """估算 Aura 与当前用户的关系状态、亲密度和回复建议。"""
     text = (user_message or "").lower()
     score = 74
 

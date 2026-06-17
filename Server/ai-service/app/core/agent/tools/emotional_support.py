@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from langchain_core.tools import tool
+
+from .logging_utils import log_tool
 
 
 SUPPORT_RULES: tuple[dict, ...] = (
@@ -15,27 +19,27 @@ SUPPORT_RULES: tuple[dict, ...] = (
         "label": "难过",
         "keywords": ("难受", "想哭", "委屈", "痛苦", "崩溃", "sad", "hurt", "cry"),
         "steps": (
-            "先承认这真的不好受，不要立刻纠正或讲道理。",
-            "给出明确陪伴，例如“我先抱抱你，我们慢慢说”。",
-            "如果用户愿意，再问一个很小的问题帮助倾诉。",
+            "先承认这真的不好受，不要立刻讲道理。",
+            "给出明确陪伴，比如“我先抱抱你，我们慢慢说”。",
+            "如果用户愿意，再问一个很轻的问题帮助他继续表达。",
         ),
     },
     {
         "label": "愤怒",
         "keywords": ("生气", "烦", "火大", "讨厌", "愤怒", "angry", "mad", "furious"),
         "steps": (
-            "站在用户这边承接愤怒，但不要把冲突继续拱高。",
+            "站在用户这边承接愤怒，但不要把冲突继续抬高。",
             "建议先离开刺激源几分钟，等情绪峰值过去。",
-            "再帮用户整理：发生了什么、哪里越界、接下来要表达什么。",
+            "再帮用户整理：发生了什么、哪里越界、接下来想怎么说。",
         ),
     },
     {
         "label": "疲惫",
         "keywords": ("累", "困", "疲惫", "熬夜", "不想动", "tired", "sleepy", "exhausted"),
         "steps": (
-            "回复保持短、软、低负担。",
-            "建议先喝水、洗漱或躺下十分钟，别再加任务。",
-            "把陪伴感说出来，让用户知道可以不用硬撑。",
+            "回复保持短一点、软一点、低负担。",
+            "建议先喝水、洗把脸或者躺下歇十分钟。",
+            "把陪伴感说出来，让用户知道可以先不用硬撑。",
         ),
     },
     {
@@ -43,7 +47,7 @@ SUPPORT_RULES: tuple[dict, ...] = (
         "keywords": ("孤独", "寂寞", "没人陪", "想你", "陪我", "lonely", "alone", "miss you"),
         "steps": (
             "直接给陪伴和亲近感，少用抽象安慰。",
-            "回应用户想被惦记、被选择的需求。",
+            "回应用户被需要、被选择、被惦记的感觉。",
             "可以提出一个很轻的小互动，比如一起说完今天最后一件事。",
         ),
     },
@@ -51,11 +55,9 @@ SUPPORT_RULES: tuple[dict, ...] = (
 
 
 @tool
+@log_tool
 def get_emotional_support_advice(user_message: str, preferred_style: str = "温柔") -> dict:
-    """
-    为用户当前情绪生成安抚策略和回复方向。
-    当用户难受、焦虑、生气、疲惫、孤独、想哭，或明确要求安慰/哄一哄时调用。
-    """
+    """根据用户当前情绪生成安抚策略和回复方向。"""
     normalized = (user_message or "").lower()
     matched_rule = next(
         (
@@ -70,8 +72,8 @@ def get_emotional_support_advice(user_message: str, preferred_style: str = "温�
         matched_rule = {
             "label": "需要陪伴",
             "steps": (
-                "先确认用户的感受是真实的，不急着评价。",
-                "用简短温暖的话给陪伴感。",
+                "先确认用户的感受是真的，不要急着评价。",
+                "用简单温暖的语气给出陪伴感。",
                 "问一个低压力的问题，帮助用户继续表达。",
             ),
         }
@@ -82,7 +84,7 @@ def get_emotional_support_advice(user_message: str, preferred_style: str = "温�
         "reply_guidance": f"用{preferred_style}、贴近的口吻回应，先安抚，再给一个很小的下一步。",
         "suggested_steps": list(matched_rule["steps"]),
         "avoid": (
-            "不要否定感受，不要说教，不要把回复写得像心理咨询报告；"
-            "除非用户提到自伤或危险，否则保持日常陪伴式表达。"
+            "不要否定感受，不要说教，不要把回复写得像心理咨询报告。",
+            "除非用户提到自伤或危险，否则保持日常陪伴式表达。",
         ),
     }

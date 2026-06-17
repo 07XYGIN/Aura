@@ -1,17 +1,19 @@
+from __future__ import annotations
+
 import logging
 import os
 
 import requests
 from langchain_core.tools import tool
 
+from .logging_utils import log_tool
+
 
 @tool
+@log_tool
 def get_weather() -> dict[str, str]:
-    """
-    当用户主动询问天气信息时使用。
-    默认查询北京天气；如果接口没有返回可用信息，不要编造天气。
-    """
-    logging.info("命中天气查询工具")
+    """查询天气信息，默认查询北京天气。"""
+    logging.info("命中 get_weather tool city=110101")
     amap_key = os.getenv("amap_key")
     if not amap_key:
         return {

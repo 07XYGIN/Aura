@@ -1,3 +1,5 @@
+import logging
+from datetime import datetime
 from typing import Annotated, Any, Generator, TypedDict
 
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
@@ -21,7 +23,7 @@ from .protocol import (
 from .prompt import SYSTEM_PROMPT
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
-from .tools.memory import save_memory_tool
+from .tools.term_memory import save_memory
 from .tools.proactive import draft_proactive_message, plan_daily_greetings
 from .tools.relationship import get_relationship_status
 from .tools.search_memory import search_memory_tool
@@ -35,7 +37,6 @@ class AuraState(TypedDict):
 
 tools = [
     get_weather,
-    save_memory_tool,
     search_memory_tool,
     get_current_datetime,
     get_relationship_status,
@@ -53,6 +54,14 @@ def call_model(state: AuraState) -> AuraState:
     system_prompt = SYSTEM_PROMPT + format_emotion_context(state.get("emotion"))
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
     response = llm_with_tools.invoke(messages)
+    tool_calls = getattr(response, "tool_calls", None) or []
+    if tool_calls:
+        logging.info(
+            "Aura model requested tools=%s",
+            [tool_call.get("name") for tool_call in tool_calls],
+        )
+    else:
+        logging.info("Aura model responded without tool call")
     return {"messages": [response]}
 
 
@@ -86,8 +95,10 @@ def aura_agent(
 
     if emotion_state is None:
         emotion_state = derive_emotion_state(human_prompt).to_dict()
+    logging.info("Aura agent start user_id=%s message_length=%s", user_id, len(human_prompt))
 
     config: RunnableConfig = {
+        "recursion_limit": 6,
         "configurable": {
             "thread_id": user_id,
             "user_id": user_id,
@@ -98,13 +109,42 @@ def aura_agent(
         "emotion": emotion_state,
     }
 
+    memory_candidate = derive_memory_candidate(human_prompt, emotion_state)
+
     yield emotion_event(emotion_state)
-    yield memory_candidate_event(derive_memory_candidate(human_prompt, emotion_state))
+    yield memory_candidate_event(memory_candidate)
     yield relationship_delta_event(derive_relationship_delta(human_prompt, emotion_state))
+
+    save_memory_candidate_once(user_id, memory_candidate)
 
     for chunk, metadata in aura.stream(inputs, config, stream_mode="messages"):
         if chunk.content and metadata.get("langgraph_node") == "chat":
             yield content_event(str(chunk.content))
+    logging.info("Aura agent end user_id=%s", user_id)
+
+
+def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
+    if not candidate.get("save"):
+        return
+
+    content = candidate.get("content")
+    if not isinstance(content, str) or not content.strip():
+        return
+
+    title = candidate.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = "对话记忆"
+
+    try:
+        save_memory(
+            user_id=user_id,
+            content=content.strip(),
+            title=title.strip(),
+            create_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+        logging.info("Saved memory candidate once user_id=%s title=%s", user_id, title)
+    except Exception:
+        logging.exception("Failed to save memory candidate user_id=%s", user_id)
 
 
 def get_history(user_id: str) -> list:

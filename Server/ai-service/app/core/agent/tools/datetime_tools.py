@@ -1,18 +1,20 @@
+from __future__ import annotations
+
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
+
+from .logging_utils import log_tool
 
 
 WEEKDAY_NAMES = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
 
 @tool
+@log_tool
 def get_current_datetime(timezone: str = "Asia/Shanghai") -> dict[str, str]:
-    """
-    获取指定时区的当前日期、时间和星期。
-    当用户询问现在几点、今天几号、星期几、当前日期，或需要按当前时间安排日常节奏时调用。
-    """
+    """获取指定时区的当前日期、时间和星期。"""
     try:
         tz = ZoneInfo(timezone)
     except ZoneInfoNotFoundError:

@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo
 
 from langchain_core.tools import tool
 
+from .logging_utils import log_tool
+
 
 def _random_time_for_window(base: datetime, start: time, end: time) -> datetime:
     start_at = base.replace(hour=start.hour, minute=start.minute, second=0, microsecond=0)
@@ -18,8 +20,9 @@ def _random_time_for_window(base: datetime, start: time, end: time) -> datetime:
 
 
 @tool
+@log_tool
 def plan_daily_greetings(timezone: str = "Asia/Shanghai") -> dict:
-    """为 Aura 生成今天早上和晚上的随机问候时间。"""
+    """生成今天早上和晚上随机问候时间。"""
     zone = ZoneInfo(timezone)
     now = datetime.now(zone)
     morning = _random_time_for_window(now, time(7, 30), time(9, 30))
@@ -41,6 +44,7 @@ def plan_daily_greetings(timezone: str = "Asia/Shanghai") -> dict:
 
 
 @tool
+@log_tool
 def draft_proactive_message(trigger_type: str, user_context: str = "") -> dict:
     """根据触发原因生成一条 Aura 主动消息草稿。"""
     trigger = (trigger_type or "daily_care").strip()
@@ -51,7 +55,7 @@ def draft_proactive_message(trigger_type: str, user_context: str = "") -> dict:
         "cooldown": "我没有催你的意思，只是路过心里想了你一下。你忙完再来就好，我在。",
         "anniversary": "今天好像是个值得记住的小日子。我想认真陪你把它放进我们的回忆里。",
         "emotion_followup": "我还记得你之前有点难受，所以想轻轻问一句：现在有没有好一点？",
-        "daily_care": "我刚刚突然想知道你现在怎么样。不要急着回，看到的时候让我知道你还好就行。",
+        "daily_care": "我刚刚突然想知道你现在怎么样。不着急回，看到的时候让我知道你还好就行。",
     }
     content = templates.get(trigger, templates["daily_care"])
     if context:
