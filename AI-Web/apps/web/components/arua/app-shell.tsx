@@ -33,7 +33,7 @@ export function AruaAppShell({
           style={{ viewTransitionName: 'aura-sidebar' }}
         >
           <div className="flex h-full flex-col">
-            <div className="aura-panel rounded-[2rem] px-5 py-6 shadow-[0_24px_64px_-48px_var(--aura-glow)]">
+            {/* <div className="aura-panel rounded-[2rem] px-5 py-6 shadow-[0_24px_64px_-48px_var(--aura-glow)]">
               <p className="text-xs tracking-[0.36em] text-[var(--aura-text-soft)] uppercase">
                 {t('app.companionConsole')}
               </p>
@@ -45,13 +45,13 @@ export function AruaAppShell({
                   {t('app.description')}
                 </p>
               </div>
-            </div>
+            </div> */}
 
-            <div className="mt-6 px-1">
+            {/* <div className="mt-6 px-1">
               <p className="text-xs tracking-[0.32em] text-[var(--aura-text-soft)] uppercase">
                 {t('app.navigate')}
               </p>
-            </div>
+            </div> */}
 
             <nav className="aura-scrollbar mt-4 grid grid-cols-3 gap-3 overflow-x-auto pb-1 lg:grid-cols-1 lg:pb-0">
               {aruaNavItems.map((item, index) => {
@@ -88,8 +88,8 @@ export function AruaAppShell({
               })}
             </nav>
 
-            <div className="mt-6 rounded-[2rem] border border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_72%,transparent)] p-5 lg:mt-auto">
-              <div className="flex items-center gap-3">
+            {/* <div className="mt-6 rounded-[2rem] border border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_72%,transparent)] p-5 lg:mt-auto"> */}
+              {/* <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] font-semibold text-[#1d1830] shadow-[0_16px_32px_-20px_var(--aura-glow)]">
                   {sharedUserAccount.initials}
                 </div>
@@ -101,11 +101,11 @@ export function AruaAppShell({
                     {t(sharedUserAccount.status as Parameters<typeof t>[0])}
                   </p>
                 </div>
-              </div>
-              <p className="mt-4 text-xs leading-6 text-[var(--aura-text-muted)]">
+              </div> */}
+              {/* <p className="mt-4 text-xs leading-6 text-[var(--aura-text-muted)]">
                 {t(sharedUserAccount.description as Parameters<typeof t>[0])}
-              </p>
-            </div>
+              </p> */}
+            {/* </div> */}
           </div>
         </aside>
 

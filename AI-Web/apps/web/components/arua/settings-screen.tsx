@@ -39,32 +39,10 @@ export function AruaSettingsScreen() {
         </h2>
       }
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 xl:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className="space-y-6 xl:sticky xl:top-28 xl:self-start">
-          <Card className="rounded-[2rem] border-[var(--aura-border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--aura-surface-solid)_82%,transparent),color-mix(in_srgb,var(--aura-primary)_10%,transparent))] py-0 shadow-[0_28px_72px_-56px_var(--aura-glow)]">
-            <CardContent className="p-6">
-              <div className="flex h-14 w-14 items-center justify-center rounded-[1.25rem] bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-xl font-semibold text-[#211634]">
-                {sharedUserAccount.initials}
-              </div>
-              <p className="mt-5 text-[11px] tracking-[0.32em] text-[var(--aura-text-soft)] uppercase">
-                {t('settings.accountOverview')}
-              </p>
-              <CardTitle className="mt-3 text-2xl font-semibold text-[var(--aura-text)]">
-                {t(sharedUserAccount.name as Parameters<typeof t>[0])}
-              </CardTitle>
-              <p className="mt-2 text-sm font-medium text-[var(--aura-primary)]">
-                {t(sharedUserAccount.status as Parameters<typeof t>[0])}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-[var(--aura-text-muted)]">
-                {t(sharedUserAccount.description as Parameters<typeof t>[0])}
-              </p>
-            </CardContent>
-          </Card>
-        </aside>
-
+      <div className="mx-auto w-full max-w-7xl gap-8 xl:grid-cols-[22rem_minmax(0,1fr)]">
         <div className="flex flex-col gap-8">
-          <section className="space-y-5">
-            <div className="flex items-center gap-4">
+          <section>
+            <div className="flex items-center gap-4 mb-6">
               <UserRound className="h-6 w-6 text-[var(--aura-primary)]" />
               <h3 className="text-3xl font-semibold tracking-tight text-[var(--aura-text)]">
                 {t('settings.userProfile')}
@@ -93,9 +71,6 @@ export function AruaSettingsScreen() {
                   </div>
                 </div>
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm leading-6 text-[var(--aura-text-muted)]">
-                    {t('settings.profileHint')}
-                  </p>
                   <Button
                     type="button"
                     size="lg"

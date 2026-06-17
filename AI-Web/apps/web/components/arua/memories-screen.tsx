@@ -122,34 +122,6 @@ export function AruaMemoriesScreen() {
       }
     >
       <div className="mx-auto w-full max-w-7xl space-y-8">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
-          <div className="space-y-4">
-            <p className="text-xs font-semibold tracking-[0.38em] text-[var(--aura-primary)] uppercase">
-              {t('memories.eyebrow')}
-            </p>
-            <h3 className="text-3xl font-semibold tracking-tight text-[var(--aura-text)] sm:text-4xl">
-              {t('memories.heading')}
-            </h3>
-            <p className="max-w-3xl text-sm leading-8 text-[var(--aura-text-muted)]">
-              {t('memories.description')}
-            </p>
-          </div>
-
-          <Card className="rounded-[2rem] border-[var(--aura-border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--aura-surface-solid)_82%,transparent),color-mix(in_srgb,var(--aura-primary)_10%,transparent))] py-0 shadow-[0_30px_70px_-52px_var(--aura-glow)]">
-            <CardContent className="p-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] bg-[var(--aura-primary-soft)]">
-                <Sparkles className="h-5 w-5 text-[var(--aura-primary)]" />
-              </div>
-              <CardTitle className="mt-4 text-xl font-semibold text-[var(--aura-text)]">
-                {t('memories.pendingTitle')}
-              </CardTitle>
-              <CardDescription className="mt-3 text-sm leading-7 text-[var(--aura-text-muted)]">
-                {t('memories.pendingDescription')}
-              </CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-
         <Card className="rounded-[2rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0 shadow-[0_28px_72px_-54px_var(--aura-glow)]">
           <CardContent className="p-6 sm:p-8">
             <div className="flex flex-col gap-4 border-b border-[var(--aura-border)] pb-5 lg:flex-row lg:items-center lg:justify-between">

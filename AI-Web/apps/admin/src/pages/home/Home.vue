@@ -1,7 +1,7 @@
 <template>
   <div class="home-page">
     <el-card class="content-card" shadow="never">
-      <template #header>首页内容区</template>
+      <template #header></template>
       <el-empty description="暂无数据" />
     </el-card>
   </div>
