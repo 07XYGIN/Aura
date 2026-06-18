@@ -71,8 +71,12 @@ const messages = {
     'settings.userProfile': '用户资料',
     'settings.displayName': '显示名称',
     'settings.email': '邮箱地址',
+    'settings.age': '年龄',
+    'settings.sex': '性别',
     'settings.displayNamePlaceholder': '用户名',
+    'settings.profileSaved': '成功',
     'settings.emailPlaceholder': '邮箱',
+    'settings.agePlaceholder': '请输入年龄',
     'settings.profileHint': '资料接口接入后，这里会保存昵称、语言和边界偏好。',
     'settings.saveProfile': '保存资料',
     'settings.language': '语言',
@@ -183,11 +187,19 @@ const messages = {
     'settings.userProfile': 'User profile',
     'settings.displayName': 'Display name',
     'settings.email': 'Email address',
+    'settings.age': 'Age',
+    'settings.sex': 'Sex',
     'settings.displayNamePlaceholder': 'Will load from backend profile',
     'settings.emailPlaceholder': 'Will load from backend account',
+    'settings.agePlaceholder': 'Age',
+    'settings.sexPlaceholder': '0 male / 1 female',
     'settings.profileHint':
       'After the profile API is connected, nickname, language, and boundary preferences can be saved here.',
     'settings.saveProfile': 'Save profile',
+    'settings.savingProfile': 'Saving...',
+    'settings.profileSaved': 'Profile saved',
+    'settings.profileSaveFailed': 'Failed to save profile',
+    'settings.usernameRequired': 'Please enter a username.',
     'settings.language': 'Language',
     'settings.languageHint': 'Changes apply immediately in this browser.',
     'settings.appearance': 'Appearance',
@@ -199,6 +211,9 @@ const messages = {
     'settings.dangerHint':
       'Account deletion needs permission confirmation, export, and audit flows.',
     'settings.deleteAccount': 'Delete account',
+    'settings.deletingAccount': 'Deleting...',
+    'settings.accountDeleted': 'Account deleted',
+    'settings.accountDeleteFailed': 'Failed to delete account',
     'settings.notReady': 'This feature is still being connected',
     'settings.notReadyDescription':
       'It will be enabled after permission and audit APIs are ready.',
@@ -240,10 +255,15 @@ const messages = {
   },
 } satisfies Record<Locale, Record<string, string>>
 
+type MessageKey = keyof (typeof messages)['en-US']
+type MessageCatalog = Record<MessageKey, string>
+const fallbackMessages: MessageCatalog = messages['en-US']
+const localeMessages = messages as Record<Locale, Partial<MessageCatalog>>
+
 type I18nContextValue = {
   locale: Locale
   setLocale: (locale: Locale) => void
-  t: (key: keyof (typeof messages)['en-US']) => string
+  t: (key: MessageKey) => string
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null)
@@ -269,7 +289,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     return {
       locale,
       setLocale,
-      t: (key) => messages[locale][key] ?? messages['en-US'][key] ?? String(key),
+      t: (key) => localeMessages[locale][key] ?? fallbackMessages[key] ?? String(key),
     }
   }, [locale])
 

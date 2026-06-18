@@ -1,6 +1,22 @@
 import { toast } from 'sonner'
 import type { ApiResponse, RequestOptions } from '@/types/api'
 import { useUserStore } from '@/store/user'
+
+const redirectToLogin = (message = '登录已过期或非法，请重新登录') => {
+  useUserStore.getState().logout()
+
+  if (typeof window !== 'undefined') {
+    toast.error(message, {
+      position: 'top-center',
+    })
+
+    const pathname = window.location.pathname
+    if (pathname !== '/login') {
+      window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}&reason=invalid`)
+    }
+  }
+}
+
 async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, ...rest } = options
   const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
@@ -23,6 +39,7 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<Ap
   }
 
   if (res.status === 401) {
+    redirectToLogin()
     throw new Error('Unauthorized')
   }
 
@@ -39,6 +56,11 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<Ap
   }
 
   const json: ApiResponse<T> = await res.json()
+
+  if (json.code === 401) {
+    redirectToLogin(json.message)
+    throw new Error(json.message || 'Unauthorized')
+  }
 
   if (json.code === 500) {
     toast.error('Request failed', {

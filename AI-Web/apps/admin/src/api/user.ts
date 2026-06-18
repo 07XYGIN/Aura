@@ -1,5 +1,6 @@
 import request from '@/utils/requests'
 import type { LoginResponse, User } from '@/type/user'
+import type { LoginForm } from '@ai-web/types'
 
 /**
  * 注册
@@ -15,7 +16,7 @@ export const register = (data: User) => {
 /**
  * 用户登录
  */
-export const login = (data: User): Promise<LoginResponse> => {
+export const login = (data: LoginForm): Promise<LoginResponse> => {
   return request({
     url: '/api/user/login',
     method: 'POST',

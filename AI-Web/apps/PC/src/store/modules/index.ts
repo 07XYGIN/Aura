@@ -6,12 +6,20 @@ const useUserStore = defineStore(
   () => {
     const code = ref<string>('');
     const userinfo = reactive({
-      createTime: undefined,
-      userId: undefined,
-      userName: undefined,
+      id: undefined as string | undefined,
+      createTime: undefined as string | undefined,
+      userId: undefined as string | undefined,
+      userName: undefined as string | undefined,
+      username: undefined as string | undefined,
+      email: undefined as string | undefined,
+      age: undefined as number | undefined,
+      sex: undefined as number | undefined,
     });
     const setCode = (co: string) => {
       code.value = co;
+    };
+    const clearCode = () => {
+      code.value = '';
     };
     const getCode = () => {
       return code.value;
@@ -21,14 +29,20 @@ const useUserStore = defineStore(
     }
     const UserInfo = async () => {
       const { data } = await getUserInfo();
-      userinfo.createTime = data.createTime;
-      userinfo.userId = data.userId;
-      userinfo.userName = data.userName;
+      userinfo.createTime = data?.createTime;
+      userinfo.id = data?.id;
+      userinfo.userId = data?.id ?? data?.userId;
+      userinfo.userName = data?.username ?? data?.userName;
+      userinfo.username = data?.username ?? data?.userName;
+      userinfo.email = data?.email;
+      userinfo.age = data?.age;
+      userinfo.sex = data?.sex;
     };
     return {
       code,
       userinfo,
       setCode,
+      clearCode,
       getCode,
       UserInfo,
       getUserId

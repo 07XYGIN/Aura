@@ -16,7 +16,7 @@ const user = useUserStore();
 const router = useRouter();
 const errorMessage = ref('');
 const from = reactive<loginForm>({
-  userName: undefined,
+  username: undefined,
   password: undefined,
   code: undefined,
 });
@@ -30,7 +30,8 @@ const loginSubmit = async () => {
   }
   errorMessage.value = '';
   user.setCode(token);
-  router.push('/');
+  const redirect = typeof router.currentRoute.value.query.redirect === 'string' ? router.currentRoute.value.query.redirect : '/';
+  router.push(redirect);
 };
 </script>
 
@@ -43,7 +44,7 @@ const loginSubmit = async () => {
       </div>
       <Field>
         <FieldLabel for="email"> 用户名 </FieldLabel>
-        <Input placeholder="用户名" required v-model="from.userName" />
+        <Input placeholder="用户名" required v-model="from.username" />
       </Field>
       <Field>
         <div class="flex items-center">

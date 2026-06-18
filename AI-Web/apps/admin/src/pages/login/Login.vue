@@ -37,9 +37,6 @@ const user = useUserStore()
 const form = reactive<LoginForm>({
   username: '',
   password: '',
-  age: 1,
-  gender: '',
-  email: '',
 })
 
 const formRef = ref<FormInstance>()
@@ -52,7 +49,8 @@ const loginSubmit = async (data: LoginForm) => {
     return
   }
   user.setToken(token)
-  await router.push('/')
+  const redirect = typeof router.currentRoute.value.query.redirect === 'string' ? router.currentRoute.value.query.redirect : '/'
+  await router.push(redirect)
 }
 
 const onSubmit = () => {

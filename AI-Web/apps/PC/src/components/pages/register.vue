@@ -12,7 +12,7 @@ const props = defineProps<{
 }>();
 
 const from = reactive<registerForm>({
-  userName: undefined,
+  username: undefined,
   newPassword: undefined,
   password: '',
   code: undefined,
@@ -41,7 +41,7 @@ const submit = async () => {
               <FieldLabel for="checkout-7j9-card-name-43j">
                 <span class="text-foreground">用户名</span>
               </FieldLabel>
-              <Input placeholder="请输入用户名" required v-model="from.userName" />
+              <Input placeholder="请输入用户名" required v-model="from.username" />
             </Field>
             <Field>
               <FieldLabel for="checkout-7j9-card-name-43j">

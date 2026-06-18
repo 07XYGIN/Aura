@@ -1,7 +1,7 @@
 'use client'
 
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Cake, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
@@ -13,8 +13,9 @@ import { cn } from '@/lib/utils'
 import type { AuthFormValues, AuthMode, SexOption } from '@/types/auth'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from '@/lib/i18n'
+import { setAuthTokenCookie } from '@/lib/auth-token'
 const sexOptions: SexOption[] = [
   { label: 'Male', value: '1' },
   { label: 'Female', value: '2' },
@@ -33,6 +34,28 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   })
   const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const authReason = searchParams.get('reason');
+
+  useEffect(() => {
+    if (authReason === 'missing') {
+      toast.error('请先登录', {
+        position: 'top-center',
+      })
+    }
+
+    if (authReason === 'expired') {
+      toast.error('登录已过期，请重新登录', {
+        position: 'top-center',
+      })
+    }
+
+    if (authReason === 'invalid') {
+      toast.error('登录状态非法，请重新登录', {
+        position: 'top-center',
+      })
+    }
+  }, [authReason])
   const handleForgotPassword = () => {
     toast.info(t('auth.forgotPasswordPending'), {
       description: t('auth.forgotPasswordDescription'),
@@ -105,8 +128,9 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                 description: response.message,
                 position: 'top-center',
             })
+            setAuthTokenCookie(response.token)
             setToken(response.token)
-            router.replace('/')
+            router.replace(searchParams.get('redirect') || '/')
         } catch {
             toast.error(mode === 'login' ? t('auth.loginFailed') : t('auth.registrationFailed'), {
                 description:

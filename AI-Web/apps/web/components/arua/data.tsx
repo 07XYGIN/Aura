@@ -8,8 +8,8 @@ export const aruaNavItems: AruaNavItem[] = [
 ]
 
 export const sharedUserAccount: SharedUserAccount = {
-  // name: 'account.name',
-  // status: 'account.status',
-  // initials: 'UA',
-  // description: 'account.description',
+  name: 'account.name',
+  status: 'account.status',
+  initials: 'UA',
+  description: 'account.description',
 }

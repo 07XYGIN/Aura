@@ -10,6 +10,16 @@ export default defineConfig({
   server: {
     open: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'vue-router', 'pinia'],
+          element: ['element-plus'],
+        },
+      },
+    },
+  },
   plugins: [
     vue(),
     tailwindcss(),

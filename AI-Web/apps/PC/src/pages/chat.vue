@@ -54,24 +54,47 @@ const msgContainer = ref<HTMLDivElement | null>(null);
 const userStore = useUserStore();
 const msgRes = ref<Array<{ type: string; content: string }>>([]);
 const isSend = ref(false);
+const chatSseUrl = `${import.meta.env.VITE_BFF_URL || 'http://127.0.0.1:3001'}/api/chat/sse`;
 
-const { connect, disconnect } = useSse('http://127.0.0.1:8000/api/send/sse/', {
+const mapHistoryMessage = (item: { content?: string; senderType?: string; role?: string }) => {
+  const role = item.senderType ?? item.role;
+  return {
+    type: role === 'user' || role === 'human' ? 'human' : 'ai',
+    content: item.content ?? '',
+  };
+};
+
+const { connect, disconnect } = useSse(chatSseUrl, {
+  headers: userStore.getCode() ? { Authorization: `Bearer ${userStore.getCode()}` } : undefined,
   onMessage: (data) => {
     if (data === '[DONE]') {
       isSend.value = false;
+      getList();
       return;
     }
+    let content = data;
+
+    try {
+      const parsed = JSON.parse(data) as { content?: string; event?: string };
+      content = parsed.content ?? '';
+    } catch {
+      content = data;
+    }
+
+    if (!content) return;
 
     const lastMsg = msgRes.value[msgRes.value.length - 1];
     if (lastMsg?.type === 'ai') {
-      lastMsg.content += data;
+      lastMsg.content += content;
     } else {
-      msgRes.value.push({ type: 'ai', content: data });
+      msgRes.value.push({ type: 'ai', content });
     }
-    isSend.value = false;
     scrollToBottom();
   },
   onError: () => {
+    isSend.value = false;
+  },
+  onClose: () => {
     isSend.value = false;
   },
 });
@@ -80,21 +103,23 @@ const send = async () => {
   if (isSend.value || !msg.value.trim()) return;
 
   isSend.value = true;
-  msgRes.value.push({ type: 'human', content: msg.value });
+  const content = msg.value;
+  msg.value = '';
+  msgRes.value.push({ type: 'human', content });
+  msgRes.value.push({ type: 'ai', content: '' });
   await connect({
     body: JSON.stringify({
-      message: msg.value,
-      userId: userStore.userinfo.userId,
+      message: content,
+      clientMessageId: `pc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     }),
   });
-  msg.value = '';
   scrollToBottom();
 };
 
 const getList = async () => {
   if (userStore.userinfo.userId) {
     const { data } = await getMsgList(userStore.userinfo.userId);
-    msgRes.value = data;
+    msgRes.value = Array.isArray(data) ? data.map(mapHistoryMessage).filter((item) => item.content) : [];
   }
 };
 

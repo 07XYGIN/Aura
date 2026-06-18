@@ -1,13 +1,13 @@
 import request from '../utils/request';
 export interface registerForm {
-  userName: string | undefined;
+  username: string | undefined;
   password: string;
   newPassword: string | undefined;
   code?: string;
 }
 
 export interface loginForm {
-  userName: string | undefined;
+  username: string | undefined;
   password: string | undefined;
   code?: string | undefined;
 }
@@ -21,17 +21,19 @@ export interface LoginResponse {
 }
 
 export const register = (register: registerForm) => {
+  const { newPassword: _newPassword, code: _code, ...body } = register;
   return request({
-    url: 'api/register',
+    url: '/api/user/register',
     method: 'POST',
-    data: register,
+    data: body,
   });
 };
 
 export const login = (login: loginForm): Promise<LoginResponse> => {
+  const { code: _code, ...body } = login;
   return request({
-    url: 'api/login',
+    url: '/api/user/login',
     method: 'POST',
-    data: login,
+    data: body,
   });
 };

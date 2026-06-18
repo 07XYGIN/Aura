@@ -19,15 +19,15 @@
       <Card class="transition-all duration-300 hover:border-gray-400 hover:shadow-lg">
         <CardHeader class="flex items-center justify-between pb-2">
           <Badge variant="secondary" class="text-xs">
-            {{ item.metadata.title }}
+            {{ item.metadata?.title || 'Untitled' }}
           </Badge>
           <span class="text-muted-foreground font-mono text-[10px]">
-            {{ item.metadata.create_time }}
+            {{ item.metadata?.create_time || '-' }}
           </span>
         </CardHeader>
 
         <CardContent class="line-clamp-4 p-2 text-sm leading-relaxed text-zinc-300">
-          <span>{{ item.metadata.content }}</span>
+          <span>{{ item.metadata?.content || item.page_content || '-' }}</span>
         </CardContent>
 
         <CardFooter class="flex justify-end opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -50,17 +50,17 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/empty';
 import { Skeleton } from '../ui/skeleton';
 
 export interface MemoryMetadata {
-  title: string;
-  content: string;
-  create_time: string;
-  timestamp: string;
+  title?: string;
+  content?: string;
+  create_time?: string;
+  timestamp?: string;
 }
 
 export interface MemoryDocument {
   id: string;
-  metadata: MemoryMetadata;
-  page_content: string;
-  type: 'Document';
+  metadata?: MemoryMetadata;
+  page_content?: string;
+  type?: string;
 }
 
 const props = defineProps<{

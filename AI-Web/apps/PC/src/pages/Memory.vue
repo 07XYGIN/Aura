@@ -12,17 +12,17 @@ import MemoryList from '../components/pages/MemoryList.vue';
 import useUserStore from '../store/modules';
 
 export interface MemoryMetadata {
-  title: string;
-  content: string;
-  create_time: string;
-  timestamp: string;
+  title?: string;
+  content?: string;
+  create_time?: string;
+  timestamp?: string;
 }
 
 export interface MemoryDocument {
   id: string;
-  metadata: MemoryMetadata;
-  page_content: string;
-  type: 'Document';
+  metadata?: MemoryMetadata;
+  page_content?: string;
+  type?: string;
 }
 
 const userStore = useUserStore();
@@ -34,8 +34,8 @@ const loadMemory = async () => {
 
   try {
     loading.value = true;
-    const { data } = await getMemoryList({ user_id: userStore.userinfo.userId });
-    memoryList.value = data;
+    const { data } = await getMemoryList({ page: 1, pageSize: 50 });
+    memoryList.value = data?.items ?? [];
   } finally {
     loading.value = false;
   }

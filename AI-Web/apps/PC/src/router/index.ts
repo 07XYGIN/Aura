@@ -5,6 +5,7 @@ const SidebarLayout = () => import('../components/pages/sidebar.vue');
 const Chat = () => import('../pages/chat.vue');
 const Memory = () => import('../pages/Memory.vue');
 const login = () => import('../pages/Login.vue');
+const register = () => import('../pages/register.vue');
 const Setting = () => import('../pages/Setting.vue');
 
 const routes = [
@@ -38,6 +39,12 @@ const routes = [
     name: 'login',
     meta: { requiresAuth: false },
   },
+  {
+    path: '/register',
+    component: register,
+    name: 'register',
+    meta: { requiresAuth: false },
+  },
 ];
 
 const router = createRouter({
@@ -47,18 +54,17 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const userStore = useUserStore();
-  if (to.name === 'login') {
-    if (userStore.getCode()) {
-      next({ path: '/' });
-    } else {
-      next();
-    }
+  const publicPages = new Set(['login', 'register']);
+
+  if (publicPages.has(String(to.name))) {
+    next();
     return;
   }
 
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
 
   if (requiresAuth && !userStore.getCode()) {
+    window.alert('登录已过期或未登录，请重新登录');
     next({
       path: '/login',
       query: { redirect: to.fullPath },

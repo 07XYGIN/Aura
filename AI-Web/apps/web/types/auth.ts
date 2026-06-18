@@ -5,7 +5,7 @@ export type AuthMode = 'login' | 'register'
 export type AuthSex = '1' | '2' | ''
 
 export type AuthFormValues = Partial<
-  Omit<LoginFormValues, 'age' | 'gender'> & {
+  Omit<LoginFormValues, 'age' | 'sex'> & {
     age: string
     sex: AuthSex
   }

@@ -1,32 +1,7 @@
 import request from '@/lib/request'
+import type { AuraHistoryMessage, AuraMemoryPage } from '@ai-web/types'
 
-export type AuraHistoryMessage = {
-  id?: string
-  role?: 'user' | 'assistant' | 'aura' | 'system'
-  senderType?: 'user' | 'assistant' | 'system'
-  content?: string
-  createdAt?: string
-}
-
-export type AuraMemoryItem = {
-  id: string
-  metadata?: {
-    title?: string
-    create_time?: string
-    content?: string
-    [key: string]: unknown
-  }
-  page_content?: string
-  type?: string
-}
-
-export type AuraMemoryPage = {
-  items: AuraMemoryItem[]
-  total: number
-  page: number
-  pageSize: number
-  hasMore: boolean
-}
+export type { AuraHistoryMessage, AuraMemoryItem, AuraMemoryPage } from '@ai-web/types'
 
 export const aura = {
   getCurrentMessages: () =>

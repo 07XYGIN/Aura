@@ -1,3 +1,4 @@
+import { ElMessage } from 'element-plus'
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
@@ -81,15 +82,31 @@ const router = createRouter({
   routes,
 })
 
+let authMessageVisible = false
+
+const showAuthMessage = (message = '登录已过期或未登录，请重新登录') => {
+  if (authMessageVisible) return
+
+  authMessageVisible = true
+  ElMessage.error({
+    message,
+    onClose: () => {
+      authMessageVisible = false
+    },
+  })
+}
+
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
+  const publicPages = new Set(['login', 'register'])
 
-  if (token && to.path === '/login') {
-    return { path: '/' }
+  if (publicPages.has(String(to.name))) {
+    return true
   }
 
   if (to.meta.requiresAuth && !token) {
-    return { path: '/login' }
+    showAuthMessage()
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
 
   return true

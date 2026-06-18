@@ -7,7 +7,8 @@ export type RequestOptions = {
 
 export type ApiResponse<T = unknown> = {
   code: number
-  message: string
-  data: T
-  token:string
+  message?: string
+  msg?: string
+  data?: T
+  token?: string
 }
