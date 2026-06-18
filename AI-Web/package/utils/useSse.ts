@@ -1,32 +1,35 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 
-interface requestOptions {
+interface RequestOptions {
     body?: BodyInit;
     headers?: Record<string, string>;
     onMessage?: (data: string) => void;
     onError?: (data: unknown) => void;
+    onClose?: () => void;
 }
 
 interface ConnectOptions {
     body?: BodyInit;
 }
 
-export function UseSse(url: string, options: requestOptions = {}) {
-    const { headers, onMessage, onError } = options;
+export function UseSse(url: string, options: RequestOptions = {}) {
+    const { headers, onMessage, onError, onClose } = options;
     let ctrl: AbortController | null = null;
+    let connecting = false;
 
     const connect = async (connectOptions?: ConnectOptions) => {
-        // 连接前先清理旧连接，避免多个流同时写入同一段 UI。
-        if (ctrl) {
-            ctrl.abort();
+        if (connecting || ctrl) {
+            return false;
         }
 
         ctrl = new AbortController();
+        connecting = true;
         const currentCtrl = ctrl;
 
         try {
             await fetchEventSource(url, {
                 method: 'POST',
+                openWhenHidden: true,
                 headers: {
                     'Content-Type': 'application/json',
                     ...headers,
@@ -40,9 +43,7 @@ export function UseSse(url: string, options: requestOptions = {}) {
                     throw err;
                 },
                 onclose() {
-                    if (ctrl === currentCtrl) {
-                        ctrl = null;
-                    }
+                    onClose?.();
                 },
             });
         } catch (err) {
@@ -53,7 +54,11 @@ export function UseSse(url: string, options: requestOptions = {}) {
             if (ctrl === currentCtrl) {
                 ctrl = null;
             }
+            connecting = false;
+            onClose?.();
         }
+
+        return true;
     };
 
     const disconnect = () => {
@@ -61,10 +66,14 @@ export function UseSse(url: string, options: requestOptions = {}) {
             ctrl.abort();
             ctrl = null;
         }
+        connecting = false;
     };
+
+    const isConnected = () => Boolean(ctrl) || connecting;
 
     return {
         connect,
         disconnect,
+        isConnected,
     };
 }

@@ -15,12 +15,17 @@ router = APIRouter(
 )
 
 
-def event_generator(message: str, user_id: str):
+def event_generator(message: str, user_id: str, client_message_id: str | None = None):
     started_at = time.perf_counter()
     emotion_state = derive_emotion_state(message).to_dict()
-    logging.info("Aura SSE stream start user_id=%s message_length=%s", user_id, len(message))
+    logging.info(
+        "Aura SSE stream start user_id=%s client_message_id=%s message_length=%s",
+        user_id,
+        client_message_id,
+        len(message),
+    )
     try:
-        for event in aura_agent(message, user_id, emotion_state):
+        for event in aura_agent(message, user_id, emotion_state, client_message_id):
             logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
             yield sse_data(event)
     except Exception:
@@ -37,7 +42,7 @@ def event_generator(message: str, user_id: str):
 @router.post("/send/sse/")
 async def send_message(msg: MessageRequest):
     return StreamingResponse(
-        event_generator(msg.message, msg.user_id),
+        event_generator(msg.message, msg.user_id, msg.client_message_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

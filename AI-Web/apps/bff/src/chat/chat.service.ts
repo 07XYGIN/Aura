@@ -6,6 +6,7 @@ import { AppConfigService } from '../config/app-config.service'
 
 type ChatSsePayload = {
     message?: unknown
+    clientMessageId?: unknown
     userId?: unknown
     token?: unknown
 }
@@ -77,6 +78,8 @@ type PersistedTurn = {
 @Injectable()
 export class ChatService {
     private readonly logger = new Logger(ChatService.name)
+    private readonly activeClientMessages = new Map<string, number>()
+    private readonly clientMessageTtlMs = 2 * 60 * 1000
 
     constructor(private readonly config: AppConfigService) {}
 
@@ -96,11 +99,30 @@ export class ChatService {
         const message = payload.message.trim()
         const userId = payload.userId
         const token = payload.token
+        const clientMessageId =
+            typeof payload.clientMessageId === 'string' ? payload.clientMessageId.trim() : ''
+        const activeKey = clientMessageId ? `${userId}:${clientMessageId}` : ''
+
+        if (activeKey && this.isDuplicateActiveMessage(activeKey)) {
+            this.logger.warn(
+                `Duplicate SSE chat ignored userId=${userId} clientMessageId=${clientMessageId}`,
+            )
+            response.status(409).json({
+                code: 409,
+                message: 'Duplicate chat request',
+            })
+            return
+        }
+
+        if (activeKey) {
+            this.activeClientMessages.set(activeKey, Date.now())
+        }
+
         const authHeader = `Bearer ${token}`
-        this.logger.log(`SSE chat start userId=${userId}`)
+        this.logger.log(`SSE chat start userId=${userId} clientMessageId=${clientMessageId || 'none'}`)
 
         const upstreamResponse = await axios
-            .post<Readable>(`${this.config.aiServiceUrl}/api/send/sse/`, { message, userId }, {
+            .post<Readable>(`${this.config.aiServiceUrl}/api/send/sse/`, { message, userId, clientMessageId }, {
                 responseType: 'stream',
                 headers: {
                     Accept: 'text/event-stream',
@@ -108,6 +130,9 @@ export class ChatService {
                 },
             })
             .catch((error: unknown) => {
+                if (activeKey) {
+                    this.activeClientMessages.delete(activeKey)
+                }
                 this.throwProxyError(error)
             })
 
@@ -133,6 +158,9 @@ export class ChatService {
                 }
 
                 closed = true
+                if (activeKey) {
+                    this.activeClientMessages.delete(activeKey)
+                }
                 stream.destroy()
                 response.end()
                 void this.persistTurnToCore({
@@ -151,6 +179,9 @@ export class ChatService {
                 if (!closed) {
                     stream.destroy()
                     closed = true
+                    if (activeKey) {
+                        this.activeClientMessages.delete(activeKey)
+                    }
                     resolve()
                 }
             })
@@ -205,6 +236,9 @@ export class ChatService {
             stream.on('error', () => {
                 if (!closed) {
                     closed = true
+                    if (activeKey) {
+                        this.activeClientMessages.delete(activeKey)
+                    }
                     response.end()
                     void this.persistTurnToCore({
                         userId,
@@ -219,6 +253,19 @@ export class ChatService {
                 }
             })
         })
+    }
+
+    private isDuplicateActiveMessage(activeKey: string): boolean {
+        const now = Date.now()
+        const startedAt = this.activeClientMessages.get(activeKey)
+
+        for (const [key, timestamp] of this.activeClientMessages) {
+            if (now - timestamp > this.clientMessageTtlMs) {
+                this.activeClientMessages.delete(key)
+            }
+        }
+
+        return typeof startedAt === 'number' && now - startedAt <= this.clientMessageTtlMs
     }
 
     private async createCoreSession(

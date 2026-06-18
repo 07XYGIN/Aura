@@ -6,3 +6,4 @@ class MessageRequest(BaseModel):
 
     message: str
     user_id: str = Field(alias="userId")
+    client_message_id: str | None = Field(default=None, alias="clientMessageId")

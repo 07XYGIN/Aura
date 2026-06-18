@@ -89,6 +89,7 @@ def aura_agent(
     human_prompt: str,
     user_id: str,
     emotion_state: dict | None = None,
+    client_message_id: str | None = None,
 ) -> Generator[Any, None, None]:
     if aura is None:
         raise RuntimeError("Aura graph has not been initialized.")
@@ -105,7 +106,14 @@ def aura_agent(
         }
     }
     inputs = {
-        "messages": [HumanMessage(content=human_prompt)],
+        "messages": [
+            HumanMessage(
+                content=human_prompt,
+                additional_kwargs={
+                    "client_message_id": client_message_id,
+                } if client_message_id else {},
+            ),
+        ],
         "emotion": emotion_state,
     }
 
@@ -163,19 +171,40 @@ def get_history(user_id: str) -> list:
     messages = state.values.get("messages", [])
 
     history: list[dict[str, str]] = []
+    seen_client_message_ids: set[str] = set()
+    last_role: str | None = None
+    last_content: str | None = None
+
     for msg in messages:
         if msg.type == "human":
+            client_message_id = getattr(msg, "additional_kwargs", {}).get("client_message_id")
+            content = msg.content
+            if isinstance(client_message_id, str) and client_message_id:
+                if client_message_id in seen_client_message_ids:
+                    continue
+                seen_client_message_ids.add(client_message_id)
+            elif last_role == "user" and last_content == content:
+                continue
+
             history.append({
                 "id": getattr(msg, "id", None) or f"human-{len(history)}",
                 "role": "user",
-                "content": msg.content
+                "content": content
             })
+            last_role = "user"
+            last_content = content
         elif msg.type == "ai" and msg.content:
+            content = msg.content
+            if last_role == "aura" and last_content == content:
+                continue
+
             history.append({
                 "id": getattr(msg, "id", None) or f"ai-{len(history)}",
                 "role": "aura",
-                "content": msg.content
+                "content": content
             })
+            last_role = "aura"
+            last_content = content
     return history
 
 

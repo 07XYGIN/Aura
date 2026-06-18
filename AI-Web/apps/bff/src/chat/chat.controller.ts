@@ -7,6 +7,7 @@ type RequestWithUser = Request & { user: AuthUser }
 
 type ChatSseBody = {
     message?: unknown
+    clientMessageId?: unknown
     sessionId?: unknown
 }
 
@@ -24,6 +25,7 @@ export class ChatController {
         return this.chatService.streamSse(
             {
                 message: body.message,
+                clientMessageId: body.clientMessageId,
                 userId: request.user.userId,
                 token: request.user.token,
             },

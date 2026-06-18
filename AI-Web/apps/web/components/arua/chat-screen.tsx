@@ -100,6 +100,7 @@ export function AruaChatScreen() {
     const fileInputRef = useRef<HTMLInputElement>(null)
     const messagesRef = useRef<HTMLDivElement>(null)
     const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+    const isSendingRef = useRef(false)
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [message, setMessage] = useState('')
     const [isListening, setIsListening] = useState(false)
@@ -185,6 +186,7 @@ export function AruaChatScreen() {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 onMessage: (data) => {
                     if (data === '[DONE]') {
+                        isSendingRef.current = false
                         setIsStreaming(false)
                         void loadHistoryMessages({ showError: false })
                         return
@@ -228,11 +230,16 @@ export function AruaChatScreen() {
                     )
                 },
                 onError: () => {
+                    isSendingRef.current = false
                     setIsStreaming(false)
                     toast.error(t('chat.streamFailed'), {
                         description: t('chat.tryAgain'),
                         position: 'top-center',
                     })
+                },
+                onClose: () => {
+                    isSendingRef.current = false
+                    setIsStreaming(false)
                 },
             }),
         [loadHistoryMessages, t, token],
@@ -301,6 +308,10 @@ export function AruaChatScreen() {
     }
 
     const handleSubmit = () => {
+        if (isSendingRef.current || isStreaming) {
+            return
+        }
+
         const trimmedMessage = message.trim()
 
         if (!trimmedMessage && selectedFiles.length === 0) {
@@ -308,7 +319,9 @@ export function AruaChatScreen() {
         }
 
         const now = Date.now()
+        const clientMessageId = `client-${now}-${Math.random().toString(36).slice(2, 10)}`
         const assistantMessageId = `assistant-${now}`
+        isSendingRef.current = true
         setIsStreaming(true)
         setLatestEmotion(null)
 
@@ -335,6 +348,7 @@ export function AruaChatScreen() {
 
         connect({
             body: JSON.stringify({
+                clientMessageId,
                 message: trimmedMessage,
             }),
         })
