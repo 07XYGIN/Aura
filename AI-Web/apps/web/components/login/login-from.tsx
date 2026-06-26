@@ -2,7 +2,7 @@
 
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
-import { Cake, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
+import { Cake, KeyRound, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
-import type { AuthFormValues, AuthMode, SexOption } from '@/types/auth'
+import type { AuthFormValues, AuthMode, SexOption, UserSex } from '@/types/auth'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,8 +18,19 @@ import { useI18n } from '@/lib/i18n'
 import { setAuthTokenCookie } from '@/lib/auth-token'
 const sexOptions: SexOption[] = [
   { label: 'Male', value: '1' },
-  { label: 'Female', value: '2' },
+  { label: 'Female', value: '0' },
 ]
+
+const toUserSex = (value?: string): UserSex | undefined => {
+  if (value === '1') {
+    return 1
+  }
+  if (value === '0') {
+    return 0
+  }
+
+  return undefined
+}
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const { t } = useI18n()
@@ -31,6 +42,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     email: '',
     age: '',
     sex: '',
+    inviteCode: '',
   })
   const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
@@ -89,8 +101,9 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   username: formData.username ?? '',
                   password: formData.password ?? '',
                   email: formData.email ?? '',
-                  sex: formData.sex ?? '',
+                  sex: toUserSex(formData.sex),
                   age: formData.age ? Number(formData.age) : undefined,
+                  inviteCode: formData.inviteCode ?? '',
               }
             : {
                   username: formData.username ?? '',
@@ -105,9 +118,9 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                 position: 'top-center',
             })
 
-        } catch {
+        } catch (error) {
             toast.error(t('auth.registrationFailed'), {
-                description: t('auth.verifyRegister'),
+                description: error instanceof Error ? error.message : t('auth.verifyRegister'),
                 position: 'top-center',
             })
         } finally {
@@ -131,10 +144,12 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
             setAuthTokenCookie(response.token)
             setToken(response.token)
             router.replace(searchParams.get('redirect') || '/')
-        } catch {
+        } catch (error) {
             toast.error(mode === 'login' ? t('auth.loginFailed') : t('auth.registrationFailed'), {
                 description:
-                    mode === 'login'
+                    error instanceof Error
+                        ? error.message
+                        : mode === 'login'
                         ? t('auth.verifyLogin')
                         : t('auth.verifyRegister'),
                 position: 'top-center',
@@ -210,6 +225,17 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                     name="age"
                     placeholder={t('auth.age')}
                     value={formData.age ?? ''}
+                    onChange={handleChange}
+                  />
+                </Field>
+
+                <Field orientation="horizontal">
+                  <KeyRound />
+                  <Input
+                    type="text"
+                    name="inviteCode"
+                    placeholder={t('auth.inviteCode')}
+                    value={formData.inviteCode ?? ''}
                     onChange={handleChange}
                   />
                 </Field>

@@ -13,6 +13,8 @@ public class AuraProfile {
     private String voiceStyle;
     private String appearance;
     private String boundaries;
+    private String systemPrompt;
+    private String greetingStyle;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }

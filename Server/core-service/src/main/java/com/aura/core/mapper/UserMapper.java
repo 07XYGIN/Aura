@@ -13,6 +13,12 @@ public interface UserMapper {
 
     UserDto findUserInfo(@Param("id") String userId);
 
+    String findUserIdByUsername(@Param("username") String username);
+
+    int countAvailableInviteCode(@Param("code") String code);
+
+    int consumeInviteCode(@Param("code") String code, @Param("userId") String userId);
+
     int deleteUser(@Param("username") String username);
 
     int updateUser(UserDto userDto);

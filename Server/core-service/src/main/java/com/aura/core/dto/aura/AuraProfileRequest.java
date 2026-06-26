@@ -10,4 +10,6 @@ public class AuraProfileRequest {
     private String voiceStyle;
     private String appearance;
     private String boundaries;
+    private String systemPrompt;
+    private String greetingStyle;
 }

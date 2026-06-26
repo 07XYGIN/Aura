@@ -9,7 +9,9 @@ import {
   type ReactNode,
 } from 'react'
 
-export type Locale = 'zh-CN' | 'en-US'
+export type Locale = 'zh-CN' | 'en-US' | 'ja-JP'
+
+const SUPPORTED_LOCALES: readonly Locale[] = ['zh-CN', 'en-US', 'ja-JP']
 
 const STORAGE_KEY = 'aura-locale'
 
@@ -104,6 +106,7 @@ const messages = {
     'auth.passwordRegister': '设置密码',
     'auth.email': 'you@example.com',
     'auth.age': '请输入年龄',
+    'auth.inviteCode': '邀请码',
     'auth.male': '男',
     'auth.female': '女',
     'auth.rememberMe': '记住我',
@@ -230,6 +233,7 @@ const messages = {
     'auth.passwordRegister': 'Create a password',
     'auth.email': 'you@example.com',
     'auth.age': 'Enter your age',
+    'auth.inviteCode': 'Invite code',
     'auth.male': 'Male',
     'auth.female': 'Female',
     'auth.rememberMe': 'Remember me',
@@ -253,12 +257,142 @@ const messages = {
     'theme.dark': 'Dark',
     'theme.system': 'System',
   },
+  'ja-JP': {
+    'app.companionConsole': 'コンパニオンコンソール',
+    'app.description': '会話、記憶、個人設定のための落ち着いた AI ワークスペース。',
+    'app.navigate': 'ナビゲーション',
+    'nav.chat': 'AI チャット',
+    'nav.memories': 'メモリー',
+    'nav.settings': '設定',
+    'account.name': 'ユーザーアカウント',
+    'account.status': 'バックエンド同期待ち',
+    'account.description':
+      'アカウントサービス接続後、プロフィール、好み、コンパニオン権限がここに表示されます。',
+    'chat.placeholder': 'Arua にメッセージ...',
+    'chat.uploadImage': '画像をアップロード',
+    'chat.startVoice': '音声入力を開始',
+    'chat.stopVoice': '音声入力を停止',
+    'chat.send': 'メッセージを送信',
+    'chat.emotion': '感情',
+    'chat.emotionUpdated': '感情を更新しました',
+    'chat.accountSyncFailed': 'アカウント同期に失敗しました',
+    'chat.accountSyncFailedDescription': 'BFF サービスが起動しているか確認してください。',
+    'chat.streamFailed': 'メッセージストリームに失敗しました',
+    'chat.invalidChunk': 'Arua が解析できないストリーム片を返しました。',
+    'chat.tryAgain': 'もう一度メッセージを送信してください。',
+    'chat.historyLoadFailed': 'チャット履歴の読み込みに失敗しました',
+    'chat.deleteMessage': 'このメッセージを削除',
+    'chat.messageDeleted': 'メッセージを削除しました',
+    'chat.deleteFailed': 'メッセージの削除に失敗しました',
+    'chat.clearHistory': 'チャット履歴をクリア',
+    'chat.historyCleared': 'チャット履歴をクリアしました',
+    'chat.clearHistoryFailed': 'チャット履歴のクリアに失敗しました',
+    'chat.voiceUnavailable': '音声入力は利用できません',
+    'chat.voiceFailed': '音声入力に失敗しました',
+    'chat.voiceFailedDescription': 'もう一度録音してください。',
+    'memories.title': 'メモリー',
+    'memories.eyebrow': 'メモリーワークスペース',
+    'memories.heading': '長期メモリーボード',
+    'memories.description':
+      '長期メモリー、タグ、想起信頼度、インデックス状態がここに表示されます。',
+    'memories.pendingTitle': 'メモリー同期待ち',
+    'memories.pendingDescription':
+      'バックエンドが会話メモリーを書き込むと、要約、タグ、想起の手がかりがここに表示されます。',
+    'memories.emptyEyebrow': '空の状態',
+    'memories.emptyTitle': 'まだメモリーはありません',
+    'memories.emptyDescription':
+      'Arua と会話を続けると、安定した好み、重要な予定、感情の手がかりが長期メモリーになります。',
+    'memories.refresh': 'メモリーを更新',
+    'memories.clearAll': 'メモリーをクリア',
+    'memories.delete': 'メモリーを削除',
+    'memories.deleted': 'メモリーを削除しました',
+    'memories.deleteFailed': 'メモリーの削除に失敗しました',
+    'memories.cleared': '長期メモリーをクリアしました',
+    'memories.clearFailed': '長期メモリーのクリアに失敗しました',
+    'memories.loadFailed': 'メモリーの読み込みに失敗しました',
+    'memories.loading': 'メモリーを読み込み中...',
+    'memories.untitled': '無題のメモリー',
+    'memories.total': '{count} 件のメモリー',
+    'settings.title': '設定',
+    'settings.accountOverview': 'アカウント概要',
+    'settings.userProfile': 'ユーザープロフィール',
+    'settings.displayName': '表示名',
+    'settings.email': 'メールアドレス',
+    'settings.age': '年齢',
+    'settings.sex': '性別',
+    'settings.displayNamePlaceholder': 'バックエンドのプロフィールから読み込みます',
+    'settings.emailPlaceholder': 'バックエンドのアカウントから読み込みます',
+    'settings.agePlaceholder': '年齢',
+    'settings.sexPlaceholder': '0 男性 / 1 女性',
+    'settings.profileHint':
+      'プロフィール API 接続後、ニックネーム、言語、境界線の好みをここに保存できます。',
+    'settings.saveProfile': 'プロフィールを保存',
+    'settings.savingProfile': '保存中...',
+    'settings.profileSaved': 'プロフィールを保存しました',
+    'settings.profileSaveFailed': 'プロフィールの保存に失敗しました',
+    'settings.usernameRequired': 'ユーザー名を入力してください。',
+    'settings.language': '言語',
+    'settings.languageHint': '変更はこのブラウザですぐに適用されます。',
+    'settings.appearance': '外観',
+    'settings.security': 'セキュリティとアカウント',
+    'settings.sessions': 'セッション管理',
+    'settings.sessionsHint': 'サインアウトするとローカルセッションが消去され、ログイン画面に戻ります。',
+    'settings.signOut': 'サインアウト',
+    'settings.dangerZone': '危険な操作',
+    'settings.dangerHint':
+      'アカウント削除には権限確認、エクスポート、監査フローが必要です。',
+    'settings.deleteAccount': 'アカウントを削除',
+    'settings.deletingAccount': '削除中...',
+    'settings.accountDeleted': 'アカウントを削除しました',
+    'settings.accountDeleteFailed': 'アカウントの削除に失敗しました',
+    'settings.notReady': 'この機能はまだ接続中です',
+    'settings.notReadyDescription': '権限と監査 API の準備が完了すると有効になります。',
+    'appearance.toggle': '外観を切り替え',
+    'appearance.dark': 'ダークモード',
+    'appearance.light': 'ライトモード',
+    'appearance.darkDescription': '長時間の会話に向いた深い色の画面。',
+    'appearance.lightDescription': '同じ落ち着いた Aura パレットの明るい画面。',
+    'auth.login': 'ログイン',
+    'auth.register': '登録',
+    'auth.usernameLogin': 'ユーザー名を入力',
+    'auth.usernameRegister': 'ユーザー名を設定',
+    'auth.passwordLogin': 'パスワードを入力',
+    'auth.passwordRegister': 'パスワードを作成',
+    'auth.email': 'you@example.com',
+    'auth.age': '年齢を入力',
+    'auth.inviteCode': '招待コード',
+    'auth.male': '男性',
+    'auth.female': '女性',
+    'auth.rememberMe': 'ログイン状態を保持',
+    'auth.forgotPassword': 'パスワードをお忘れですか？',
+    'auth.forgotPasswordPending': 'パスワード復旧はまだ利用できません',
+    'auth.forgotPasswordDescription':
+      'SMS またはメール認証 API の接続後に有効になります。',
+    'auth.signIn': 'ログイン',
+    'auth.createAccount': 'アカウントを作成',
+    'auth.accountCreated': 'アカウントを作成しました',
+    'auth.registrationFailed': '登録に失敗しました',
+    'auth.loginFailed': 'ログインに失敗しました',
+    'auth.success': '成功',
+    'auth.verifyRegister': '登録情報を確認して、もう一度お試しください。',
+    'auth.verifyLogin': 'アカウント情報を確認して、もう一度お試しください。',
+    'auth.protected': '安全な暗号化で保護されています。',
+    'auth.termsPrefix': '続行すると、以下に同意したことになります:',
+    'auth.terms': '利用規約',
+    'theme.toggle': 'テーマを切り替え',
+    'theme.light': 'ライト',
+    'theme.dark': 'ダーク',
+    'theme.system': 'システム',
+  },
 } satisfies Record<Locale, Record<string, string>>
 
 type MessageKey = keyof (typeof messages)['en-US']
 type MessageCatalog = Record<MessageKey, string>
 const fallbackMessages: MessageCatalog = messages['en-US']
 const localeMessages = messages as Record<Locale, Partial<MessageCatalog>>
+
+const isSupportedLocale = (value: string | null): value is Locale =>
+  SUPPORTED_LOCALES.includes(value as Locale)
 
 type I18nContextValue = {
   locale: Locale
@@ -273,7 +407,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY)
-    if (stored === 'zh-CN' || stored === 'en-US') {
+    if (isSupportedLocale(stored)) {
       setLocaleState(stored)
       document.documentElement.lang = stored
     }

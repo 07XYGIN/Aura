@@ -24,6 +24,9 @@ jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-to-a-strong-32-byte-secret-key}
   expire-time: ${JWT_EXPIRE_TIME:86400000}
 
+invite:
+  registration-required: ${INVITE_REGISTRATION_REQUIRED:true}
+
 logging:
   level:
     com.aura.core.mapper: trace

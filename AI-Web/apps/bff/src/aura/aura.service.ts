@@ -119,19 +119,21 @@ export class AuraService {
         )
     }
 
-    async getMemories(userId: string, page: string, pageSize: string): Promise<ApiResponse> {
+    async getMemories(userId: string, page: string, pageSize: string, scope = 'long'): Promise<ApiResponse> {
         const params = new URLSearchParams({
             userId,
             page,
             pageSize,
+            scope: this.normalizeMemoryScope(scope, 'long'),
         })
 
         return this.forwardAi('GET', `/api/memory/list?${params.toString()}`)
     }
 
-    async clearMemories(userId: string, token?: string): Promise<ApiResponse> {
+    async clearMemories(userId: string, token?: string, scope = 'all'): Promise<ApiResponse> {
         const params = new URLSearchParams({
             userId,
+            scope: this.normalizeMemoryScope(scope, 'all'),
         })
 
         const response = await this.forwardAi('DELETE', `/api/memory/list?${params.toString()}`)
@@ -172,12 +174,52 @@ export class AuraService {
         return this.forwardAi('GET', `/api/memory/getMemory?${params.toString()}`)
     }
 
+    async getMemoryRetention(userId: string): Promise<ApiResponse> {
+        const params = new URLSearchParams({
+            userId,
+        })
+
+        return this.forwardAi('GET', `/api/memory/retention?${params.toString()}`)
+    }
+
     async getEmotion(userId: string, token: string, message?: string): Promise<ApiResponse> {
         const upstream = await this.tryForwardCore('GET', '/api/aura/emotion', {
             authorization: this.toBearerToken(token),
         })
 
         return upstream ?? ApiResponseUtil.success(this.deriveEmotion(message))
+    }
+
+    async submitConversationFeedback(body: unknown, userId: string): Promise<ApiResponse> {
+        return this.forwardAi('POST', '/api/aura/conversation-feedback', {
+            body: this.withUserId(body, userId),
+        })
+    }
+
+    async recordBehaviorEvent(body: unknown, userId: string): Promise<ApiResponse> {
+        return this.forwardAi('POST', '/api/aura/behavior-events', {
+            body: this.withUserId(body, userId),
+        })
+    }
+
+    async getEmotionReportPreview(userId: string): Promise<ApiResponse> {
+        const params = new URLSearchParams({ userId })
+
+        return this.forwardAi('GET', `/api/aura/emotion-report/preview?${params.toString()}`)
+    }
+
+    async purchaseEmotionReport(reportId: string, userId: string): Promise<ApiResponse> {
+        if (!reportId?.trim()) {
+            throw new BadRequestException('reportId is required')
+        }
+
+        return this.forwardAi(
+            'POST',
+            `/api/aura/emotion-report/${encodeURIComponent(reportId.trim())}/purchase`,
+            {
+                body: { userId },
+            },
+        )
     }
 
     async getAdminResourceList(resource: string, params: AdminResourceParams): Promise<ApiResponse> {
@@ -250,11 +292,17 @@ export class AuraService {
         }
     }
 
-    private async forwardAi<T = unknown>(method: Method, path: string): Promise<ApiResponse<T>> {
+    private async forwardAi<T = unknown>(
+        method: Method,
+        path: string,
+        options: ProxyOptions = {},
+    ): Promise<ApiResponse<T>> {
         try {
             const response = await axios.request<PythonApiResponse<T>>({
                 method,
                 url: `${this.config.aiServiceUrl}${path}`,
+                data: options.body,
+                headers: this.buildHeaders(options.authorization),
             })
 
             return {
@@ -359,6 +407,10 @@ export class AuraService {
 
     private isPlainObject(value: unknown): value is Record<string, unknown> {
         return typeof value === 'object' && value !== null && !Array.isArray(value)
+    }
+
+    private normalizeMemoryScope(scope: string, fallback: 'long' | 'mid' | 'all'): 'long' | 'mid' | 'all' {
+        return scope === 'long' || scope === 'mid' || scope === 'all' ? scope : fallback
     }
 
     private isApiResponse(value: unknown): value is ApiResponse {

@@ -19,4 +19,9 @@ public class GlobalExceptionHandler {
         String errorMessage = firstError != null ? firstError.getDefaultMessage() : "参数校验失败";
         return Response.error(422, errorMessage);
     }
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Response<Object> handleBusinessExceptions(RuntimeException ex) {
+        return Response.error(400, ex.getMessage());
+    }
 }

@@ -34,6 +34,22 @@
         </where>
     </select>
 
+    <select id="findUserIdByUsername" resultType="string">
+        SELECT id::varchar
+        FROM users
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="countAvailableInviteCode" resultType="int">
+        SELECT COUNT(1)
+        FROM invitation_code
+        WHERE code = UPPER(#{code})
+          AND disabled_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+          AND used_count &lt; max_uses
+    </select>
+
     <insert id="insertUser" parameterType="com.aura.core.dto.UserDto">
         INSERT INTO users
         <trim prefix="(" suffix=")" suffixOverrides=",">
@@ -50,6 +66,24 @@
             <if test="sex != null">#{sex},</if>
             <if test="age != null">#{age},</if>
         </trim>
+    </insert>
+
+    <insert id="consumeInviteCode">
+        WITH consumed AS (
+            UPDATE invitation_code
+            SET used_count = used_count + 1,
+                last_used_by = #{userId}::uuid,
+                last_used_at = now(),
+                updated_at = now()
+            WHERE code = UPPER(#{code})
+              AND disabled_at IS NULL
+              AND (expires_at IS NULL OR expires_at > now())
+              AND used_count &lt; max_uses
+            RETURNING id
+        )
+        INSERT INTO invitation_code_redemption (invite_code_id, user_id)
+        SELECT id, #{userId}::uuid FROM consumed
+        ON CONFLICT (invite_code_id, user_id) DO NOTHING
     </insert>
 
     <delete id="deleteUser">

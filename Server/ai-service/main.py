@@ -12,7 +12,7 @@ from app.core.config import SYNC_DATABASE_URL
 from app.core.exceptions import (
     validation_exception_handler,
 )
-from app.routers import history, memory, msg
+from app.routers import attachments, aura, history, memory, msg
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         max_age=86400,
     )
-    routers: list[APIRouter] = [msg.router, history.router, memory.router]
+    routers: list[APIRouter] = [msg.router, history.router, memory.router, aura.router, attachments.router]
     for router in routers:
         app.include_router(router)
 

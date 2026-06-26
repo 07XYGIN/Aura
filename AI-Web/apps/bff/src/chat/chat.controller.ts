@@ -9,6 +9,8 @@ type ChatSseBody = {
     message?: unknown
     clientMessageId?: unknown
     sessionId?: unknown
+    attachmentIds?: unknown
+    cityAdcode?: unknown
 }
 
 @Controller('chat')
@@ -26,10 +28,22 @@ export class ChatController {
             {
                 message: body.message,
                 clientMessageId: body.clientMessageId,
+                sessionId: body.sessionId,
+                attachmentIds: body.attachmentIds,
+                cityAdcode: body.cityAdcode,
                 userId: request.user.userId,
                 token: request.user.token,
             },
             response,
         )
+    }
+
+    @HttpCode(200)
+    @Post('attachments')
+    uploadAttachments(
+        @Body() body: unknown,
+        @Req() request: RequestWithUser,
+    ): Promise<unknown> {
+        return this.chatService.uploadAttachments(body, request.user.userId)
     }
 }

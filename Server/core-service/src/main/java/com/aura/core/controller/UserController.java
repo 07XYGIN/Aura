@@ -53,7 +53,7 @@ public class UserController {
     }
 
     @PutMapping("updateInfo")
-    public Response<UserDto> updateInfo(@RequestBody UserDto user) {
+    public Response<UserDto> updateInfo(@Valid @RequestBody UserDto user) {
         loginService.updateUserInfo(user);
         return Response.ok();
     }

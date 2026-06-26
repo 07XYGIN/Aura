@@ -14,11 +14,23 @@ import { useUserStore } from '@/store/user'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import type { UserSex } from '@/types/auth'
 
 const sexOptions = [
   { label: 'Male', value: '1' },
-  { label: 'Female', value: '2' },
+  { label: 'Female', value: '0' },
 ] as const
+
+const toUserSex = (value?: string): UserSex | undefined => {
+  if (value === '1') {
+    return 1
+  }
+  if (value === '0') {
+    return 0
+  }
+
+  return undefined
+}
 
 export function AruaSettingsScreen() {
   const { locale, setLocale, t } = useI18n()
@@ -92,7 +104,7 @@ export function AruaSettingsScreen() {
         username: form.username.trim(),
         email: form.email.trim() || undefined,
         age: form.age ? Number(form.age) : undefined,
-        sex: form.sex ? Number(form.sex) : undefined,
+        sex: toUserSex(form.sex),
       })
       toast.success(t('settings.profileSaved'), {
         position: 'top-center',
@@ -270,7 +282,7 @@ export function AruaSettingsScreen() {
               </div>
               <Card className="rounded-[1.5rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0">
                 <CardContent className="space-y-4 p-5">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <Button
                       type="button"
                       variant={locale === 'zh-CN' ? 'default' : 'outline'}
@@ -286,6 +298,14 @@ export function AruaSettingsScreen() {
                       onClick={() => setLocale('en-US')}
                     >
                       English
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={locale === 'ja-JP' ? 'default' : 'outline'}
+                      className="rounded-2xl"
+                      onClick={() => setLocale('ja-JP')}
+                    >
+                      日本語
                     </Button>
                   </div>
                   <p className="text-sm leading-7 text-[var(--aura-text-muted)]">

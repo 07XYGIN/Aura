@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { ImagePlus, Mic, Paperclip, SendHorizontal, Square, Trash2 } from 'lucide-react'
+import { ImagePlus, Mic, Paperclip, SendHorizontal, Square, Star, Trash2 } from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,7 +11,13 @@ import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
 import { useI18n } from '@/lib/i18n'
-import { aura, type AuraHistoryMessage } from '@/apis/aura'
+import {
+    aura,
+    type AuraEmotionReportPreview,
+    type AuraHistoryMessage,
+    type AuraUploadedAttachment,
+    type AuraUploadAttachmentInput,
+} from '@/apis/aura'
 
 type EmotionPayload = {
     user_emotion?: string
@@ -33,6 +39,147 @@ type ChatStreamChunk = {
     emotion?: EmotionPayload
 }
 
+const FEEDBACK_IDLE_DELAY_MS = 30_000
+const MAX_ATTACHMENTS_PER_MESSAGE = 4
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const SPEECH_RECOGNITION_LANG = {
+    'zh-CN': 'zh-CN',
+    'en-US': 'en-US',
+    'ja-JP': 'ja-JP',
+} as const
+const CITY_ADCODE_CACHE_KEY = 'aura_city_adcode'
+const CITY_ADCODE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const WEATHER_QUERY_PATTERN =
+    /天气|气温|温度|下雨|降雨|风力|冷不冷|热不热|weather|temperature|rain|wind/i
+
+type CachedCityAdcode = {
+    adcode: string
+    expiresAt: number
+}
+
+const readCachedCityAdcode = () => {
+    if (typeof window === 'undefined') {
+        return null
+    }
+
+    try {
+        const raw = window.localStorage.getItem(CITY_ADCODE_CACHE_KEY)
+        if (!raw) {
+            return null
+        }
+
+        const cached = JSON.parse(raw) as CachedCityAdcode
+        if (!cached.adcode || cached.expiresAt <= Date.now()) {
+            window.localStorage.removeItem(CITY_ADCODE_CACHE_KEY)
+            return null
+        }
+
+        return cached.adcode
+    } catch {
+        return null
+    }
+}
+
+const cacheCityAdcode = (adcode: string) => {
+    if (typeof window === 'undefined' || !adcode) {
+        return
+    }
+
+    window.localStorage.setItem(
+        CITY_ADCODE_CACHE_KEY,
+        JSON.stringify({
+            adcode,
+            expiresAt: Date.now() + CITY_ADCODE_CACHE_TTL_MS,
+        }),
+    )
+}
+
+const getBrowserPosition = () =>
+    new Promise<GeolocationPosition>((resolve, reject) => {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+            reject(new Error('Geolocation is not available'))
+            return
+        }
+
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: false,
+            maximumAge: CITY_ADCODE_CACHE_TTL_MS,
+            timeout: 5000,
+        })
+    })
+
+const createSessionId = () => {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+        return crypto.randomUUID()
+    }
+
+    const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16))
+    hex[12] = '4'
+    hex[16] = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)
+
+    return [
+        hex.slice(0, 8).join(''),
+        hex.slice(8, 12).join(''),
+        hex.slice(12, 16).join(''),
+        hex.slice(16, 20).join(''),
+        hex.slice(20, 32).join(''),
+    ].join('-')
+}
+
+const parseJsonArray = (value?: string) => {
+    if (!value) {
+        return []
+    }
+
+    try {
+        const parsed = JSON.parse(value)
+        return Array.isArray(parsed) ? parsed.map(String) : []
+    } catch {
+        return []
+    }
+}
+
+const parseFullReport = (value?: string) => {
+    if (!value) {
+        return null
+    }
+
+    try {
+        return JSON.parse(value) as {
+            weeklyKeywords?: string[]
+            patternAnalysis?: string[]
+            auraObservation?: string
+        }
+    } catch {
+        return null
+    }
+}
+
+const readFileAsBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+            const result = reader.result
+            if (typeof result !== 'string') {
+                reject(new Error('Invalid file result'))
+                return
+            }
+            resolve(result)
+        }
+        reader.onerror = () => reject(reader.error ?? new Error('File read failed'))
+        reader.readAsDataURL(file)
+    })
+
+const buildUploadPayload = async (files: File[]): Promise<AuraUploadAttachmentInput[]> =>
+    Promise.all(
+        files.map(async (file) => ({
+            fileName: file.name,
+            contentType: file.type,
+            size: file.size,
+            dataBase64: await readFileAsBase64(file),
+        })),
+    )
+
 const mapHistoryMessage = (item: AuraHistoryMessage, index: number): ChatMessage | null => {
     if (!item.content) {
         return null
@@ -46,8 +193,10 @@ const mapHistoryMessage = (item: AuraHistoryMessage, index: number): ChatMessage
 
     return {
         id: item.id ?? `history-${index}-${role}`,
+        sessionId: item.sessionId,
         role,
         content: item.content,
+        attachments: item.attachments,
     }
 }
 
@@ -95,12 +244,15 @@ const getEmotionDetail = (emotion: EmotionPayload) => {
 }
 
 export function AruaChatScreen() {
-    const { t } = useI18n()
+    const { locale, t } = useI18n()
     const inputId = useId()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const messagesRef = useRef<HTMLDivElement>(null)
     const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
     const isSendingRef = useRef(false)
+    const currentSessionIdRef = useRef(createSessionId())
+    const lastCompletedSessionIdRef = useRef<string | null>(null)
+    const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [message, setMessage] = useState('')
     const [isListening, setIsListening] = useState(false)
@@ -109,6 +261,16 @@ export function AruaChatScreen() {
     const [latestEmotion, setLatestEmotion] = useState<EmotionPayload | null>(null)
     const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
     const [isClearingHistory, setIsClearingHistory] = useState(false)
+    const [feedbackPrompt, setFeedbackPrompt] = useState<{ sessionId: string } | null>(null)
+    const [feedbackScore, setFeedbackScore] = useState<number | null>(null)
+    const [feedbackComment, setFeedbackComment] = useState('')
+    const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
+    const [emotionReport, setEmotionReport] = useState<AuraEmotionReportPreview | null>(null)
+    const [isPurchasingReport, setIsPurchasingReport] = useState(false)
+    const [cityAdcode, setCityAdcode] = useState<string | null>(() => readCachedCityAdcode())
+    const [markedWeirdMessageIds, setMarkedWeirdMessageIds] = useState<Set<string>>(
+        () => new Set(),
+    )
     const token = useUserStore((state) => state.token)
     const getUserInfo = useUserStore((state) => state.getUserInfo)
     const loadHistoryMessages = useCallback(
@@ -158,6 +320,25 @@ export function AruaChatScreen() {
                 position: 'top-center',
             })
         })
+        aura.getMemoryRetention().then((response) => {
+            const retention = response.data
+            if (!retention || retention.permanent || !retention.shouldPrompt) {
+                return
+            }
+
+            if (retention.paywall) {
+                toast('Aura 还想继续记住你的心事。', {
+                    description: '开通永久记忆后，之前的记忆会重新回来。',
+                    position: 'top-center',
+                })
+                return
+            }
+
+            toast(`Aura 还能记住你的心事 ${retention.daysRemaining} 天……`, {
+                description: '我会先把重要的东西轻轻收好。',
+                position: 'top-center',
+            })
+        }).catch(() => undefined)
     }, [getUserInfo, t, token])
     useEffect(() => {
         if (!token) {
@@ -180,6 +361,24 @@ export function AruaChatScreen() {
             behavior: 'smooth',
         })
     }, [messages])
+    const clearFeedbackTimer = useCallback(() => {
+        if (feedbackTimerRef.current) {
+            clearTimeout(feedbackTimerRef.current)
+            feedbackTimerRef.current = null
+        }
+    }, [])
+    const scheduleFeedbackPrompt = useCallback(
+        (sessionId: string) => {
+            clearFeedbackTimer()
+            feedbackTimerRef.current = setTimeout(() => {
+                setFeedbackScore(null)
+                setFeedbackComment('')
+                setFeedbackPrompt({ sessionId })
+                feedbackTimerRef.current = null
+            }, FEEDBACK_IDLE_DELAY_MS)
+        },
+        [clearFeedbackTimer],
+    )
     const { connect, disconnect } = useMemo(
         () =>
             UseSse(buildChatSseUrl(), {
@@ -188,6 +387,8 @@ export function AruaChatScreen() {
                     if (data === '[DONE]') {
                         isSendingRef.current = false
                         setIsStreaming(false)
+                        lastCompletedSessionIdRef.current = currentSessionIdRef.current
+                        scheduleFeedbackPrompt(currentSessionIdRef.current)
                         void loadHistoryMessages({ showError: false })
                         return
                     }
@@ -242,20 +443,50 @@ export function AruaChatScreen() {
                     setIsStreaming(false)
                 },
             }),
-        [loadHistoryMessages, t, token],
+        [loadHistoryMessages, scheduleFeedbackPrompt, t, token],
     )
     useEffect(() => {
         return () => {
+            clearFeedbackTimer()
             disconnect()
         }
-    }, [disconnect])
+    }, [clearFeedbackTimer, disconnect])
     useEffect(() => {
         if (!isStreaming) {
             disconnect()
         }
     }, [disconnect, isStreaming])
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-        setSelectedFiles(Array.from(event.target.files ?? []))
+        const files = Array.from(event.target.files ?? [])
+        const validFiles = files.filter((file) => file.type.startsWith('image/'))
+        const oversized = validFiles.find((file) => file.size > MAX_ATTACHMENT_BYTES)
+
+        if (files.length !== validFiles.length) {
+            toast.error('Only image uploads are supported for now.', {
+                position: 'top-center',
+            })
+        }
+
+        if (oversized) {
+            toast.error('Image is too large', {
+                description: 'Each image must be 10MB or smaller.',
+                position: 'top-center',
+            })
+        }
+
+        setSelectedFiles(
+            validFiles
+                .filter((file) => file.size <= MAX_ATTACHMENT_BYTES)
+                .slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
+        )
+    }
+
+    const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+        setMessage(event.target.value)
+        if (event.target.value.trim()) {
+            clearFeedbackTimer()
+            setFeedbackPrompt(null)
+        }
     }
 
     const handleVoiceInput = () => {
@@ -275,7 +506,7 @@ export function AruaChatScreen() {
         }
 
         const recognition = new SpeechRecognition()
-        recognition.lang = 'zh-CN'
+        recognition.lang = SPEECH_RECOGNITION_LANG[locale]
         recognition.continuous = false
         recognition.interimResults = false
 
@@ -307,7 +538,68 @@ export function AruaChatScreen() {
         recognition.start()
     }
 
-    const handleSubmit = () => {
+    const uploadSelectedFiles = async (files: File[]): Promise<AuraUploadedAttachment[]> => {
+        if (files.length === 0) {
+            return []
+        }
+
+        const payload = await buildUploadPayload(files)
+        const response = await aura.uploadAttachments(payload)
+        const uploaded = response.data?.items ?? []
+        if (uploaded.length !== files.length) {
+            throw new Error('Attachment upload was incomplete')
+        }
+        return uploaded
+    }
+
+    const resolveCityAdcodeForChat = useCallback(
+        async (allowBrowserLocation: boolean) => {
+            if (cityAdcode) {
+                return cityAdcode
+            }
+
+            const cached = readCachedCityAdcode()
+            if (cached) {
+                setCityAdcode(cached)
+                return cached
+            }
+
+            if (allowBrowserLocation) {
+                try {
+                    const position = await getBrowserPosition()
+                    const response = await aura.resolveCityAdcode({
+                        longitude: position.coords.longitude,
+                        latitude: position.coords.latitude,
+                    })
+                    const resolved = response.data?.adcode
+                    if (resolved) {
+                        cacheCityAdcode(resolved)
+                        setCityAdcode(resolved)
+                        return resolved
+                    }
+                } catch {
+                    // Location is optional. If it fails, Aura will ask for a city before using weather.
+                }
+            }
+
+            try {
+                const response = await aura.resolveCityAdcode()
+                const resolved = response.data?.adcode
+                if (resolved) {
+                    cacheCityAdcode(resolved)
+                    setCityAdcode(resolved)
+                    return resolved
+                }
+            } catch {
+                return null
+            }
+
+            return null
+        },
+        [cityAdcode],
+    )
+
+    const handleSubmit = async () => {
         if (isSendingRef.current || isStreaming) {
             return
         }
@@ -321,20 +613,43 @@ export function AruaChatScreen() {
         const now = Date.now()
         const clientMessageId = `client-${now}-${Math.random().toString(36).slice(2, 10)}`
         const assistantMessageId = `assistant-${now}`
+        const sessionId = currentSessionIdRef.current
         isSendingRef.current = true
         setIsStreaming(true)
         setLatestEmotion(null)
+        clearFeedbackTimer()
+        setFeedbackPrompt(null)
+
+        const shouldResolveCityAdcode = WEATHER_QUERY_PATTERN.test(trimmedMessage)
+        const cityAdcodeForMessage = shouldResolveCityAdcode
+            ? await resolveCityAdcodeForChat(true)
+            : cityAdcode
+
+        let uploadedAttachments: AuraUploadedAttachment[] = []
+        try {
+            uploadedAttachments = await uploadSelectedFiles(selectedFiles)
+        } catch (error) {
+            isSendingRef.current = false
+            setIsStreaming(false)
+            toast.error('Image upload failed', {
+                description: error instanceof Error ? error.message : t('chat.tryAgain'),
+                position: 'top-center',
+            })
+            return
+        }
 
         setMessages((currentMessages) => [
             ...currentMessages,
             {
                 id: `local-${now}`,
+                sessionId,
                 role: 'user',
                 content: trimmedMessage,
-                attachments: selectedFiles.map((file) => file.name),
+                attachments: uploadedAttachments.map((file) => file.fileName),
             },
             {
                 id: assistantMessageId,
+                sessionId,
                 role: 'assistant',
                 content: '',
             },
@@ -349,9 +664,110 @@ export function AruaChatScreen() {
         connect({
             body: JSON.stringify({
                 clientMessageId,
+                sessionId,
                 message: trimmedMessage,
+                attachmentIds: uploadedAttachments.map((file) => file.id),
+                cityAdcode: cityAdcodeForMessage || undefined,
             }),
         })
+    }
+
+    const handleSubmitFeedback = async () => {
+        if (!feedbackPrompt || !feedbackScore || isSubmittingFeedback) {
+            return
+        }
+
+        setIsSubmittingFeedback(true)
+
+        try {
+            await aura.submitConversationFeedback({
+                sessionId: feedbackPrompt.sessionId,
+                score: feedbackScore,
+                comment: feedbackComment.trim() || undefined,
+            })
+            const reportResponse = await aura.getEmotionReportPreview()
+            setEmotionReport(reportResponse.data?.eligible ? reportResponse.data : null)
+            setFeedbackPrompt(null)
+            setFeedbackScore(null)
+            setFeedbackComment('')
+            currentSessionIdRef.current = createSessionId()
+        } catch {
+            toast.error('这次评分没有保存成功', {
+                description: t('chat.tryAgain'),
+                position: 'top-center',
+            })
+        } finally {
+            setIsSubmittingFeedback(false)
+        }
+    }
+
+    const handlePurchaseReport = async () => {
+        if (!emotionReport?.reportId || isPurchasingReport) {
+            return
+        }
+
+        setIsPurchasingReport(true)
+
+        try {
+            const response = await aura.purchaseEmotionReport(emotionReport.reportId)
+            if (response.data) {
+                setEmotionReport({
+                    eligible: true,
+                    chatTurns: emotionReport.chatTurns,
+                    roundsRemaining: 0,
+                    reportId: response.data.id,
+                    status: response.data.status,
+                    priceCents: response.data.priceCents,
+                    previewKeywords: response.data.previewKeywords,
+                    previewText: response.data.previewText,
+                    fullReport: response.data.fullReport,
+                })
+            }
+        } catch {
+            toast.error('报告暂时没有打开', {
+                description: t('chat.tryAgain'),
+                position: 'top-center',
+            })
+        } finally {
+            setIsPurchasingReport(false)
+        }
+    }
+
+    const handleMarkWeird = async (chatMessage: ChatMessage) => {
+        if (markedWeirdMessageIds.has(chatMessage.id)) {
+            return
+        }
+
+        const sessionId =
+            chatMessage.sessionId ??
+            feedbackPrompt?.sessionId ??
+            lastCompletedSessionIdRef.current ??
+            currentSessionIdRef.current
+        const messageId =
+            chatMessage.id.startsWith('local-') || chatMessage.id.startsWith('assistant-')
+                ? undefined
+                : chatMessage.id
+
+        try {
+            await aura.recordBehaviorEvent({
+                sessionId,
+                messageId,
+                eventType: 'off_model',
+                metadata: JSON.stringify({
+                    contentPreview: chatMessage.content.slice(0, 200),
+                }),
+            })
+            setMarkedWeirdMessageIds((current) => {
+                const next = new Set(current)
+                next.add(chatMessage.id)
+                return next
+            })
+        } catch {
+            toast.error('标记没有保存成功', {
+                description: t('chat.tryAgain'),
+                position: 'top-center',
+            })
+        }
     }
 
     const handleDeleteMessage = async (messageId: string) => {
@@ -393,6 +809,11 @@ export function AruaChatScreen() {
             await aura.clearCurrentMessages()
             setMessages([])
             setLatestEmotion(null)
+            setEmotionReport(null)
+            clearFeedbackTimer()
+            setFeedbackPrompt(null)
+            currentSessionIdRef.current = createSessionId()
+            lastCompletedSessionIdRef.current = null
             toast.success(t('chat.historyCleared'), {
                 position: 'top-center',
             })
@@ -407,6 +828,8 @@ export function AruaChatScreen() {
     }
 
     const emotionDetail = latestEmotion ? getEmotionDetail(latestEmotion) : null
+    const reportKeywords = parseJsonArray(emotionReport?.previewKeywords)
+    const fullReport = parseFullReport(emotionReport?.fullReport)
 
     return (
         <AruaAppShell
@@ -475,6 +898,19 @@ export function AruaChatScreen() {
                                             </div>
                                         ) : null}
                                     </div>
+                                    {!isUser && chatMessage.content ? (
+                                        <button
+                                            type="button"
+                                            disabled={markedWeirdMessageIds.has(chatMessage.id)}
+                                            className={cn(
+                                                'mx-1 self-center rounded-full px-2 py-1 text-[11px] text-[var(--aura-text-muted)] opacity-0 transition hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-text)] group-hover/message:opacity-100 focus-visible:opacity-100 disabled:opacity-45',
+                                                markedWeirdMessageIds.has(chatMessage.id) && 'opacity-45',
+                                            )}
+                                            onClick={() => handleMarkWeird(chatMessage)}
+                                        >
+                                            😶 有点奇怪
+                                        </button>
+                                    ) : null}
                                     <Button
                                         type="button"
                                         variant="ghost"
@@ -498,6 +934,103 @@ export function AruaChatScreen() {
 
                 <div className="absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_86%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-8 lg:px-10">
                     <div className="w-full max-w-4xl rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3">
+                        {feedbackPrompt ? (
+                            <div className="mb-3 border-b border-[var(--aura-border)] pb-3">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                    <p className="shrink-0 text-xs text-[var(--aura-text-muted)]">
+                                        这次对话让你感觉被理解了吗？
+                                    </p>
+                                    <div className="flex items-center gap-1">
+                                        {[1, 2, 3, 4, 5].map((score) => {
+                                            const selected = feedbackScore !== null && score <= feedbackScore
+
+                                            return (
+                                                <button
+                                                    key={score}
+                                                    type="button"
+                                                    className="rounded-full p-1 text-[var(--aura-text-muted)] transition hover:text-[var(--aura-primary)]"
+                                                    aria-label={`${score} 星`}
+                                                    onClick={() => setFeedbackScore(score)}
+                                                >
+                                                    <Star
+                                                        className={cn(
+                                                            'h-4 w-4',
+                                                            selected && 'text-[var(--aura-primary)]',
+                                                        )}
+                                                        fill={selected ? 'currentColor' : 'none'}
+                                                    />
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                    <input
+                                        value={feedbackComment}
+                                        onChange={(event) => setFeedbackComment(event.target.value)}
+                                        placeholder="可以留下一句感受，也可以空着"
+                                        className="min-w-0 flex-1 border-0 bg-transparent text-xs text-[var(--aura-text)] outline-none placeholder:text-[var(--aura-text-muted)]"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        disabled={!feedbackScore || isSubmittingFeedback}
+                                        aria-label="提交评分"
+                                        title="提交评分"
+                                        onClick={handleSubmitFeedback}
+                                    >
+                                        <SendHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : null}
+                        {emotionReport?.eligible ? (
+                            <div className="mb-3 border-b border-[var(--aura-border)] pb-3 text-xs text-[var(--aura-text-muted)]">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0 space-y-2">
+                                        <p className="font-medium text-[var(--aura-text)]">
+                                            Aura 注意到了一些事……
+                                        </p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {reportKeywords.map((keyword) => (
+                                                <span
+                                                    key={keyword}
+                                                    className="rounded-full bg-[var(--aura-surface-strong)] px-2 py-1 text-[11px] text-[var(--aura-primary)]"
+                                                >
+                                                    {keyword}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        {emotionReport.previewText ? (
+                                            <p className="leading-6">{emotionReport.previewText}</p>
+                                        ) : null}
+                                        {fullReport ? (
+                                            <div className="space-y-1.5 leading-6">
+                                                {fullReport.patternAnalysis?.map((item) => (
+                                                    <p key={item}>{item}</p>
+                                                ))}
+                                                {fullReport.auraObservation ? (
+                                                    <p className="text-[var(--aura-text)]">
+                                                        {fullReport.auraObservation}
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                    {!fullReport ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={isPurchasingReport}
+                                            className="shrink-0 rounded-full border-[var(--aura-border)] bg-transparent text-xs"
+                                            onClick={handlePurchaseReport}
+                                        >
+                                            查看完整报告（¥9）
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ) : null}
                         {selectedFiles.length > 0 ? (
                             <div className="mb-3 flex flex-wrap gap-2">
                                 {selectedFiles.map((file) => (
@@ -515,7 +1048,7 @@ export function AruaChatScreen() {
                         <Textarea
                             rows={3}
                             value={message}
-                            onChange={(event) => setMessage(event.target.value)}
+                            onChange={handleMessageChange}
                             placeholder={t('chat.placeholder')}
                             className="aura-scrollbar min-h-24 resize-none border-0 bg-transparent px-1 py-1 text-sm leading-7 text-[var(--aura-text)] shadow-none ring-0 focus-visible:border-0 focus-visible:ring-0"
                         />

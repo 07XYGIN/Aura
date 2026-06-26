@@ -10,6 +10,13 @@ import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/c
 import { useI18n } from '@/lib/i18n'
 
 const PAGE_SIZE = 50
+type MemoryScope = 'long' | 'mid' | 'all'
+
+const memoryScopes: Array<{ key: MemoryScope; label: string }> = [
+  { key: 'long', label: '长期' },
+  { key: 'mid', label: '中期' },
+  { key: 'all', label: '全部' },
+]
 
 const getMemoryTitle = (memory: AuraMemoryItem, fallback: string) => {
   const title = memory.metadata?.title
@@ -37,12 +44,13 @@ export function AruaMemoriesScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null)
   const [isClearing, setIsClearing] = useState(false)
+  const [memoryScope, setMemoryScope] = useState<MemoryScope>('long')
 
   const loadMemories = useCallback(async () => {
     setIsLoading(true)
 
     try {
-      const response = await aura.getMemories(1, PAGE_SIZE)
+      const response = await aura.getMemories(1, PAGE_SIZE, memoryScope)
       const memoryPage = response.data
       setMemories(memoryPage?.items ?? [])
       setTotal(memoryPage?.total ?? 0)
@@ -54,7 +62,7 @@ export function AruaMemoriesScreen() {
     } finally {
       setIsLoading(false)
     }
-  }, [t])
+  }, [memoryScope, t])
 
   useEffect(() => {
     loadMemories()
@@ -94,7 +102,7 @@ export function AruaMemoriesScreen() {
     setIsClearing(true)
 
     try {
-      await aura.clearMemories()
+      await aura.clearMemories(memoryScope)
       setMemories([])
       setTotal(0)
       toast.success(t('memories.cleared'), {
@@ -134,6 +142,23 @@ export function AruaMemoriesScreen() {
                 </h4>
               </div>
               <div className="flex flex-wrap gap-2">
+                <div className="flex rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] p-1">
+                  {memoryScopes.map((scope) => (
+                    <button
+                      key={scope.key}
+                      type="button"
+                      className={[
+                        'rounded-full px-3 py-1.5 text-xs transition',
+                        memoryScope === scope.key
+                          ? 'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]'
+                          : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
+                      ].join(' ')}
+                      onClick={() => setMemoryScope(scope.key)}
+                    >
+                      {scope.label}
+                    </button>
+                  ))}
+                </div>
                 <Button
                   type="button"
                   variant="outline"

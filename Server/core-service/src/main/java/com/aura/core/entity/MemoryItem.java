@@ -15,6 +15,7 @@ public class MemoryItem {
     private String memoryType;
     private String title;
     private String content;
+    private String embedding;
     private Integer salience;
     private BigDecimal confidence;
     private String status;

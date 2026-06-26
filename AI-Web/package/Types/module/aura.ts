@@ -2,9 +2,11 @@ import type { PageResult } from './api'
 
 export type AuraHistoryMessage = {
     id?: string
+    sessionId?: string
     role?: 'user' | 'assistant' | 'aura' | 'system'
     senderType?: 'user' | 'assistant' | 'system'
     content?: string
+    attachments?: string[]
     createdAt?: string
 }
 

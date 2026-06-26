@@ -14,6 +14,9 @@ public class UserProfile {
     private String timezone;
     private String locale;
     private String preferences;
+    private String boundaries;
+    private String taboos;
+    private String cityAdcode;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }

@@ -11,18 +11,24 @@ from .logging_utils import log_tool
 
 @tool
 @log_tool
-def get_weather() -> dict[str, str]:
-    """查询天气信息，默认查询北京天气。"""
-    logging.info("命中 get_weather tool city=110101")
+def get_weather(city_adcode: str | None = None) -> dict[str, str]:
+    """按高德 adcode 查询天气；没有城市时不要猜测，先让用户补充城市。"""
+    if not city_adcode:
+        return {
+            "status": "0",
+            "info": "缺少城市 adcode，不能查询或猜测天气。请先确认用户所在城市。",
+        }
+
+    logging.info("Weather tool city_adcode=%s", city_adcode)
     amap_key = os.getenv("amap_key")
     if not amap_key:
         return {
             "status": "0",
-            "info": "缺少高德地图 API Key",
+            "info": "缺少高德地图 API Key，不能提供实时天气。",
         }
 
     params = {
-        "city": "110101",
+        "city": city_adcode,
         "key": amap_key,
         "extensions": "base",
     }
@@ -32,17 +38,17 @@ def get_weather() -> dict[str, str]:
         response.raise_for_status()
         weather_result = response.json()
     except (requests.RequestException, ValueError) as exc:
-        logging.warning("天气接口请求失败: %s", exc)
+        logging.warning("Weather API request failed: %s", exc)
         return {
             "status": "0",
-            "info": "没有查询到当前城市的天气信息",
+            "info": "没有查询到当前城市的天气信息。",
         }
 
     lives = weather_result.get("lives") or []
     if weather_result.get("status") != "1" or not lives:
         return {
             "status": weather_result.get("status", "0"),
-            "info": weather_result.get("info", "没有查询到当前城市的天气信息"),
+            "info": weather_result.get("info", "没有查询到当前城市的天气信息。"),
         }
 
     city_weather = lives[0]

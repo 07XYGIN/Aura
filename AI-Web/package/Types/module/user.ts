@@ -2,9 +2,10 @@ export interface LoginForm {
     username: string
     password: string
     age?: number
-    sex?: number
+    sex?: 0 | 1
     email?: string
     code?: string
+    inviteCode?: string
 }
 
 export interface UserProfile {
@@ -12,6 +13,6 @@ export interface UserProfile {
     username?: string
     password?: string
     age?: number
-    sex?: number
+    sex?: 0 | 1
     email?: string
 }

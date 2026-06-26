@@ -19,7 +19,11 @@ public class UserDto {
 
     private Integer age;
 
+    @Min(value = 0, message = "性别只允许女(0)或男(1)")
+    @Max(value = 1, message = "性别只允许女(0)或男(1)")
     private Integer sex;
 
     private String id;
+
+    private String inviteCode;
 }

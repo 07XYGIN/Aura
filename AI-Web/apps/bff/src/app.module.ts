@@ -8,12 +8,13 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { AppConfigModule } from './config/config.module'
+import { LocationModule } from './location/location.module'
 import { RedisModule } from './redis/redis.module'
 import { UserController } from './user/user.controller'
 import { UserService } from './user/user.service'
 
 @Module({
-    imports: [AppConfigModule, RedisModule, AuthModule, ChatModule, AuraModule],
+    imports: [AppConfigModule, RedisModule, AuthModule, ChatModule, AuraModule, LocationModule],
     controllers: [UserController],
     providers: [
         UserService,

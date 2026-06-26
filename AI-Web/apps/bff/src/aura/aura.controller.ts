@@ -58,13 +58,17 @@ export class AuraController {
         @Req() request: RequestWithUser,
         @Query('page') page = '1',
         @Query('pageSize') pageSize = '10',
+        @Query('scope') scope = 'long',
     ): Promise<ApiResponse> {
-        return this.auraService.getMemories(request.user.userId, page, pageSize)
+        return this.auraService.getMemories(request.user.userId, page, pageSize, scope)
     }
 
     @Delete('memories')
-    clearMemories(@Req() request: RequestWithUser): Promise<ApiResponse> {
-        return this.auraService.clearMemories(request.user.userId, request.user.token)
+    clearMemories(
+        @Req() request: RequestWithUser,
+        @Query('scope') scope = 'all',
+    ): Promise<ApiResponse> {
+        return this.auraService.clearMemories(request.user.userId, request.user.token, scope)
     }
 
     @Delete('memories/:memoryId')
@@ -84,11 +88,48 @@ export class AuraController {
         return this.auraService.searchMemories(request.user.userId, query, k)
     }
 
+    @Get('memories/retention')
+    getMemoryRetention(@Req() request: RequestWithUser): Promise<ApiResponse> {
+        return this.auraService.getMemoryRetention(request.user.userId)
+    }
+
     @Get('emotion')
     getEmotion(
         @Req() request: RequestWithUser,
         @Query('message') message?: string,
     ): Promise<ApiResponse> {
         return this.auraService.getEmotion(request.user.userId, request.user.token, message)
+    }
+
+    @HttpCode(200)
+    @Post('conversation-feedback')
+    submitConversationFeedback(
+        @Body() body: unknown,
+        @Req() request: RequestWithUser,
+    ): Promise<ApiResponse> {
+        return this.auraService.submitConversationFeedback(body, request.user.userId)
+    }
+
+    @HttpCode(200)
+    @Post('behavior-events')
+    recordBehaviorEvent(
+        @Body() body: unknown,
+        @Req() request: RequestWithUser,
+    ): Promise<ApiResponse> {
+        return this.auraService.recordBehaviorEvent(body, request.user.userId)
+    }
+
+    @Get('emotion-report/preview')
+    getEmotionReportPreview(@Req() request: RequestWithUser): Promise<ApiResponse> {
+        return this.auraService.getEmotionReportPreview(request.user.userId)
+    }
+
+    @HttpCode(200)
+    @Post('emotion-report/:reportId/purchase')
+    purchaseEmotionReport(
+        @Param('reportId') reportId: string,
+        @Req() request: RequestWithUser,
+    ): Promise<ApiResponse> {
+        return this.auraService.purchaseEmotionReport(reportId, request.user.userId)
     }
 }

@@ -12,4 +12,7 @@ public class UserProfileRequest {
     private String timezone;
     private String locale;
     private String preferences;
+    private String boundaries;
+    private String taboos;
+    private String cityAdcode;
 }

@@ -1,7 +1,12 @@
+import asyncio
 import logging
+import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import AsyncIterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.core.agent.agent_graph import aura_agent
@@ -14,35 +19,170 @@ router = APIRouter(
     tags=["发送消息"],
 )
 
+_SSE_DONE = object()
+_QUEUE_PUT_CHECK_INTERVAL_SECONDS = 0.1
 
-def event_generator(message: str, user_id: str, client_message_id: str | None = None):
+
+def _positive_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        logging.warning("Invalid %s=%r, fallback to %s", name, value, default)
+        return default
+    return max(parsed, 1)
+
+
+_sse_max_concurrency = _positive_int_env("AURA_SSE_MAX_CONCURRENCY", 16)
+_sse_queue_size = _positive_int_env("AURA_SSE_QUEUE_SIZE", 32)
+_sse_slots = threading.BoundedSemaphore(_sse_max_concurrency)
+_sse_executor = ThreadPoolExecutor(
+    max_workers=_sse_max_concurrency,
+    thread_name_prefix="aura-sse",
+)
+
+
+def _configure_sse_runtime_for_tests(max_concurrency: int, queue_size: int = 32) -> None:
+    global _sse_executor, _sse_max_concurrency, _sse_queue_size, _sse_slots
+
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be greater than 0")
+    if queue_size < 1:
+        raise ValueError("queue_size must be greater than 0")
+
+    previous_executor = _sse_executor
+    _sse_max_concurrency = max_concurrency
+    _sse_queue_size = queue_size
+    _sse_slots = threading.BoundedSemaphore(max_concurrency)
+    _sse_executor = ThreadPoolExecutor(
+        max_workers=max_concurrency,
+        thread_name_prefix="aura-sse-test",
+    )
+    previous_executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _try_acquire_sse_slot() -> bool:
+    return _sse_slots.acquire(blocking=False)
+
+
+def _release_sse_slot() -> None:
+    try:
+        _sse_slots.release()
+    except ValueError:
+        logging.error("Aura SSE slot release called more than once")
+
+
+async def event_generator(
+    message: str,
+    user_id: str,
+    client_message_id: str | None = None,
+    attachment_ids: list[str] | None = None,
+    city_adcode: str | None = None,
+) -> AsyncIterator[str]:
     started_at = time.perf_counter()
     emotion_state = derive_emotion_state(message).to_dict()
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[str | object] = asyncio.Queue(maxsize=_sse_queue_size)
+    stop_event = threading.Event()
+    release_lock = threading.Lock()
+    released = False
+
     logging.info(
         "Aura SSE stream start user_id=%s client_message_id=%s message_length=%s",
         user_id,
         client_message_id,
         len(message),
     )
+
+    def release_slot_once() -> None:
+        nonlocal released
+        with release_lock:
+            if released:
+                return
+            released = True
+        _release_sse_slot()
+
+    def put_from_thread(item: str | object) -> bool:
+        if stop_event.is_set():
+            return False
+
+        try:
+            put_future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+        except RuntimeError:
+            return False
+
+        while True:
+            try:
+                put_future.result(timeout=_QUEUE_PUT_CHECK_INTERVAL_SECONDS)
+                return not stop_event.is_set()
+            except TimeoutError:
+                if stop_event.is_set():
+                    put_future.cancel()
+                    return False
+            except Exception:
+                logging.exception("Aura SSE queue write failed")
+                return False
+
+    def produce_events() -> None:
+        try:
+            for event in aura_agent(
+                message,
+                user_id,
+                emotion_state,
+                client_message_id,
+                attachment_ids,
+                city_adcode,
+            ):
+                if stop_event.is_set():
+                    break
+                logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
+                if not put_from_thread(sse_data(event)):
+                    break
+        except Exception:
+            logging.exception("Aura SSE stream failed")
+            put_from_thread(sse_data(error_event("Aura 服务暂时没有组织好回复，请稍后再试。")))
+        finally:
+            logging.info(
+                "Aura SSE stream end user_id=%s duration_ms=%s",
+                user_id,
+                round((time.perf_counter() - started_at) * 1000),
+            )
+            if not stop_event.is_set():
+                put_from_thread("data: [DONE]\n\n")
+                put_from_thread(_SSE_DONE)
+            release_slot_once()
+
+    producer = loop.run_in_executor(_sse_executor, produce_events)
+    producer.add_done_callback(lambda _future: release_slot_once())
+
     try:
-        for event in aura_agent(message, user_id, emotion_state, client_message_id):
-            logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
-            yield sse_data(event)
-    except Exception:
-        logging.exception("Aura SSE stream failed")
-        yield sse_data(error_event("Aura 服务暂时没有组织好回复，请稍后再试。"))
-    logging.info(
-        "Aura SSE stream end user_id=%s duration_ms=%s",
-        user_id,
-        round((time.perf_counter() - started_at) * 1000),
-    )
-    yield "data: [DONE]\n\n"
+        while True:
+            item = await queue.get()
+            if item is _SSE_DONE:
+                break
+            yield str(item)
+    finally:
+        stop_event.set()
 
 
 @router.post("/send/sse/")
 async def send_message(msg: MessageRequest):
+    if not _try_acquire_sse_slot():
+        raise HTTPException(
+            status_code=429,
+            detail=f"Aura 正在处理太多实时对话，请稍后再试。（当前上限 {_sse_max_concurrency}）",
+        )
+
     return StreamingResponse(
-        event_generator(msg.message, msg.user_id, msg.client_message_id),
+        event_generator(
+            msg.message,
+            msg.user_id,
+            msg.client_message_id,
+            msg.attachment_ids,
+            msg.city_adcode,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

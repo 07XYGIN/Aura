@@ -38,6 +38,10 @@ export class AppConfigService {
         return this.get('AI_SERVICE_URL', 'http://127.0.0.1:8000')
     }
 
+    get amapKey(): string {
+        return process.env.AMAP_KEY || process.env.amap_key || ''
+    }
+
     private get(key: string, fallback: string): string {
         return process.env[key] || fallback
     }

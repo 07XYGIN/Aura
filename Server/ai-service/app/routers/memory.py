@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.core.agent.tools.term_memory import (
     clear_memories_by_user,
     delete_memory_by_id,
+    get_memory_retention_status,
     list_memories_by_user,
     search_memory,
 )
@@ -19,8 +20,9 @@ async def list_memory(
     userId: str,
     page: int = Query(default=1, ge=1),
     pageSize: int = Query(default=10, ge=1, le=100),
+    scope: str = Query(default="long", pattern="^(long|mid|all)$"),
 ):
-    memory_page = list_memories_by_user(user_id=userId, page=page, page_size=pageSize)
+    memory_page = list_memories_by_user(user_id=userId, page=page, page_size=pageSize, memory_scope=scope)
     return SuccessResponse(data=memory_page)
 
 
@@ -30,9 +32,14 @@ async def get_memory(userId: str, query: str, k: int = 1):
     return SuccessResponse(data=memory_list)
 
 
+@router.get("/retention", response_model=SuccessResponse, summary="Get free memory retention status")
+async def get_memory_retention(userId: str):
+    return SuccessResponse(data=get_memory_retention_status(user_id=userId))
+
+
 @router.delete("/list", response_model=SuccessResponse, summary="Clear memories by user")
-async def clear_memory(userId: str):
-    deleted_count = clear_memories_by_user(user_id=userId)
+async def clear_memory(userId: str, scope: str = Query(default="all", pattern="^(long|mid|all)$")):
+    deleted_count = clear_memories_by_user(user_id=userId, memory_scope=scope)
     return SuccessResponse(data={"deletedCount": deleted_count})
 
 

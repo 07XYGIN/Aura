@@ -51,11 +51,17 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<Ap
     })
   }
 
-  if (!res.ok) {
+  let json: ApiResponse<T>
+
+  try {
+    json = await res.json()
+  } catch {
     throw new Error(`Request failed: ${res.status}`)
   }
 
-  const json: ApiResponse<T> = await res.json()
+  if (!res.ok) {
+    throw new Error(json.message || `Request failed: ${res.status}`)
+  }
 
   if (json.code === 401) {
     redirectToLogin(json.message)
