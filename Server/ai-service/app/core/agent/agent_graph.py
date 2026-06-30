@@ -12,17 +12,16 @@ from langgraph.types import Checkpointer
 
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import ensure_deepseek_api_key, llm
-from app.core.emotion import derive_emotion_state, format_emotion_context
-from .memory_judge import judge_memory_candidate
+from app.core.emotion import format_emotion_context
 from .protocol import (
     content_event,
-    derive_relationship_delta,
     emotion_event,
     memory_reference_event,
     memory_candidate_event,
     relationship_delta_event,
 )
 from .prompt import SYSTEM_PROMPT
+from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
 from .tools.term_memory import format_memory_context, save_memory
@@ -42,6 +41,7 @@ class AuraState(TypedDict, total=False):
     attachment_context: str
     attachments: list[dict[str, Any]]
     city_adcode: str | None
+    turn_judgement: dict[str, Any]
 
 
 tools = [
@@ -70,6 +70,15 @@ def prepare_context(state: AuraState) -> AuraState:
     }
 
 
+def turn_judge(state: AuraState) -> AuraState:
+    query = latest_human_text(state.get("messages", []))
+    turn_judgement = normalize_turn_judgement(state.get("turn_judgement"), query)
+    return {
+        "emotion": turn_judgement["emotion"],
+        "turn_judgement": turn_judgement,
+    }
+
+
 def call_model(state: AuraState) -> AuraState:
     ensure_deepseek_api_key()
     system_prompt = build_runtime_system_prompt(state)
@@ -92,6 +101,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             SYSTEM_PROMPT.strip(),
             format_location_context(state.get("city_adcode")),
             "【情绪上下文】\n" + format_emotion_context(state.get("emotion")),
+            "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
         )
@@ -113,10 +123,12 @@ def should_continue(state: AuraState) -> str:
 def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
     workflow = StateGraph(AuraState)
     workflow.add_node("prepare_context", prepare_context)
+    workflow.add_node("turn_judge", turn_judge)
     workflow.add_node("chat", call_model)
     workflow.add_node("tools", tool_node)
     workflow.set_entry_point("prepare_context")
-    workflow.add_edge("prepare_context", "chat")
+    workflow.add_edge("prepare_context", "turn_judge")
+    workflow.add_edge("turn_judge", "chat")
     workflow.add_conditional_edges("chat", should_continue)
     workflow.add_edge("tools", "chat")
     return workflow.compile(checkpointer=checkpointer)
@@ -136,8 +148,8 @@ def aura_agent(
     if aura is None:
         raise RuntimeError("Aura graph has not been initialized.")
 
-    if emotion_state is None:
-        emotion_state = derive_emotion_state(human_prompt).to_dict()
+    turn_judgement = judge_turn(human_prompt, emotion_state)
+    emotion_state = turn_judgement["emotion"]
     attachments = load_attachments(user_id, attachment_ids)
     logging.info(
         "Aura agent start user_id=%s message_length=%s attachments=%s",
@@ -147,7 +159,7 @@ def aura_agent(
     )
 
     config: RunnableConfig = {
-        "recursion_limit": 6,
+        "recursion_limit": 8,
         "configurable": {
             "thread_id": user_id,
             "user_id": user_id,
@@ -168,13 +180,14 @@ def aura_agent(
         "user_id": user_id,
         "attachments": attachments,
         "city_adcode": normalize_city_adcode(city_adcode),
+        "turn_judgement": turn_judgement,
     }
 
-    memory_candidate = judge_memory_candidate(human_prompt, emotion_state)
+    memory_candidate = turn_judgement["memory_candidate"]
 
     yield emotion_event(emotion_state)
     yield memory_candidate_event(memory_candidate)
-    yield relationship_delta_event(derive_relationship_delta(human_prompt, emotion_state))
+    yield relationship_delta_event(turn_judgement["relationship_delta"])
 
     save_memory_candidate_once(user_id, memory_candidate)
 

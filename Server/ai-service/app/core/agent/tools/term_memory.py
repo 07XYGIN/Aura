@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Any, Literal
 from uuid import uuid4
@@ -12,10 +13,31 @@ from app.core.config import SYNC_DATABASE_URL
 
 MemoryScope = Literal["long", "mid", "all"]
 
+
+def read_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(0.0, min(1.0, value))
+
+
+def read_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(0, value)
+
+
 LONG_TERM_COLLECTION_NAME = "aura"
 MEDIUM_TERM_COLLECTION_NAME = "aura_mid_term"
 MEMORY_COLLECTION_NAME = LONG_TERM_COLLECTION_NAME
 MEDIUM_MEMORY_FORGET_DAYS = 5
+MEMORY_RELEVANCE_THRESHOLD = read_float_env("MEMORY_RELEVANCE_THRESHOLD", 0.55)
+LONG_MEMORY_RECALL_COOLDOWN_MINUTES = read_int_env("LONG_MEMORY_RECALL_COOLDOWN_MINUTES", 180)
+LONG_MEMORY_COOLDOWN_BYPASS_THRESHOLD = read_float_env("LONG_MEMORY_COOLDOWN_BYPASS_THRESHOLD", 0.78)
+LONG_MEMORY_COOLDOWN_PENALTY = read_float_env("LONG_MEMORY_COOLDOWN_PENALTY", 0.25)
 
 embeddings = OllamaEmbeddings(
     model="nomic-embed-text:latest"
@@ -41,24 +63,40 @@ def save_memory(
     signals: list[str] | None = None,
 ) -> None:
     scope = "mid" if memory_scope == "mid" else "long"
-    now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
-    metadata: dict[str, Any] = {
-        "user_id": user_id,
-        "title": title,
-        "create_time": create_time,
-        "memory_scope": scope,
-        "memory_key": str(uuid4()),
-    }
+    metadata = build_memory_metadata(
+        user_id=user_id,
+        title=title,
+        create_time=create_time,
+        memory_scope=scope,
+    )
     if confidence is not None:
         metadata["confidence"] = confidence
     if signals:
         metadata["signals"] = signals
-    if scope == "mid":
-        metadata["last_recalled_at"] = now_text
-        metadata["forget_after_days"] = MEDIUM_MEMORY_FORGET_DAYS
 
     store = get_memory_vector_store(collection_name_for_scope(scope))
     store.add_documents([Document(page_content=content, metadata=metadata)])
+
+
+def build_memory_metadata(
+    user_id: str,
+    title: str,
+    create_time: str,
+    memory_scope: Literal["long", "mid"],
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "user_id": user_id,
+        "title": title,
+        "create_time": create_time,
+        "memory_scope": memory_scope,
+        "memory_key": str(uuid4()),
+    }
+    if memory_scope == "long":
+        metadata["last_recalled_at"] = None
+    if memory_scope == "mid":
+        metadata["last_recalled_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        metadata["forget_after_days"] = MEDIUM_MEMORY_FORGET_DAYS
+    return metadata
 
 
 def search_memory(user_id: str, query: str, k: int = 5, memory_scope: MemoryScope = "all") -> list[Document]:
@@ -85,7 +123,8 @@ def search_layered_memories(user_id: str, query: str, k: int = 5) -> dict[str, l
         collection_name=MEDIUM_TERM_COLLECTION_NAME,
         memory_scope="mid",
     )
-    touch_mid_term_memories(user_id, mid_docs)
+    touch_recalled_memories(user_id, long_docs, LONG_TERM_COLLECTION_NAME)
+    touch_recalled_memories(user_id, mid_docs, MEDIUM_TERM_COLLECTION_NAME)
     return {
         "long": long_docs,
         "mid": mid_docs,
@@ -102,25 +141,23 @@ def search_memory_collection(
     store = get_memory_vector_store(collection_name)
     candidate_count = max(k * 5, k)
     try:
-        results = store.similarity_search(
+        results = store.similarity_search_with_relevance_scores(
             query,
             k=candidate_count,
             filter={"user_id": user_id},
+            score_threshold=MEMORY_RELEVANCE_THRESHOLD,
         )
     except Exception:
         return []
 
-    return [
-        doc for doc in results
-        if is_memory_retrievable(doc.metadata, memory_scope)
-    ][:k]
+    return rank_memory_results(results, memory_scope)[:k]
 
 
 def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
     layered = search_layered_memories(user_id=user_id, query=query, k=k)
     sections: list[str] = []
     if layered["long"]:
-        sections.append("长期记忆（稳定事实，可自然引用）：\n" + format_docs(layered["long"]))
+        sections.append("长期记忆（稳定事实，仅在当前话题确实相关时自然引用）：\n" + format_docs(layered["long"]))
     if layered["mid"]:
         sections.append("中期记忆（近期线索，3-5 天未提及会淡出）：\n" + format_docs(layered["mid"]))
     if not sections:
@@ -304,7 +341,49 @@ def is_memory_retrievable(metadata: dict[str, Any], memory_scope: Literal["long"
     return datetime.now() - reference_time < timedelta(days=forget_after_days)
 
 
-def touch_mid_term_memories(user_id: str, docs: list[Document]) -> None:
+def rank_memory_results(
+    results: list[tuple[Document, float]],
+    memory_scope: Literal["long", "mid"],
+    now: datetime | None = None,
+) -> list[Document]:
+    now = now or datetime.now()
+    ranked: list[tuple[Document, float]] = []
+    for doc, score in results:
+        metadata = dict(doc.metadata or {})
+        if not is_memory_retrievable(metadata, memory_scope):
+            continue
+
+        relevance_score = max(0.0, min(1.0, float(score)))
+        adjusted_score = relevance_score
+        if (
+            memory_scope == "long"
+            and is_long_memory_in_cooldown(metadata, now)
+            and relevance_score < LONG_MEMORY_COOLDOWN_BYPASS_THRESHOLD
+        ):
+            metadata["recently_recalled"] = True
+            adjusted_score = max(0.0, relevance_score - LONG_MEMORY_COOLDOWN_PENALTY)
+
+        if adjusted_score < MEMORY_RELEVANCE_THRESHOLD:
+            continue
+
+        metadata["relevance_score"] = round(relevance_score, 4)
+        metadata["adjusted_relevance_score"] = round(adjusted_score, 4)
+        ranked.append((Document(page_content=doc.page_content, metadata=metadata), adjusted_score))
+
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return [doc for doc, _ in ranked]
+
+
+def is_long_memory_in_cooldown(metadata: dict[str, Any], now: datetime | None = None) -> bool:
+    last_recalled_at = parse_memory_create_time(metadata.get("last_recalled_at"))
+    if last_recalled_at is None:
+        return False
+
+    now = now or datetime.now()
+    return now - last_recalled_at < timedelta(minutes=LONG_MEMORY_RECALL_COOLDOWN_MINUTES)
+
+
+def touch_recalled_memories(user_id: str, docs: list[Document], collection_name: str) -> None:
     memory_keys = [
         doc.metadata.get("memory_key")
         for doc in docs
@@ -342,6 +421,10 @@ def touch_mid_term_memories(user_id: str, docs: list[Document]) -> None:
             conn.commit()
     except Exception:
         return
+
+
+def touch_mid_term_memories(user_id: str, docs: list[Document]) -> None:
+    touch_recalled_memories(user_id, docs, MEDIUM_TERM_COLLECTION_NAME)
 
 
 def parse_memory_create_time(value: Any) -> datetime | None:
