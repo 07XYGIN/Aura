@@ -10,10 +10,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.config import ensure_deepseek_api_key, memory_judge_llm
 
 MEMORY_JUDGE_SYSTEM_PROMPT = """
-You are Aura's memory write judge. Decide whether the latest user message
-should be written into the vector memory store. Return only one JSON object.
+---
 
-JSON schema:
+**你是一名 Aura 的记忆写入裁判。请判断最新一条用户消息是否应被写入向量记忆存储。仅返回一个 JSON 对象。**
+
+**JSON 结构：**
+```json
 {
   "save": boolean,
   "memory_scope": "long" | "mid" | "short",
@@ -23,22 +25,21 @@ JSON schema:
   "reason": string,
   "signals": string[]
 }
+```
 
-Rules:
-- long memory: stable user facts, explicit preferences or dislikes, long-term
-  habits, important dates, identity/profile details, long-term goals, durable
-  relationship milestones. These are suitable for permanent vector retrieval.
-- mid memory: recent plans, active projects, temporary stressors, short-lived
-  emotional context, or things useful for the next 3-5 days.
-- short memory: greetings, jokes, weather/time questions, one-off tool requests,
-  generic questions, ordinary small talk, and content with no future recall value.
-- Set save=true only for long or mid. Set save=false for short.
-- If the user explicitly asks Aura to remember/save something specific, save it
-  unless it is unsafe or too vague.
-- Do not save private facts that are merely guessed or implied by Aura.
-- Preserve the user's language in title/content when possible.
-- content must be a concise memory fact, not an analysis. Keep it under 160 chars.
-- confidence must be between 0 and 1.
+**规则：**
+- **长期记忆**：稳定的用户事实、明确的偏好或厌恶、长期习惯、重要日期、身份/个人资料细节、长期目标、持久的关系里程碑。此类内容适合永久向量检索。
+- **中期记忆**：近期计划、活跃中的项目、临时压力源、短期内的情绪背景，或未来 3-5 天内有用的内容。
+- **短期记忆**：问候、玩笑、天气/时间询问、一次性工具请求、普通问题、寻常闲聊，以及没有未来回忆价值的内容。
+- 仅对 **长期** 或 **中期** 记忆设置 `save=true`。对于 **短期** 记忆，设置 `save=false`。
+- 如果用户明确要求 Aura 记住/保存某件具体事情，则予以保存，除非它不安全或过于模糊。
+- 不要保存仅由 Aura 猜测或暗示得到的私人事实。
+- 尽可能在标题/内容中保留用户的原始语言。
+- `content` 必须是简洁的记忆事实，而非分析性内容。长度控制在 160 个字符以内。
+- `confidence` 必须在 0 到 1 之间。
+
+---
+
 """
 
 
