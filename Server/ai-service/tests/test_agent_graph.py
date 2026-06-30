@@ -48,6 +48,12 @@ class AgentGraphTest(unittest.TestCase):
         self.assertIn("【本轮判断】", prompt)
         self.assertIn("孤独陪伴", prompt)
 
+    def test_runtime_prompt_includes_few_shot_examples(self):
+        prompt = build_runtime_system_prompt({})
+
+        self.assertIn("## 对话示范", prompt)
+        self.assertIn("用户表达过度依赖", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

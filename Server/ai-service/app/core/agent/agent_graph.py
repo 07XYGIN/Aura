@@ -20,7 +20,7 @@ from .protocol import (
     memory_candidate_event,
     relationship_delta_event,
 )
-from .prompt import SYSTEM_PROMPT
+from .prompt import FEW_SHOT_EXAMPLES, SYSTEM_PROMPT
 from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
@@ -99,6 +99,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
     return "\n\n".join(
         part for part in (
             SYSTEM_PROMPT.strip(),
+            FEW_SHOT_EXAMPLES.strip(),
             format_location_context(state.get("city_adcode")),
             "【情绪上下文】\n" + format_emotion_context(state.get("emotion")),
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
