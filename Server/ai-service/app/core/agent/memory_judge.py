@@ -42,6 +42,27 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 
 """
 
+MEMORY_DEDUP_SYSTEM_PROMPT = """
+You are Aura's memory deduplication judge.
+
+Compare one new memory candidate with one existing long-term memory.
+Return exactly one JSON object and no extra text.
+
+JSON schema:
+{
+  "decision": "duplicate" | "update" | "unrelated",
+  "confidence": number,
+  "reason": string
+}
+
+Decision rules:
+- duplicate: they describe the same durable fact and the new memory adds no important new information.
+- update: the new memory corrects, replaces, or materially changes the existing fact.
+- unrelated: the two memories are independent, even if they share words or topics.
+
+Be conservative. If you are unsure whether a new fact should replace an old one, choose unrelated.
+"""
+
 
 def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
     text = (message or "").strip()
@@ -66,6 +87,35 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
     except Exception:
         logging.exception("Failed to judge memory candidate with DeepSeek")
         return memory_candidate(False, "short", None, None, 0.0, "memory_judge_failed", [])
+
+
+def judge_memory_dedup(
+    new_content: str,
+    existing_content: str,
+    existing_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "new_memory": (new_content or "").strip(),
+        "existing_memory": (existing_content or "").strip(),
+        "existing_metadata": existing_metadata or {},
+    }
+
+    if not payload["new_memory"] or not payload["existing_memory"]:
+        return memory_dedup_decision("unrelated", 0.0, "empty_memory")
+
+    try:
+        ensure_deepseek_api_key()
+        response = memory_judge_llm.invoke(
+            [
+                SystemMessage(content=MEMORY_DEDUP_SYSTEM_PROMPT.strip()),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ],
+        )
+        raw_decision = parse_json_object(message_content_to_text(response.content))
+        return normalize_memory_dedup_decision(raw_decision)
+    except Exception:
+        logging.exception("Failed to judge memory deduplication with DeepSeek")
+        return memory_dedup_decision("unrelated", 0.0, "dedup_judge_failed")
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -106,6 +156,17 @@ def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[st
     return memory_candidate(save, memory_scope, title, content, confidence, reason, signals)
 
 
+def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
+    decision = clean_string(raw.get("decision"), max_length=16, default="unrelated")
+    decision = (decision or "unrelated").lower()
+    if decision not in {"duplicate", "update", "unrelated"}:
+        decision = "unrelated"
+
+    confidence = clamp_float(raw.get("confidence"), default=0.0)
+    reason = clean_string(raw.get("reason"), max_length=120, default="llm_memory_dedup")
+    return memory_dedup_decision(decision, confidence, reason or "llm_memory_dedup")
+
+
 def message_content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content.strip()
@@ -139,6 +200,14 @@ def memory_candidate(
         "confidence": round(confidence, 2),
         "reason": reason,
         "signals": signals,
+    }
+
+
+def memory_dedup_decision(decision: str, confidence: float, reason: str) -> dict[str, Any]:
+    return {
+        "decision": decision,
+        "confidence": round(confidence, 2),
+        "reason": reason,
     }
 
 

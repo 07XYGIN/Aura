@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.memory_judge import normalize_memory_candidate, parse_json_object
+from app.core.agent.memory_judge import (
+    normalize_memory_candidate,
+    normalize_memory_dedup_decision,
+    parse_json_object,
+)
 
 
 class MemoryJudgeTest(unittest.TestCase):
@@ -46,6 +50,18 @@ class MemoryJudgeTest(unittest.TestCase):
         self.assertTrue(candidate["save"])
         self.assertEqual(candidate["content"], "I prefer quiet cafes when working.")
         self.assertEqual(candidate["confidence"], 0.8)
+
+    def test_normalize_memory_dedup_decision_rejects_unknown_decision(self):
+        decision = normalize_memory_dedup_decision(
+            {
+                "decision": "merge",
+                "confidence": 1.4,
+                "reason": "too much",
+            }
+        )
+
+        self.assertEqual(decision["decision"], "unrelated")
+        self.assertEqual(decision["confidence"], 1.0)
 
 
 if __name__ == "__main__":

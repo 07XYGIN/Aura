@@ -59,8 +59,9 @@ export class AuraController {
         @Query('page') page = '1',
         @Query('pageSize') pageSize = '10',
         @Query('scope') scope = 'long',
+        @Query('includeInactive') includeInactive = 'false',
     ): Promise<ApiResponse> {
-        return this.auraService.getMemories(request.user.userId, page, pageSize, scope)
+        return this.auraService.getMemories(request.user.userId, page, pageSize, scope, includeInactive)
     }
 
     @Delete('memories')

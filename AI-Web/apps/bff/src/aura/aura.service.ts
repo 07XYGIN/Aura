@@ -119,12 +119,19 @@ export class AuraService {
         )
     }
 
-    async getMemories(userId: string, page: string, pageSize: string, scope = 'long'): Promise<ApiResponse> {
+    async getMemories(
+        userId: string,
+        page: string,
+        pageSize: string,
+        scope = 'long',
+        includeInactive = 'false',
+    ): Promise<ApiResponse> {
         const params = new URLSearchParams({
             userId,
             page,
             pageSize,
             scope: this.normalizeMemoryScope(scope, 'long'),
+            includeInactive: this.normalizeBooleanQuery(includeInactive),
         })
 
         return this.forwardAi('GET', `/api/memory/list?${params.toString()}`)
@@ -404,6 +411,10 @@ export class AuraService {
 
     private normalizeMemoryScope(scope: string, fallback: 'long' | 'mid' | 'all'): 'long' | 'mid' | 'all' {
         return scope === 'long' || scope === 'mid' || scope === 'all' ? scope : fallback
+    }
+
+    private normalizeBooleanQuery(value: string): 'true' | 'false' {
+        return value === 'true' ? 'true' : 'false'
     }
 
     private isApiResponse(value: unknown): value is ApiResponse {

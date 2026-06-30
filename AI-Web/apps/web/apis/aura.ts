@@ -101,10 +101,18 @@ export const aura = {
     request<{ deletedCount: number }>('/api/aura/sessions/current/messages', {
       method: 'DELETE',
     }),
-  getMemories: (page = 1, pageSize = 20, scope: 'long' | 'mid' | 'all' = 'long') =>
-    request<AuraMemoryPage>(`/api/aura/memories?page=${page}&pageSize=${pageSize}&scope=${scope}`, {
-      method: 'GET',
-    }),
+  getMemories: (
+    page = 1,
+    pageSize = 20,
+    scope: 'long' | 'mid' | 'all' = 'long',
+    includeInactive = false,
+  ) =>
+    request<AuraMemoryPage>(
+      `/api/aura/memories?page=${page}&pageSize=${pageSize}&scope=${scope}&includeInactive=${includeInactive}`,
+      {
+        method: 'GET',
+      },
+    ),
   getMemoryRetention: () =>
     request<AuraMemoryRetention>('/api/aura/memories/retention', {
       method: 'GET',

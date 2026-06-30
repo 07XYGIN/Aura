@@ -21,8 +21,15 @@ async def list_memory(
     page: int = Query(default=1, ge=1),
     pageSize: int = Query(default=10, ge=1, le=100),
     scope: str = Query(default="long", pattern="^(long|mid|all)$"),
+    includeInactive: bool = Query(default=False),
 ):
-    memory_page = list_memories_by_user(user_id=userId, page=page, page_size=pageSize, memory_scope=scope)
+    memory_page = list_memories_by_user(
+        user_id=userId,
+        page=page,
+        page_size=pageSize,
+        memory_scope=scope,
+        include_inactive=includeInactive,
+    )
     return SuccessResponse(data=memory_page)
 
 
