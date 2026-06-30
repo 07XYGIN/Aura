@@ -5,8 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
 
-from .logging_utils import log_tool
-
+from app.core.agent.tools.logging_utils import log_tool
 
 WEEKDAY_NAMES = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 

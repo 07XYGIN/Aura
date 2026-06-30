@@ -137,7 +137,7 @@ async def event_generator(
             ):
                 if stop_event.is_set():
                     break
-                logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
+                # logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
                 if not put_from_thread(sse_data(event)):
                     break
         except Exception:
@@ -145,7 +145,7 @@ async def event_generator(
             put_from_thread(sse_data(error_event("Aura 服务暂时没有组织好回复，请稍后再试。")))
         finally:
             logging.info(
-                "Aura SSE stream end user_id=%s duration_ms=%s",
+                "Aura SSE stream end， user_id为=%s duration_ms=%s",
                 user_id,
                 round((time.perf_counter() - started_at) * 1000),
             )
