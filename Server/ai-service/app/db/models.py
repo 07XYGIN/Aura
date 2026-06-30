@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, SmallInteger, String, Text, Time, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
 
 
 class Base(DeclarativeBase):
@@ -183,7 +184,7 @@ class MemoryItem(Base, TimestampMixin):
     memory_type: Mapped[str] = mapped_column(String(64), nullable=False, default="preference")
     title: Mapped[str | None] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[str | None] = mapped_column(nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
     salience: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
@@ -442,6 +443,6 @@ class LangchainPgEmbedding(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     collection_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    embedding: Mapped[str | None] = mapped_column(nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
     document: Mapped[str | None] = mapped_column(String)
     cmetadata: Mapped[dict | None] = mapped_column(JSONB)
