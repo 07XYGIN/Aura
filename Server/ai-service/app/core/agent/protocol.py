@@ -64,6 +64,10 @@ def sse_data(event: dict[str, Any]) -> str:
 
 
 def derive_memory_candidate(message: str, emotion_state: dict[str, Any]) -> dict[str, Any]:
+    from .memory_judge import judge_memory_candidate
+
+    return judge_memory_candidate(message, emotion_state)
+
     text = (message or "").strip()
     if not text:
         return _memory_candidate(False, "short", None, None, 0.0, "empty_message", [])

@@ -11,11 +11,11 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer
 
 from app.core.attachment_store import format_attachment_context, load_attachments
-from app.core.config import llm
+from app.core.config import ensure_deepseek_api_key, llm
 from app.core.emotion import derive_emotion_state, format_emotion_context
+from .memory_judge import judge_memory_candidate
 from .protocol import (
     content_event,
-    derive_memory_candidate,
     derive_relationship_delta,
     emotion_event,
     memory_reference_event,
@@ -71,6 +71,7 @@ def prepare_context(state: AuraState) -> AuraState:
 
 
 def call_model(state: AuraState) -> AuraState:
+    ensure_deepseek_api_key()
     system_prompt = build_runtime_system_prompt(state)
     messages = [SystemMessage(content=system_prompt)] + trim_short_term_messages(state["messages"])
     response = llm_with_tools.invoke(messages)
@@ -165,7 +166,7 @@ def aura_agent(
         "city_adcode": normalize_city_adcode(city_adcode),
     }
 
-    memory_candidate = derive_memory_candidate(human_prompt, emotion_state)
+    memory_candidate = judge_memory_candidate(human_prompt, emotion_state)
 
     yield emotion_event(emotion_state)
     yield memory_candidate_event(memory_candidate)
