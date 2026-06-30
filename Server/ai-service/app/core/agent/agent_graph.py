@@ -100,7 +100,11 @@ def build_runtime_system_prompt(state: AuraState) -> str:
 
 
 def should_continue(state: AuraState) -> str:
-    last_message = state["messages"][-1]
+    messages = state.get("messages") or []
+    if not messages:
+        return END
+
+    last_message = messages[-1]
     if getattr(last_message, "tool_calls", None):
         return "tools"
     return END
