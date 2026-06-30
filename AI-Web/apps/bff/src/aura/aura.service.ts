@@ -201,13 +201,6 @@ export class AuraService {
             body: this.withUserId(body, userId),
         })
     }
-
-    async getEmotionReportPreview(userId: string): Promise<ApiResponse> {
-        const params = new URLSearchParams({ userId })
-
-        return this.forwardAi('GET', `/api/aura/emotion-report/preview?${params.toString()}`)
-    }
-
     async purchaseEmotionReport(reportId: string, userId: string): Promise<ApiResponse> {
         if (!reportId?.trim()) {
             throw new BadRequestException('reportId is required')

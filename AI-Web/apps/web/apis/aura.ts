@@ -139,10 +139,6 @@ export const aura = {
       method: 'POST',
       body: payload,
     }),
-  getEmotionReportPreview: () =>
-    request<AuraEmotionReportPreview>('/api/aura/emotion-report/preview', {
-      method: 'GET',
-    }),
   purchaseEmotionReport: (reportId: string) =>
     request<AuraEmotionInsightReport>(
       `/api/aura/emotion-report/${encodeURIComponent(reportId)}/purchase`,

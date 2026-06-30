@@ -119,11 +119,6 @@ export class AuraController {
         return this.auraService.recordBehaviorEvent(body, request.user.userId)
     }
 
-    @Get('emotion-report/preview')
-    getEmotionReportPreview(@Req() request: RequestWithUser): Promise<ApiResponse> {
-        return this.auraService.getEmotionReportPreview(request.user.userId)
-    }
-
     @HttpCode(200)
     @Post('emotion-report/:reportId/purchase')
     purchaseEmotionReport(
