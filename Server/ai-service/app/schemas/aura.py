@@ -42,6 +42,9 @@ class ChatMessageRequest(AuraSchema):
     content_type: str | None = Field(default=None, alias="contentType")
     emotion_label: str | None = Field(default=None, alias="emotionLabel")
     token_count: int | None = Field(default=None, alias="tokenCount")
+    batch_id: str | None = Field(default=None, alias="batchId")
+    batch_index: int | None = Field(default=None, alias="batchIndex")
+    sent_at: datetime | None = Field(default=None, alias="sentAt")
     metadata: Any = None
     emotion_snapshot: EmotionSnapshotRequest | None = Field(default=None, alias="emotionSnapshot")
 

@@ -246,6 +246,9 @@ class AuraStore:
                 content_type=clean_text(request.content_type) or "text",
                 emotion_label=clean_text(request.emotion_label),
                 token_count=request.token_count or 0,
+                batch_id=optional_uuid(request.batch_id, "batchId"),
+                batch_index=request.batch_index,
+                sent_at=request.sent_at,
                 metadata_json=parse_json_object(request.metadata),
             )
             if not message.content:
@@ -530,6 +533,9 @@ def chat_message_dict(message: ChatMessage) -> dict[str, Any]:
         "contentType": message.content_type,
         "emotionLabel": message.emotion_label,
         "tokenCount": message.token_count,
+        "batchId": str(message.batch_id) if message.batch_id else None,
+        "batchIndex": message.batch_index,
+        "sentAt": datetime_iso(message.sent_at),
         "metadata": json_dumps(message.metadata_json),
         "createdAt": datetime_iso(message.created_at),
     }

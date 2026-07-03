@@ -15,6 +15,29 @@ def content_event(content: str) -> dict[str, Any]:
     }
 
 
+def assistant_message_event(
+    *,
+    content: str,
+    message_id: str,
+    batch_id: str,
+    batch_index: int,
+    batch_total: int,
+    delay_ms: int,
+    sent_at: str,
+) -> dict[str, Any]:
+    return {
+        "event": "assistant_message",
+        "type": "assistant_message",
+        "content": content,
+        "messageId": message_id,
+        "batchId": batch_id,
+        "batchIndex": batch_index,
+        "batchTotal": batch_total,
+        "delayMs": delay_ms,
+        "sentAt": sent_at,
+    }
+
+
 def emotion_event(emotion_state: dict[str, Any]) -> dict[str, Any]:
     return {
         "event": "emotion",

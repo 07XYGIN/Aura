@@ -8,6 +8,10 @@ export type AuraHistoryMessage = {
     content?: string
     attachments?: string[]
     createdAt?: string
+    turnId?: string
+    batchId?: string
+    batchIndex?: number
+    batchTotal?: number
 }
 
 export type AuraMemoryMetadata = {

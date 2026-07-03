@@ -11,6 +11,9 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
 DEEPSEEK_MEMORY_MODEL = os.getenv("DEEPSEEK_MEMORY_MODEL", "deepseek-v4-flash")
 AURA_LLM_TEMPERATURE = float(os.getenv("AURA_LLM_TEMPERATURE", "1"))
+DEEPSEEK_REASONING_EFFORT = os.getenv("DEEPSEEK_REASONING_EFFORT", "high").strip().lower()
+if DEEPSEEK_REASONING_EFFORT not in {"high", "max"}:
+    DEEPSEEK_REASONING_EFFORT = "high"
 
 
 def ensure_deepseek_api_key() -> None:
@@ -26,6 +29,17 @@ llm = ChatOpenAI(
     streaming=True,
     stream_usage=False,
     extra_body={"thinking": {"type": "disabled"}},
+)
+
+structured_reply_llm = ChatOpenAI(
+    model=DEEPSEEK_MODEL,
+    api_key=DEEPSEEK_API_KEY or "missing-deepseek-api-key",
+    base_url=DEEPSEEK_BASE_URL,
+    streaming=False,
+    stream_usage=False,
+    reasoning_effort=DEEPSEEK_REASONING_EFFORT,
+    model_kwargs={"response_format": {"type": "json_object"}},
+    extra_body={"thinking": {"type": "enabled"}},
 )
 
 memory_judge_llm = ChatOpenAI(

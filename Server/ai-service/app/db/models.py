@@ -144,6 +144,9 @@ class ChatMessage(Base):
     content_type: Mapped[str] = mapped_column(String(32), nullable=False, default="text")
     emotion_label: Mapped[str | None] = mapped_column(String(64))
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    batch_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    batch_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

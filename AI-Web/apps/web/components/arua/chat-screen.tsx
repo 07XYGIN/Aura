@@ -39,11 +39,19 @@ type ChatStreamChunk = {
     content?: string
     event?: string
     emotion?: EmotionPayload
+    messageId?: string
+    batchId?: string
+    batchIndex?: number
+    batchTotal?: number
+    delayMs?: number
+    sentAt?: string
 }
 
 const FEEDBACK_IDLE_DELAY_MS = 30_000
 const MAX_ATTACHMENTS_PER_MESSAGE = 4
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const MIN_ASSISTANT_DELAY_MS = 500
+const MAX_ASSISTANT_DELAY_MS = 2500
 const SPEECH_RECOGNITION_LANG = {
     'zh-CN': 'zh-CN',
     'en-US': 'en-US',
@@ -172,6 +180,19 @@ const readFileAsBase64 = (file: File) =>
         reader.readAsDataURL(file)
     })
 
+const wait = (delayMs: number) =>
+    new Promise<void>((resolve) => {
+        window.setTimeout(resolve, delayMs)
+    })
+
+const normalizeAssistantDelay = (value?: number) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return MIN_ASSISTANT_DELAY_MS
+    }
+
+    return Math.min(MAX_ASSISTANT_DELAY_MS, Math.max(MIN_ASSISTANT_DELAY_MS, value))
+}
+
 const buildUploadPayload = async (files: File[]): Promise<AuraUploadAttachmentInput[]> =>
     Promise.all(
         files.map(async (file) => ({
@@ -199,6 +220,11 @@ const mapHistoryMessage = (item: AuraHistoryMessage, index: number): ChatMessage
         role,
         content: item.content,
         attachments: item.attachments,
+        createdAt: item.createdAt,
+        turnId: item.turnId,
+        batchId: item.batchId,
+        batchIndex: item.batchIndex,
+        batchTotal: item.batchTotal,
     }
 }
 
@@ -250,6 +276,8 @@ export function AruaChatScreen() {
     const messagesRef = useRef<HTMLDivElement>(null)
     const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
     const isSendingRef = useRef(false)
+    const assistantDeliveryQueueRef = useRef<Promise<void>>(Promise.resolve())
+    const pendingAssistantMessageIdRef = useRef<string | null>(null)
     const currentSessionIdRef = useRef(createSessionId())
     const lastCompletedSessionIdRef = useRef<string | null>(null)
     const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -259,6 +287,7 @@ export function AruaChatScreen() {
     const [isStreaming, setIsStreaming] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
     const [latestEmotion, setLatestEmotion] = useState<EmotionPayload | null>(null)
+    const [isAssistantTyping, setIsAssistantTyping] = useState(false)
     const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
     const [isClearingHistory, setIsClearingHistory] = useState(false)
     const [feedbackPrompt, setFeedbackPrompt] = useState<{ sessionId: string } | null>(null)
@@ -379,17 +408,72 @@ export function AruaChatScreen() {
         },
         [clearFeedbackTimer],
     )
+    const enqueueAssistantMessage = useCallback(
+        (payload: ChatStreamChunk) => {
+            const content = payload.content?.trim()
+            if (!content) {
+                return
+            }
+
+            const delayMs = normalizeAssistantDelay(payload.delayMs)
+            assistantDeliveryQueueRef.current = assistantDeliveryQueueRef.current
+                .catch(() => undefined)
+                .then(async () => {
+                    setIsAssistantTyping(true)
+                    await wait(delayMs)
+                    setMessages((currentMessages) => {
+                        const pendingId = pendingAssistantMessageIdRef.current
+                        const pendingIndex = pendingId
+                            ? currentMessages.findIndex((item) => item.id === pendingId && item.pending)
+                            : -1
+
+                        const nextMessage: ChatMessage = {
+                            id:
+                                payload.messageId ??
+                                `assistant-${payload.batchId ?? Date.now()}-${payload.batchIndex ?? currentMessages.length}`,
+                            sessionId: currentSessionIdRef.current,
+                            role: 'assistant',
+                            content,
+                            pending: false,
+                            createdAt: payload.sentAt,
+                            batchId: payload.batchId,
+                            batchIndex: payload.batchIndex,
+                            batchTotal: payload.batchTotal,
+                        }
+
+                        if (pendingIndex >= 0) {
+                            pendingAssistantMessageIdRef.current = null
+                            return currentMessages.map((item, index) =>
+                                index === pendingIndex ? nextMessage : item,
+                            )
+                        }
+
+                        return [...currentMessages, nextMessage]
+                    })
+                    setIsAssistantTyping(false)
+                })
+        },
+        [],
+    )
+    const finishStreamAfterDelivered = useCallback(() => {
+        void assistantDeliveryQueueRef.current
+            .catch(() => undefined)
+            .then(() => {
+                isSendingRef.current = false
+                setIsStreaming(false)
+                setIsAssistantTyping(false)
+                lastCompletedSessionIdRef.current = currentSessionIdRef.current
+                scheduleFeedbackPrompt(currentSessionIdRef.current)
+                void loadHistoryMessages({ showError: false })
+            })
+    }, [loadHistoryMessages, scheduleFeedbackPrompt])
     const { connect, disconnect } = useMemo(
         () =>
             UseSse(buildChatSseUrl(), {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 onMessage: (data) => {
                     if (data === '[DONE]') {
-                        isSendingRef.current = false
-                        setIsStreaming(false)
-                        lastCompletedSessionIdRef.current = currentSessionIdRef.current
-                        scheduleFeedbackPrompt(currentSessionIdRef.current)
-                        void loadHistoryMessages({ showError: false })
+                        finishStreamAfterDelivered()
                         return
                     }
 
@@ -409,6 +493,11 @@ export function AruaChatScreen() {
                         setLatestEmotion(parsed.emotion)
                     }
 
+                    if (parsed.event === 'assistant_message') {
+                        enqueueAssistantMessage(parsed)
+                        return
+                    }
+
                     const content = parsed.content ?? ''
                     if (!content) {
                         return
@@ -426,6 +515,7 @@ export function AruaChatScreen() {
                             return {
                                 ...item,
                                 content: item.content + content,
+                                pending: false,
                             }
                         }),
                     )
@@ -433,17 +523,26 @@ export function AruaChatScreen() {
                 onError: () => {
                     isSendingRef.current = false
                     setIsStreaming(false)
+                    setIsAssistantTyping(false)
+                    const pendingId = pendingAssistantMessageIdRef.current
+                    if (pendingId) {
+                        pendingAssistantMessageIdRef.current = null
+                        setMessages((currentMessages) =>
+                            currentMessages.filter((item) => item.id !== pendingId),
+                        )
+                    }
                     toast.error(t('chat.streamFailed'), {
                         description: t('chat.tryAgain'),
                         position: 'top-center',
                     })
                 },
                 onClose: () => {
-                    isSendingRef.current = false
-                    setIsStreaming(false)
+                    if (isSendingRef.current) {
+                        finishStreamAfterDelivered()
+                    }
                 },
             }),
-        [loadHistoryMessages, scheduleFeedbackPrompt, t, token],
+        [enqueueAssistantMessage, finishStreamAfterDelivered, t, token],
     )
     useEffect(() => {
         return () => {
@@ -624,8 +723,11 @@ export function AruaChatScreen() {
         const assistantMessageId = `assistant-${now}`
         const sessionId = currentSessionIdRef.current
         isSendingRef.current = true
+        pendingAssistantMessageIdRef.current = assistantMessageId
+        assistantDeliveryQueueRef.current = Promise.resolve()
         setIsStreaming(true)
         setLatestEmotion(null)
+        setIsAssistantTyping(true)
         clearFeedbackTimer()
         setFeedbackPrompt(null)
 
@@ -639,7 +741,9 @@ export function AruaChatScreen() {
             uploadedAttachments = await uploadSelectedFiles(selectedFiles)
         } catch (error) {
             isSendingRef.current = false
+            pendingAssistantMessageIdRef.current = null
             setIsStreaming(false)
+            setIsAssistantTyping(false)
             toast.error('Image upload failed', {
                 description: error instanceof Error ? error.message : t('chat.tryAgain'),
                 position: 'top-center',
@@ -661,6 +765,7 @@ export function AruaChatScreen() {
                 sessionId,
                 role: 'assistant',
                 content: '',
+                pending: true,
             },
         ])
         setMessage('')
@@ -818,6 +923,9 @@ export function AruaChatScreen() {
             setMessages([])
             setLatestEmotion(null)
             setEmotionReport(null)
+            setIsAssistantTyping(false)
+            pendingAssistantMessageIdRef.current = null
+            assistantDeliveryQueueRef.current = Promise.resolve()
             clearFeedbackTimer()
             setFeedbackPrompt(null)
             currentSessionIdRef.current = createSessionId()
@@ -872,7 +980,16 @@ export function AruaChatScreen() {
                                                 : 'rounded-bl-lg border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text)]',
                                         )}
                                     >
-                                        {chatMessage.content ? (
+                                        {chatMessage.pending ? (
+                                            <span
+                                                className="inline-flex items-center gap-1.5 py-1"
+                                                aria-label={isAssistantTyping ? 'Aura 正在输入' : undefined}
+                                            >
+                                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--aura-text-muted)]" />
+                                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--aura-text-muted)] [animation-delay:120ms]" />
+                                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--aura-text-muted)] [animation-delay:240ms]" />
+                                            </span>
+                                        ) : chatMessage.content ? (
                                             <p className="break-words whitespace-pre-wrap">
                                                 {chatMessage.content}
                                             </p>

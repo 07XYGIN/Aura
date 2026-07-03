@@ -63,6 +63,12 @@ export type ChatMessage = {
   role: 'assistant' | 'user'
   content: string
   attachments?: string[]
+  pending?: boolean
+  createdAt?: string
+  turnId?: string
+  batchId?: string
+  batchIndex?: number
+  batchTotal?: number
 }
 
 declare global {

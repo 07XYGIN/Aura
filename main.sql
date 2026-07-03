@@ -28,11 +28,35 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_users_sex') THEN
-        ALTER TABLE users ADD CONSTRAINT chk_users_sex CHECK (sex IN (0, 1));
+        IF EXISTS (SELECT 1 FROM users WHERE sex IS NOT NULL AND sex NOT IN (0, 1)) THEN
+            ALTER TABLE users ADD CONSTRAINT chk_users_sex CHECK (sex IN (0, 1)) NOT VALID;
+        ELSE
+            ALTER TABLE users ADD CONSTRAINT chk_users_sex CHECK (sex IN (0, 1));
+        END IF;
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_users_age') THEN
         ALTER TABLE users ADD CONSTRAINT chk_users_age CHECK (age IS NULL OR age BETWEEN 0 AND 150);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+          AND column_name = 'created_at'
+    ) THEN
+        ALTER TABLE users ADD COLUMN created_at timestamptz NOT NULL DEFAULT now();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+          AND column_name = 'updated_at'
+    ) THEN
+        ALTER TABLE users ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now();
     END IF;
 END $$;
 
@@ -136,6 +160,23 @@ CREATE TABLE IF NOT EXISTS user_profile (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT chk_user_profile_city_adcode CHECK (city_adcode IS NULL OR city_adcode ~ '^[0-9]{6}$')
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'user_profile'
+          AND column_name = 'city_adcode'
+    ) THEN
+        ALTER TABLE user_profile ADD COLUMN city_adcode varchar(6);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_user_profile_city_adcode') THEN
+        ALTER TABLE user_profile ADD CONSTRAINT chk_user_profile_city_adcode CHECK (city_adcode IS NULL OR city_adcode ~ '^[0-9]{6}$');
+    END IF;
+END $$;
 
 COMMENT ON TABLE user_profile IS '用户偏好画像表，保存称呼、语言、时区、城市 adcode、偏好、边界和禁忌';
 COMMENT ON COLUMN user_profile.user_id IS '用户 ID，和 users.id 一一对应';
@@ -252,9 +293,45 @@ CREATE TABLE IF NOT EXISTS chat_message (
     content_type varchar(32) NOT NULL DEFAULT 'text',
     emotion_label varchar(64),
     token_count int NOT NULL DEFAULT 0,
+    batch_id uuid,
+    batch_index int,
+    sent_at timestamptz,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_message'
+          AND column_name = 'batch_id'
+    ) THEN
+        ALTER TABLE chat_message ADD COLUMN batch_id uuid;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_message'
+          AND column_name = 'batch_index'
+    ) THEN
+        ALTER TABLE chat_message ADD COLUMN batch_index int;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_message'
+          AND column_name = 'sent_at'
+    ) THEN
+        ALTER TABLE chat_message ADD COLUMN sent_at timestamptz;
+    END IF;
+END $$;
 
 COMMENT ON TABLE chat_message IS '消息明细表，保存用户和 Aura 的每条消息';
 COMMENT ON COLUMN chat_message.id IS '消息 ID';
@@ -266,6 +343,9 @@ COMMENT ON COLUMN chat_message.content IS '消息正文';
 COMMENT ON COLUMN chat_message.content_type IS '消息类型，例如 text、text_with_attachment';
 COMMENT ON COLUMN chat_message.emotion_label IS '消息关联的主情绪标签';
 COMMENT ON COLUMN chat_message.token_count IS '消息 token 数估算';
+COMMENT ON COLUMN chat_message.batch_id IS '回复批次 ID，用于标识一次模型调用拆出的多条 Aura 消息';
+COMMENT ON COLUMN chat_message.batch_index IS '批次内消息顺序，从 0 开始';
+COMMENT ON COLUMN chat_message.sent_at IS '消息实际或计划发送时间，统一使用带时区时间';
 COMMENT ON COLUMN chat_message.metadata IS '消息扩展备注 JSON，例如附件列表';
 COMMENT ON COLUMN chat_message.created_at IS '消息创建时间';
 
@@ -623,6 +703,8 @@ CREATE TABLE IF NOT EXISTS langchain_pg_collection (
     cmetadata json
 );
 
+ALTER TABLE langchain_pg_collection ALTER COLUMN uuid SET DEFAULT gen_random_uuid();
+
 COMMENT ON TABLE langchain_pg_collection IS 'LangChain PGVector 集合表，用于区分长期记忆和中期记忆向量集合';
 COMMENT ON COLUMN langchain_pg_collection.uuid IS '向量集合 ID';
 COMMENT ON COLUMN langchain_pg_collection.name IS '向量集合名称，例如 aura、aura_mid_term';
@@ -643,6 +725,75 @@ COMMENT ON COLUMN langchain_pg_embedding.embedding IS '记忆文本向量';
 COMMENT ON COLUMN langchain_pg_embedding.document IS '记忆原文';
 COMMENT ON COLUMN langchain_pg_embedding.cmetadata IS '记忆元数据 JSON，包含 user_id、memory_scope、create_time、last_recalled_at 等';
 
+CREATE TABLE IF NOT EXISTS checkpoints (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    checkpoint_id text NOT NULL,
+    parent_checkpoint_id text,
+    type text,
+    checkpoint jsonb NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+);
+
+COMMENT ON TABLE checkpoints IS 'LangGraph 检查点主表，保存会话线程的状态快照、父快照和元数据';
+COMMENT ON COLUMN checkpoints.thread_id IS 'LangGraph 线程 ID';
+COMMENT ON COLUMN checkpoints.checkpoint_ns IS '检查点命名空间，默认空字符串';
+COMMENT ON COLUMN checkpoints.checkpoint_id IS '检查点 ID';
+COMMENT ON COLUMN checkpoints.parent_checkpoint_id IS '父检查点 ID，用于恢复状态链路';
+COMMENT ON COLUMN checkpoints.type IS '检查点序列化类型';
+COMMENT ON COLUMN checkpoints.checkpoint IS '检查点状态快照 JSON';
+COMMENT ON COLUMN checkpoints.metadata IS '检查点元数据 JSON';
+
+CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    channel text NOT NULL,
+    version text NOT NULL,
+    type text NOT NULL,
+    blob bytea,
+    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
+);
+
+COMMENT ON TABLE checkpoint_blobs IS 'LangGraph 检查点二进制片段表，保存各状态通道的序列化数据块';
+COMMENT ON COLUMN checkpoint_blobs.thread_id IS 'LangGraph 线程 ID';
+COMMENT ON COLUMN checkpoint_blobs.checkpoint_ns IS '检查点命名空间，默认空字符串';
+COMMENT ON COLUMN checkpoint_blobs.channel IS '状态通道名称';
+COMMENT ON COLUMN checkpoint_blobs.version IS '通道数据版本';
+COMMENT ON COLUMN checkpoint_blobs.type IS '序列化数据类型';
+COMMENT ON COLUMN checkpoint_blobs.blob IS '序列化后的二进制数据块';
+
+CREATE TABLE IF NOT EXISTS checkpoint_writes (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    checkpoint_id text NOT NULL,
+    task_id text NOT NULL,
+    idx integer NOT NULL,
+    channel text NOT NULL,
+    type text,
+    blob bytea NOT NULL,
+    task_path text NOT NULL DEFAULT '',
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+);
+
+COMMENT ON TABLE checkpoint_writes IS 'LangGraph 检查点写入表，保存任务执行过程中写入的通道状态片段';
+COMMENT ON COLUMN checkpoint_writes.thread_id IS 'LangGraph 线程 ID';
+COMMENT ON COLUMN checkpoint_writes.checkpoint_ns IS '检查点命名空间，默认空字符串';
+COMMENT ON COLUMN checkpoint_writes.checkpoint_id IS '关联的检查点 ID';
+COMMENT ON COLUMN checkpoint_writes.task_id IS '写入该状态的任务 ID';
+COMMENT ON COLUMN checkpoint_writes.idx IS '同一任务内写入顺序';
+COMMENT ON COLUMN checkpoint_writes.channel IS '写入的状态通道名称';
+COMMENT ON COLUMN checkpoint_writes.type IS '序列化数据类型';
+COMMENT ON COLUMN checkpoint_writes.blob IS '序列化后的写入数据';
+COMMENT ON COLUMN checkpoint_writes.task_path IS '任务路径，用于区分子图或嵌套任务';
+
+CREATE TABLE IF NOT EXISTS checkpoint_migrations (
+    v integer PRIMARY KEY
+);
+
+COMMENT ON TABLE checkpoint_migrations IS 'LangGraph 检查点迁移版本表，记录检查点存储结构已执行的迁移版本';
+COMMENT ON COLUMN checkpoint_migrations.v IS '已执行的检查点迁移版本号';
+
 CREATE INDEX IF NOT EXISTS idx_invitation_code_status ON invitation_code(code, expires_at, disabled_at);
 CREATE INDEX IF NOT EXISTS idx_invitation_code_redemption_user ON invitation_code_redemption(user_id, redeemed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_relationship_event_user_time ON relationship_event(user_id, occurred_at DESC);
@@ -651,6 +802,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_session_user_time ON conversation_se
 CREATE INDEX IF NOT EXISTS idx_conversation_session_aura_profile ON conversation_session(aura_profile_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_time ON chat_message(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_user_time ON chat_message(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_message_batch ON chat_message(batch_id, batch_index) WHERE batch_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_user_time ON emotion_snapshot(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_session_time ON emotion_snapshot(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_message ON emotion_snapshot(message_id);
@@ -680,6 +832,9 @@ CREATE INDEX IF NOT EXISTS idx_user_behavior_event_metadata_gin ON user_behavior
 CREATE INDEX IF NOT EXISTS idx_user_memory_entitlement_expiry ON user_memory_entitlement(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_emotion_insight_report_user_time ON emotion_insight_report(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_cmetadata_gin ON langchain_pg_embedding USING gin(cmetadata jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints(thread_id);
+CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON checkpoint_blobs(thread_id);
+CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON checkpoint_writes(thread_id);
 
 DO $$
 BEGIN
