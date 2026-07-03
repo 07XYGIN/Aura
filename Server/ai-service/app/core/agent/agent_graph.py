@@ -326,14 +326,6 @@ def build_reply_messages(response: Any, state: AuraState) -> tuple[list[AIMessag
 def build_structured_reply_response(draft_response: Any, messages: list, state: AuraState) -> Any:
     draft_content = message_content_to_text(getattr(draft_response, "content", ""))
 
-    try:
-        response = structured_reply_llm.invoke(messages)
-        if message_content_to_text(getattr(response, "content", "")).strip():
-            return response
-        logging.warning("Aura structured reply returned empty content; falling back to draft formatting")
-    except Exception:
-        logging.exception("Aura structured reply generation failed; falling back to draft formatting")
-
     if not draft_content.strip():
         return draft_response
 

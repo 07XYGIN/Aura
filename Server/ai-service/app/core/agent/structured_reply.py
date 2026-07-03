@@ -48,6 +48,9 @@ def parse_structured_reply(raw_content: Any) -> list[str]:
         try:
             data = json.loads(candidate)
         except json.JSONDecodeError:
+            tolerant_messages = parse_tolerant_messages(candidate)
+            if tolerant_messages:
+                return tolerant_messages
             continue
 
         try:
@@ -62,6 +65,74 @@ def parse_structured_reply(raw_content: Any) -> list[str]:
             continue
 
     return [text]
+
+
+def parse_tolerant_messages(text: str) -> list[str]:
+    if '"messages"' not in text and "'messages'" not in text:
+        return []
+
+    match = re.search(r"""["']messages["']\s*:\s*\[\s*["']""", text)
+    if not match:
+        return []
+
+    start = match.end()
+    end = text.rfind('"]')
+    if end < start:
+        end = text.rfind("']")
+    if end < start:
+        return []
+
+    body = text[start:end]
+    if not body.strip():
+        return []
+
+    parts = split_tolerant_string_array(body)
+    messages = [clean_tolerant_message(part) for part in parts]
+    messages = [message for message in messages if message]
+    return messages[:MAX_REPLY_MESSAGES]
+
+
+def split_tolerant_string_array(body: str) -> list[str]:
+    parts: list[str] = []
+    current: list[str] = []
+    index = 0
+    in_string = True
+    escaped = False
+
+    while index < len(body):
+        char = body[index]
+        next_two = body[index : index + 3]
+
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            current.append(char)
+            escaped = True
+        elif in_string and next_two == '","':
+            parts.append("".join(current))
+            current = []
+            index += 2
+        else:
+            current.append(char)
+
+        index += 1
+
+    parts.append("".join(current))
+    return parts
+
+
+def clean_tolerant_message(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+
+    try:
+        value = json.loads(f'"{value}"')
+    except json.JSONDecodeError:
+        value = value.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+
+    return normalize_text(value)
 
 
 def normalize_text(value: Any) -> str:

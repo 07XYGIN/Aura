@@ -21,3 +21,11 @@ def test_parse_structured_reply_plain_text_fallback():
 
 def test_parse_structured_reply_caps_message_count():
     assert parse_structured_reply('{"messages":["1","2","3","4","5"]}') == ["1", "2", "3", "4"]
+
+
+def test_parse_structured_reply_tolerates_inner_quotes():
+    assert parse_structured_reply(
+        '{"messages":["就是话不说绝。比如"我一定行"换成"我尽量"。\\n\\n给自己留条缝。"]}'
+    ) == [
+        '就是话不说绝。比如"我一定行"换成"我尽量"。\n\n给自己留条缝。'
+    ]
