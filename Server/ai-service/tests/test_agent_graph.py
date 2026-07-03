@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.agent_graph import build_runtime_system_prompt, should_continue, trim_short_term_messages, turn_judge
+from app.core.agent.agent_graph import build_runtime_system_prompt, should_continue, tools, trim_short_term_messages, turn_judge
 
 
 class AgentGraphTest(unittest.TestCase):
@@ -54,6 +54,9 @@ class AgentGraphTest(unittest.TestCase):
 
         self.assertIn("## 对话示范", prompt)
         self.assertIn("用户表达过度依赖", prompt)
+
+    def test_save_memory_tool_is_registered(self):
+        self.assertIn("save_memory_tool", [item.name for item in tools])
 
     def test_trim_short_term_messages_drops_orphan_tool_messages(self):
         messages = [

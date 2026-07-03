@@ -30,6 +30,7 @@ from .self_changelog import load_self_changelog_context_sync, mark_self_changelo
 from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
+from .tools.memory import save_memory_tool
 from .tools.term_memory import format_memory_context, save_memory
 from .tools.proactive import draft_proactive_message, plan_daily_greetings
 from .tools.relationship import get_relationship_status
@@ -62,6 +63,7 @@ class AuraState(TypedDict, total=False):
 
 tools = [
     search_memory_tool,
+    save_memory_tool,
     get_current_datetime,
     get_relationship_status,
     get_emotional_support_advice,
@@ -251,21 +253,28 @@ def aura_agent(
     yield memory_candidate_event(memory_candidate)
     yield relationship_delta_event(turn_judgement["relationship_delta"])
 
-    save_memory_candidate_once(user_id, memory_candidate)
-
     memory_reference_reported = False
+    memory_save_tool_called = False
     raw_chat_parts: list[str] = []
 
     for chunk, metadata in aura.stream(inputs, config, stream_mode="messages"):
+        tool_calls = getattr(chunk, "tool_calls", None) or []
+        for tool_call in tool_calls:
+            if tool_call.get("name") == "save_memory_tool":
+                memory_save_tool_called = True
+
         if not memory_reference_reported:
-            tool_calls = getattr(chunk, "tool_calls", None) or []
             for tool_call in tool_calls:
-                if tool_call.get("name") == "search_memory_tool":
+                tool_name = tool_call.get("name")
+                if tool_name == "search_memory_tool":
                     args = tool_call.get("args") or {}
                     query = args.get("query") if isinstance(args, dict) else None
                     memory_reference_reported = True
                     yield memory_reference_event(query if isinstance(query, str) else None)
                     break
+
+        if metadata.get("langgraph_node") == "tools" and getattr(chunk, "name", None) == "save_memory_tool":
+            memory_save_tool_called = True
 
         if (
             not memory_reference_reported
@@ -277,6 +286,9 @@ def aura_agent(
 
         if chunk.content and metadata.get("langgraph_node") == "chat":
             raw_chat_parts.append(str(chunk.content))
+
+    if not memory_save_tool_called:
+        save_memory_candidate_once(user_id, memory_candidate)
 
     reply_batch = get_latest_reply_batch(config, turn_id)
     if reply_batch:
