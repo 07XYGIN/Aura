@@ -25,6 +25,7 @@ from .protocol import (
 )
 from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
 from .structured_reply import parse_structured_reply, try_parse_structured_reply
+from .self_changelog import load_self_changelog_context_sync, mark_self_changelog_reacted_sync
 from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
@@ -52,6 +53,7 @@ class AuraState(TypedDict, total=False):
     city_adcode: str | None
     turn_judgement: dict[str, Any]
     time_context: dict[str, Any]
+    self_changelog_context: dict[str, Any]
     turn_id: str
     request_started_at: str
     last_reply_batch: dict[str, Any]
@@ -130,6 +132,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             STRUCTURED_REPLY_PROMPT.strip(),
             FEW_SHOT_EXAMPLES.strip(),
             format_time_context(state.get("time_context")),
+            format_self_changelog_context(state.get("self_changelog_context")),
             format_location_context(state.get("city_adcode")),
             "【情绪上下文】\n" + format_emotion_context(state.get("emotion")),
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
@@ -190,6 +193,7 @@ def aura_agent(
     }
     previous_state = aura.get_state(config)
     time_context = build_time_context(previous_state.values.get("messages", []) if previous_state and previous_state.values else [], request_started_at)
+    self_changelog_context = load_self_changelog_context_sync()
 
     turn_judgement = judge_turn(human_prompt, emotion_state)
     emotion_state = turn_judgement["emotion"]
@@ -220,6 +224,10 @@ def aura_agent(
         "city_adcode": normalize_city_adcode(city_adcode),
         "turn_judgement": turn_judgement,
         "time_context": time_context,
+        "self_changelog_context": {
+            "entry_id": self_changelog_context.entry_id,
+            "text": self_changelog_context.text,
+        },
         "turn_id": turn_id,
         "request_started_at": request_started_at.isoformat(),
     }
@@ -269,9 +277,11 @@ def aura_agent(
                 delay_ms=message["delay_ms"],
                 sent_at=message["sent_at"],
             )
+        mark_self_changelog_reacted_sync(self_changelog_context.entry_id)
     elif raw_chat_parts:
         for content in parse_structured_reply("".join(raw_chat_parts)):
             yield content_event(content)
+        mark_self_changelog_reacted_sync(self_changelog_context.entry_id)
 
     logging.info("Aura agent end user_id=%s", user_id)
 
@@ -478,6 +488,13 @@ def format_time_context(context: dict[str, Any] | None) -> str:
         f"当前时间：{current_time_text}，距离上次对话已过去 {elapsed_text}。\n"
         f"{guidance}"
     )
+
+
+def format_self_changelog_context(context: dict[str, Any] | None) -> str:
+    if not context:
+        return ""
+    text = context.get("text")
+    return text if isinstance(text, str) and text.strip() else ""
 
 
 def format_chinese_datetime(value: datetime) -> str:

@@ -38,8 +38,8 @@ def configure_logging() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-def install_sql_logging(async_engine: Any) -> None:
-    sync_engine = async_engine.sync_engine
+def install_sql_logging(engine: Any) -> None:
+    sync_engine = getattr(engine, "sync_engine", engine)
     if getattr(sync_engine, "_aura_sql_logging_installed", False):
         return
 

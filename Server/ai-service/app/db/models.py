@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, SmallInteger, String, Text, Time, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, SmallInteger, String, Text, Time, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
@@ -268,6 +268,22 @@ class PromptVersion(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class SelfChangelogEntry(Base, TimestampMixin):
+    __tablename__ = "self_changelog_entry"
+    __table_args__ = (
+        UniqueConstraint("change_date", "title", name="uq_self_changelog_entry_change_date_title"),
+        Index("idx_self_changelog_unreacted", "reacted", "change_date", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    change_date: Mapped[date] = mapped_column(Date, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+    reacted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
 
 class SafetyEvent(Base):

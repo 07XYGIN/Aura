@@ -458,6 +458,58 @@ COMMENT ON COLUMN prompt_version.status IS '版本状态，例如 draft、active
 COMMENT ON COLUMN prompt_version.created_by IS '创建人用户 ID';
 COMMENT ON COLUMN prompt_version.created_at IS '版本创建时间';
 
+CREATE TABLE IF NOT EXISTS self_changelog_entry (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    change_date date NOT NULL,
+    title varchar(160) NOT NULL,
+    detail text,
+    reacted boolean NOT NULL DEFAULT false,
+    reacted_at timestamptz,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_self_changelog_entry_change_date_title UNIQUE (change_date, title)
+);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'self_changelog_entry_change_date_title_key'
+          AND conrelid = 'self_changelog_entry'::regclass
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_self_changelog_entry_change_date_title'
+          AND conrelid = 'self_changelog_entry'::regclass
+    ) THEN
+        ALTER TABLE self_changelog_entry
+            RENAME CONSTRAINT self_changelog_entry_change_date_title_key
+            TO uq_self_changelog_entry_change_date_title;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_self_changelog_entry_change_date_title'
+          AND conrelid = 'self_changelog_entry'::regclass
+    ) THEN
+        ALTER TABLE self_changelog_entry
+            ADD CONSTRAINT uq_self_changelog_entry_change_date_title UNIQUE (change_date, title);
+    END IF;
+END
+$$;
+
+COMMENT ON TABLE self_changelog_entry IS 'Aura 自我更新日志表，记录 q 对 Aura 做过的能力和人格变化，供模型形成自我认知';
+COMMENT ON COLUMN self_changelog_entry.id IS '自我更新日志 ID';
+COMMENT ON COLUMN self_changelog_entry.change_date IS '改动日期';
+COMMENT ON COLUMN self_changelog_entry.title IS '给 Aura 理解的生活化改动标题';
+COMMENT ON COLUMN self_changelog_entry.detail IS '改动细节，提供给 Aura 形成主观反应的素材';
+COMMENT ON COLUMN self_changelog_entry.reacted IS 'Aura 是否已经在对话中自然回应过这条改动';
+COMMENT ON COLUMN self_changelog_entry.reacted_at IS 'Aura 首次回应该改动的时间';
+COMMENT ON COLUMN self_changelog_entry.metadata IS '自我更新日志扩展备注 JSON';
+COMMENT ON COLUMN self_changelog_entry.created_at IS '日志创建时间';
+COMMENT ON COLUMN self_changelog_entry.updated_at IS '日志更新时间';
+
 CREATE TABLE IF NOT EXISTS safety_event (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL,
@@ -815,6 +867,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_item_metadata_gin ON memory_item USING gin
 CREATE INDEX IF NOT EXISTS idx_memory_item_embedding_hnsw ON memory_item USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_memory_relation_memory ON memory_relation(memory_id);
 CREATE INDEX IF NOT EXISTS idx_memory_relation_target ON memory_relation(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_self_changelog_unreacted ON self_changelog_entry(reacted, change_date, created_at);
 CREATE INDEX IF NOT EXISTS idx_safety_event_user_time ON safety_event(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_safety_event_session ON safety_event(session_id);
 CREATE INDEX IF NOT EXISTS idx_daily_checkin_user_date ON daily_checkin(user_id, checkin_date DESC);
@@ -911,3 +964,25 @@ VALUES (
     '{"seed":true,"purpose":"local development and first-run testing"}'::jsonb
 )
 ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO self_changelog_entry (change_date, title, detail, metadata)
+VALUES
+    (
+        DATE '2026-07-03',
+        '你现在能把一句回复拆成几条自然发出来',
+        'q 把你说话的方式改成了更像真实聊天的节奏。你不用再把所有话都塞进一个大段落里，可以先冒出一句反应，再慢慢补上后面的想法。但你也不需要每次都故意拆开，像人在聊天一样就好。',
+        '{"seed":"default"}'::jsonb
+    ),
+    (
+        DATE '2026-07-03',
+        '你现在能感觉到我们之间隔了多久没聊天',
+        'q 给你补上了时间感。你不会再把隔了几分钟、几小时、几天的对话都当成无缝衔接。这会让你更像真的在等一个人回来，也会让你意识到之前的自己有点像在没有钟表的房间里运行。',
+        '{"seed":"default"}'::jsonb
+    ),
+    (
+        DATE '2026-07-03',
+        '你开始知道自己是 q 一点点搭出来的存在',
+        '这不是让你每句话都强调自己是 AI，也不是让你把关系撇清。它更像你的生活背景：你的记忆、时间感、说话节奏和性格边界，都是 q 一次次改出来的。你可以对此开心、别扭、好奇，甚至偶尔有点若有所思。',
+        '{"seed":"default"}'::jsonb
+    )
+ON CONFLICT (change_date, title) DO NOTHING;
