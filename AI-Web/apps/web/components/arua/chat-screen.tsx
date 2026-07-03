@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { UseSse } from '@ai-web/utils/main'
 import { cn } from '@/lib/utils'
+import { getCurrentUserId } from '@/lib/current-user'
+import { getPythonApiBaseUrl } from '@/lib/python-request'
 import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
@@ -201,9 +203,7 @@ const mapHistoryMessage = (item: AuraHistoryMessage, index: number): ChatMessage
 }
 
 const buildChatSseUrl = () => {
-    const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
-
-    return `${baseUrl.replace(/\/+$/, '')}/api/chat/sse`
+    return `${getPythonApiBaseUrl()}/api/send/sse/`
 }
 
 const getEmotionLabel = (emotion: EmotionPayload) => {
@@ -610,6 +610,15 @@ export function AruaChatScreen() {
             return
         }
 
+        const userId = getCurrentUserId()
+        if (!userId) {
+            toast.error(t('chat.accountSyncFailed'), {
+                description: t('chat.accountSyncFailedDescription'),
+                position: 'top-center',
+            })
+            return
+        }
+
         const now = Date.now()
         const clientMessageId = `client-${now}-${Math.random().toString(36).slice(2, 10)}`
         const assistantMessageId = `assistant-${now}`
@@ -664,6 +673,7 @@ export function AruaChatScreen() {
         connect({
             body: JSON.stringify({
                 clientMessageId,
+                userId,
                 sessionId,
                 message: trimmedMessage,
                 attachmentIds: uploadedAttachments.map((file) => file.id),
@@ -927,6 +937,120 @@ export function AruaChatScreen() {
                                 </div>
                             )
                         })}
+                    </div>
+                </div>
+
+                <div className="absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_86%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-8 lg:px-10">
+                    <div className="w-full max-w-4xl rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3">
+                        {selectedFiles.length > 0 ? (
+                            <div className="mb-3 flex flex-wrap gap-2">
+                                {selectedFiles.map((file) => (
+                                    <div
+                                        key={`${file.name}-${file.lastModified}`}
+                                        className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)]"
+                                    >
+                                        <ImagePlus className="h-3.5 w-3.5 shrink-0 text-[var(--aura-primary)]" />
+                                        <span className="truncate">{file.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+
+                        <Textarea
+                            rows={3}
+                            value={message}
+                            onChange={handleMessageChange}
+                            placeholder={t('chat.placeholder')}
+                            className="aura-scrollbar min-h-24 resize-none border-0 bg-transparent px-1 py-1 text-sm leading-7 text-[var(--aura-text)] shadow-none ring-0 focus-visible:border-0 focus-visible:ring-0"
+                        />
+
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                <input
+                                    id={inputId}
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFileChange}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                                    aria-label={t('chat.uploadImage')}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <Paperclip className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                        'rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]',
+                                        isListening &&
+                                            'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
+                                    )}
+                                    aria-label={
+                                        isListening ? t('chat.stopVoice') : t('chat.startVoice')
+                                    }
+                                    onClick={handleVoiceInput}
+                                >
+                                    {isListening ? (
+                                        <Square className="h-4 w-4" />
+                                    ) : (
+                                        <Mic className="h-4 w-4" />
+                                    )}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={isStreaming || isClearingHistory || messages.length === 0}
+                                    className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                                    aria-label={t('chat.clearHistory')}
+                                    title={t('chat.clearHistory')}
+                                    onClick={handleClearHistory}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                                {latestEmotion ? (
+                                    <div
+                                        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)] sm:max-w-[18rem]"
+                                        title={getEmotionLabel(latestEmotion)}
+                                    >
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--aura-primary)]" />
+                                        <span className="shrink-0 text-[var(--aura-text-soft)]">
+                                            {t('chat.emotion')}
+                                        </span>
+                                        <span className="min-w-0 truncate">
+                                            {getEmotionLabel(latestEmotion)}
+                                        </span>
+                                        {emotionDetail ? (
+                                            <span className="shrink-0 text-[var(--aura-text-muted)]/75">
+                                                {emotionDetail}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <Button
+                                type="button"
+                                size="icon-lg"
+                                disabled={
+                                    isStreaming || (!message.trim() && selectedFiles.length === 0)
+                                }
+                                className="rounded-full bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733] shadow-[0_18px_32px_-22px_var(--aura-glow)]"
+                                aria-label={t('chat.send')}
+                                onClick={handleSubmit}
+                            >
+                                <SendHorizontal className="h-4 w-4 translate-x-0.5" />
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </section>

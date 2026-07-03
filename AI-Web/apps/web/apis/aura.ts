@@ -1,4 +1,5 @@
-import request from '@/lib/request'
+import { getCurrentUserId } from '@/lib/current-user'
+import pythonRequest from '@/lib/python-request'
 import type { AuraHistoryMessage, AuraMemoryPage } from '@ai-web/types'
 
 export type { AuraHistoryMessage, AuraMemoryItem, AuraMemoryPage } from '@ai-web/types'
@@ -61,11 +62,19 @@ export type AuraCityAdcode = {
   source: 'regeo' | 'district' | 'ip'
 }
 
+const requireCurrentUserId = () => {
+  const userId = getCurrentUserId()
+  if (!userId) {
+    throw new Error('Missing user id')
+  }
+  return userId
+}
+
 export const aura = {
   uploadAttachments: (files: AuraUploadAttachmentInput[]) =>
-    request<{ items: AuraUploadedAttachment[] }>('/api/chat/attachments', {
+    pythonRequest<{ items: AuraUploadedAttachment[] }>('/api/attachments', {
       method: 'POST',
-      body: { files },
+      body: { userId: requireCurrentUserId(), files },
     }),
   resolveCityAdcode: (params: { city?: string; longitude?: number; latitude?: number } = {}) => {
     const query = new URLSearchParams()
@@ -82,23 +91,23 @@ export const aura = {
 
     const suffix = query.toString() ? `?${query.toString()}` : ''
 
-    return request<AuraCityAdcode>(`/api/location/adcode${suffix}`, {
+    return pythonRequest<AuraCityAdcode>(`/api/location/adcode${suffix}`, {
       method: 'GET',
     })
   },
   getCurrentMessages: () =>
-    request<AuraHistoryMessage[]>('/api/aura/sessions/current/messages', {
+    pythonRequest<AuraHistoryMessage[]>(`/api/history/${encodeURIComponent(requireCurrentUserId())}`, {
       method: 'GET',
     }),
   deleteCurrentMessage: (messageId: string) =>
-    request<{ deleted: boolean; messageId: string }>(
-      `/api/aura/sessions/current/messages/${encodeURIComponent(messageId)}`,
+    pythonRequest<{ deleted: boolean; messageId: string }>(
+      `/api/history/${encodeURIComponent(requireCurrentUserId())}/messages/${encodeURIComponent(messageId)}`,
       {
         method: 'DELETE',
       },
     ),
   clearCurrentMessages: () =>
-    request<{ deletedCount: number }>('/api/aura/sessions/current/messages', {
+    pythonRequest<{ deletedCount: number }>(`/api/history/${encodeURIComponent(requireCurrentUserId())}`, {
       method: 'DELETE',
     }),
   getMemories: (
@@ -107,35 +116,41 @@ export const aura = {
     scope: 'long' | 'mid' | 'all' = 'long',
     includeInactive = false,
   ) =>
-    request<AuraMemoryPage>(
-      `/api/aura/memories?page=${page}&pageSize=${pageSize}&scope=${scope}&includeInactive=${includeInactive}`,
+    pythonRequest<AuraMemoryPage>(
+      `/api/memory/list?userId=${encodeURIComponent(requireCurrentUserId())}&page=${page}&pageSize=${pageSize}&scope=${scope}&includeInactive=${includeInactive}`,
       {
         method: 'GET',
       },
     ),
   getMemoryRetention: () =>
-    request<AuraMemoryRetention>('/api/aura/memories/retention', {
-      method: 'GET',
-    }),
+    pythonRequest<AuraMemoryRetention>(
+      `/api/memory/retention?userId=${encodeURIComponent(requireCurrentUserId())}`,
+      {
+        method: 'GET',
+      },
+    ),
   deleteMemory: (memoryId: string) =>
-    request<{ deleted: boolean; memoryId: string }>(
-      `/api/aura/memories/${encodeURIComponent(memoryId)}`,
+    pythonRequest<{ deleted: boolean; memoryId: string }>(
+      `/api/memory/${encodeURIComponent(memoryId)}?userId=${encodeURIComponent(requireCurrentUserId())}`,
       {
         method: 'DELETE',
       },
     ),
   clearMemories: (scope: 'long' | 'mid' | 'all' = 'all') =>
-    request<{ deletedCount: number }>(`/api/aura/memories?scope=${scope}`, {
-      method: 'DELETE',
-    }),
+    pythonRequest<{ deletedCount: number }>(
+      `/api/memory/list?userId=${encodeURIComponent(requireCurrentUserId())}&scope=${scope}`,
+      {
+        method: 'DELETE',
+      },
+    ),
   submitConversationFeedback: (payload: {
     sessionId: string
     score: number
     comment?: string
   }) =>
-    request('/api/aura/conversation-feedback', {
+    pythonRequest('/api/aura/conversation-feedback', {
       method: 'POST',
-      body: payload,
+      body: { ...payload, userId: requireCurrentUserId() },
     }),
   recordBehaviorEvent: (payload: {
     sessionId?: string
@@ -143,15 +158,16 @@ export const aura = {
     eventType: string
     metadata?: string
   }) =>
-    request('/api/aura/behavior-events', {
+    pythonRequest('/api/aura/behavior-events', {
       method: 'POST',
-      body: payload,
+      body: { ...payload, userId: requireCurrentUserId() },
     }),
   purchaseEmotionReport: (reportId: string) =>
-    request<AuraEmotionInsightReport>(
+    pythonRequest<AuraEmotionInsightReport>(
       `/api/aura/emotion-report/${encodeURIComponent(reportId)}/purchase`,
       {
         method: 'POST',
+        body: { userId: requireCurrentUserId() },
       },
     ),
 }

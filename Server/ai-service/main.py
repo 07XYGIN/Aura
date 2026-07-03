@@ -12,13 +12,11 @@ from app.core.config import SYNC_DATABASE_URL
 from app.core.exceptions import (
     validation_exception_handler,
 )
-from app.routers import attachments, aura, history, memory, msg
+from app.core.logging_config import configure_logging
+from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
+from app.routers import attachments, aura, history, location, memory, msg, user
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+configure_logging()
 
 
 @asynccontextmanager
@@ -36,6 +34,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
+    app.add_middleware(RequestResponseLoggingMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -44,7 +43,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         max_age=86400,
     )
-    routers: list[APIRouter] = [msg.router, history.router, memory.router, aura.router, attachments.router]
+    routers: list[APIRouter] = [
+        msg.router,
+        history.router,
+        memory.router,
+        aura.router,
+        attachments.router,
+        location.router,
+        user.router,
+    ]
     for router in routers:
         app.include_router(router)
 
