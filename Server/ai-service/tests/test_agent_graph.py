@@ -2,13 +2,14 @@ import sys
 import unittest
 from pathlib import Path
 
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import END
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.agent_graph import build_runtime_system_prompt, should_continue, turn_judge
+from app.core.agent.agent_graph import build_runtime_system_prompt, should_continue, trim_short_term_messages, turn_judge
 
 
 class AgentGraphTest(unittest.TestCase):
@@ -53,6 +54,45 @@ class AgentGraphTest(unittest.TestCase):
 
         self.assertIn("## 对话示范", prompt)
         self.assertIn("用户表达过度依赖", prompt)
+
+    def test_trim_short_term_messages_drops_orphan_tool_messages(self):
+        messages = [
+            ToolMessage(content="orphan result", tool_call_id="call-orphan"),
+            HumanMessage(content="latest"),
+        ]
+
+        trimmed = trim_short_term_messages(messages)
+
+        self.assertEqual(len(trimmed), 1)
+        self.assertEqual(trimmed[0].type, "human")
+
+    def test_trim_short_term_messages_preserves_complete_tool_blocks(self):
+        messages = [HumanMessage(content=f"old-{index}") for index in range(30)]
+        messages.extend(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_memory_tool",
+                            "args": {"query": "memory"},
+                            "id": "call-memory",
+                        }
+                    ],
+                ),
+                ToolMessage(content="memory result", tool_call_id="call-memory"),
+                HumanMessage(content="latest"),
+            ]
+        )
+
+        trimmed = trim_short_term_messages(messages)
+
+        self.assertLessEqual(len(trimmed), 24)
+        self.assertEqual(trimmed[-3].type, "ai")
+        self.assertTrue(trimmed[-3].tool_calls)
+        self.assertEqual(trimmed[-2].type, "tool")
+        self.assertEqual(trimmed[-2].tool_call_id, "call-memory")
+        self.assertEqual(trimmed[-1].type, "human")
 
 
 if __name__ == "__main__":

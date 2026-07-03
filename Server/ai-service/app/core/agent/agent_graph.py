@@ -694,9 +694,89 @@ def clear_history(user_id: str) -> int:
 
 
 def trim_short_term_messages(messages: list) -> list:
-    if len(messages) <= SHORT_TERM_MESSAGE_WINDOW:
-        return messages
-    return messages[-SHORT_TERM_MESSAGE_WINDOW:]
+    blocks = build_valid_message_blocks(messages)
+    selected: list = []
+    selected_count = 0
+    for block in reversed(blocks):
+        if selected and selected_count + len(block) > SHORT_TERM_MESSAGE_WINDOW:
+            break
+        selected[0:0] = block
+        selected_count += len(block)
+    return selected
+
+
+def build_valid_message_blocks(messages: list) -> list[list]:
+    blocks: list[list] = []
+    index = 0
+    while index < len(messages):
+        message = messages[index]
+        if is_tool_message(message):
+            logging.warning("Dropping orphan tool message from Aura short-term context")
+            index += 1
+            continue
+
+        if has_tool_calls(message):
+            block, next_index = build_complete_tool_block(messages, index)
+            if block:
+                blocks.append(block)
+            else:
+                logging.warning("Dropping incomplete tool-call block from Aura short-term context")
+            index = next_index
+            continue
+
+        blocks.append([message])
+        index += 1
+    return blocks
+
+
+def build_complete_tool_block(messages: list, index: int) -> tuple[list | None, int]:
+    assistant_message = messages[index]
+    expected_ids = set(tool_call_ids(assistant_message))
+    block = [assistant_message]
+    seen_ids: set[str] = set()
+    next_index = index + 1
+
+    while next_index < len(messages) and is_tool_message(messages[next_index]):
+        tool_message = messages[next_index]
+        block.append(tool_message)
+        tool_call_id = tool_message_id(tool_message)
+        if tool_call_id:
+            seen_ids.add(tool_call_id)
+        next_index += 1
+
+    if expected_ids:
+        return (block, next_index) if expected_ids.issubset(seen_ids) else (None, next_index)
+    return (block, next_index) if len(block) > 1 else (None, next_index)
+
+
+def is_tool_message(message: Any) -> bool:
+    return getattr(message, "type", None) == "tool"
+
+
+def has_tool_calls(message: Any) -> bool:
+    additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+    return bool(getattr(message, "tool_calls", None) or additional_kwargs.get("tool_calls"))
+
+
+def tool_call_ids(message: Any) -> list[str]:
+    additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+    raw_tool_calls = getattr(message, "tool_calls", None) or additional_kwargs.get("tool_calls") or []
+    ids: list[str] = []
+    for tool_call in raw_tool_calls:
+        if isinstance(tool_call, dict):
+            tool_call_id = tool_call.get("id") or tool_call.get("tool_call_id")
+            if isinstance(tool_call_id, str) and tool_call_id:
+                ids.append(tool_call_id)
+    return ids
+
+
+def tool_message_id(message: Any) -> str | None:
+    tool_call_id = getattr(message, "tool_call_id", None)
+    if isinstance(tool_call_id, str) and tool_call_id:
+        return tool_call_id
+    additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+    tool_call_id = additional_kwargs.get("tool_call_id")
+    return tool_call_id if isinstance(tool_call_id, str) and tool_call_id else None
 
 
 def latest_human_text(messages: list) -> str:

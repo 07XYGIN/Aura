@@ -43,6 +43,24 @@ LONG_MEMORY_COOLDOWN_PENALTY = read_float_env("LONG_MEMORY_COOLDOWN_PENALTY", 0.
 LONG_MEMORY_DEDUP_THRESHOLD = read_float_env("LONG_MEMORY_DEDUP_THRESHOLD", 0.75)
 LONG_MEMORY_DEDUP_CANDIDATES = read_int_env("LONG_MEMORY_DEDUP_CANDIDATES", 3)
 MID_MEMORY_PROMOTION_RECALL_THRESHOLD = read_int_env("MID_MEMORY_PROMOTION_RECALL_THRESHOLD", 3)
+EXPLICIT_MEMORY_LOOKUP_KEYWORDS = (
+    "记忆",
+    "记得我",
+    "你记得",
+    "偏好",
+    "习惯",
+    "个人信息",
+    "资料",
+)
+MEMORY_CATALOG_LOOKUP_KEYWORDS = (
+    "所有记忆",
+    "全部记忆",
+    "完整记忆",
+    "长期记忆",
+    "中期记忆",
+    "记得我什么",
+    "你记得我什么",
+)
 
 embeddings = OllamaEmbeddings(
     model="nomic-embed-text:latest"
@@ -233,6 +251,9 @@ def search_memory_collection(
     collection_name: str,
     memory_scope: Literal["long", "mid"],
 ) -> list[Document]:
+    if is_memory_catalog_lookup(query):
+        return list_memory_documents(user_id, collection_name, memory_scope, k)
+
     store = get_memory_vector_store(collection_name)
     candidate_count = max(k * 5, k)
     try:
@@ -243,9 +264,39 @@ def search_memory_collection(
             score_threshold=MEMORY_RELEVANCE_THRESHOLD,
         )
     except Exception:
+        logging.exception(
+            "Failed to search %s memory collection user_id=%s query=%s",
+            memory_scope,
+            user_id,
+            query,
+        )
         return []
 
-    return rank_memory_results(results, memory_scope)[:k]
+    return rank_memory_results(
+        results,
+        memory_scope,
+        bypass_long_cooldown=is_explicit_memory_lookup(query),
+    )[:k]
+
+
+def list_memory_documents(
+    user_id: str,
+    collection_name: str,
+    memory_scope: Literal["long", "mid"],
+    k: int,
+) -> list[Document]:
+    docs: list[Document] = []
+    for row in fetch_memory_rows(user_id, collection_name):
+        metadata = dict(row["cmetadata"] or {})
+        if not is_memory_retrievable(metadata, memory_scope):
+            continue
+        metadata.setdefault("content", row["document"])
+        metadata.setdefault("memory_scope", memory_scope)
+        metadata.setdefault("status", "active")
+        docs.append(Document(page_content=row["document"], metadata=metadata))
+
+    docs.sort(key=lambda doc: memory_sort_key(doc.metadata), reverse=True)
+    return docs[:k]
 
 
 def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
@@ -457,6 +508,7 @@ def rank_memory_results(
     results: list[tuple[Document, float]],
     memory_scope: Literal["long", "mid"],
     now: datetime | None = None,
+    bypass_long_cooldown: bool = False,
 ) -> list[Document]:
     now = now or datetime.now()
     ranked: list[tuple[Document, float]] = []
@@ -469,6 +521,7 @@ def rank_memory_results(
         adjusted_score = relevance_score
         if (
             memory_scope == "long"
+            and not bypass_long_cooldown
             and is_long_memory_in_cooldown(metadata, now)
             and relevance_score < LONG_MEMORY_COOLDOWN_BYPASS_THRESHOLD
         ):
@@ -484,6 +537,16 @@ def rank_memory_results(
 
     ranked.sort(key=lambda item: item[1], reverse=True)
     return [doc for doc, _ in ranked]
+
+
+def is_explicit_memory_lookup(query: str) -> bool:
+    normalized = (query or "").strip().lower()
+    return any(keyword in normalized for keyword in EXPLICIT_MEMORY_LOOKUP_KEYWORDS)
+
+
+def is_memory_catalog_lookup(query: str) -> bool:
+    normalized = (query or "").strip().lower()
+    return any(keyword in normalized for keyword in MEMORY_CATALOG_LOOKUP_KEYWORDS)
 
 
 def is_long_memory_in_cooldown(metadata: dict[str, Any], now: datetime | None = None) -> bool:

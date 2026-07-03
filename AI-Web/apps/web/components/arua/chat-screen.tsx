@@ -974,10 +974,10 @@ export function AruaChatScreen() {
                                 >
                                     <div
                                         className={cn(
-                                            'max-w-[82%] rounded-3xl px-4 py-3 text-sm leading-7 shadow-[0_18px_42px_-34px_var(--aura-glow)] sm:max-w-[72%]',
+                                            'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-7 shadow-[0_18px_42px_-34px_var(--aura-glow)] sm:max-w-[72%]',
                                             isUser
-                                                ? 'rounded-br-lg bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733]'
-                                                : 'rounded-bl-lg border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text)]',
+                                                ? 'bg-[linear-gradient(135deg,var(--aura-primary),var(--aura-secondary))] text-[#201733]'
+                                                : 'border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text)]',
                                         )}
                                     >
                                         {chatMessage.pending ? (
