@@ -15,6 +15,7 @@ dependencies = [
     "langchain-postgres>=0.0.16",
     "langgraph>=1.0.6",
     "langgraph-checkpoint-postgres>=3.1.0",
+    "langsmith>=0.5.0",
     "passlib>=1.7.4",
     "pgvector>=0.3.6",
     "psycopg2-binary>=2.9.12",

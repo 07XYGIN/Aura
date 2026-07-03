@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 
+from langsmith import traceable
+
 
 @dataclass(frozen=True)
 class EmotionState:
@@ -171,6 +173,7 @@ DEFAULT_EMOTION = EmotionState(
 )
 
 
+@traceable(name="aura_keyword_emotion")
 def derive_emotion_state(message: str) -> EmotionState:
     text = message.strip()
     if not text:

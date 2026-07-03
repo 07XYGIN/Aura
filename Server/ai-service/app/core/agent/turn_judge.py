@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from langsmith import traceable
+
 from app.core.emotion import derive_emotion_state
 
 from .memory_judge import judge_memory_candidate
@@ -40,6 +42,7 @@ SELF_HARM_KEYWORDS = (
 )
 
 
+@traceable(name="aura_turn_judge")
 def judge_turn(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build the per-turn structured judgment used by the graph and SSE events."""
     text = (message or "").strip()

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langsmith import traceable
 
 from app.core.config import ensure_deepseek_api_key, memory_judge_llm
 
@@ -64,6 +65,7 @@ Be conservative. If you are unsure whether a new fact should replace an old one,
 """
 
 
+@traceable(name="aura_memory_judge")
 def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
     text = (message or "").strip()
     if not text:
@@ -89,6 +91,7 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
         return memory_candidate(False, "short", None, None, 0.0, "memory_judge_failed", [])
 
 
+@traceable(name="aura_memory_dedup_judge")
 def judge_memory_dedup(
     new_content: str,
     existing_content: str,

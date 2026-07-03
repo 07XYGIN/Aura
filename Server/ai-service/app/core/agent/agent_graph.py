@@ -11,6 +11,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer
+from langsmith import traceable
 
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import ensure_deepseek_api_key, llm, structured_reply_llm
@@ -74,6 +75,7 @@ llm_with_tools = llm.bind_tools(tools)
 tool_node = ToolNode(tools)
 
 
+@traceable(name="aura_prepare_context")
 def prepare_context(state: AuraState) -> AuraState:
     user_id = state.get("user_id") or ""
     query = latest_human_text(state.get("messages", []))
@@ -85,6 +87,7 @@ def prepare_context(state: AuraState) -> AuraState:
     }
 
 
+@traceable(name="aura_turn_judge_node")
 def turn_judge(state: AuraState) -> AuraState:
     query = latest_human_text(state.get("messages", []))
     turn_judgement = normalize_turn_judgement(state.get("turn_judgement"), query)
@@ -94,6 +97,7 @@ def turn_judge(state: AuraState) -> AuraState:
     }
 
 
+@traceable(name="aura_final_response_generation")
 def call_model(state: AuraState) -> AuraState:
     ensure_deepseek_api_key()
     system_prompt = build_runtime_system_prompt(state)
@@ -184,8 +188,17 @@ def aura_agent(
 
     request_started_at = datetime.now(UTC)
     turn_id = client_message_id or f"turn-{uuid4()}"
+    normalized_city_adcode = normalize_city_adcode(city_adcode)
     config: RunnableConfig = {
         "recursion_limit": 8,
+        "tags": ["aura", "sse"],
+        "metadata": {
+            "user_id": user_id,
+            "turn_id": turn_id,
+            "client_message_id": client_message_id,
+            "attachment_count": len(attachment_ids or []),
+            "city_adcode": normalized_city_adcode,
+        },
         "configurable": {
             "thread_id": user_id,
             "user_id": user_id,
@@ -221,7 +234,7 @@ def aura_agent(
         "emotion": emotion_state,
         "user_id": user_id,
         "attachments": attachments,
-        "city_adcode": normalize_city_adcode(city_adcode),
+        "city_adcode": normalized_city_adcode,
         "turn_judgement": turn_judgement,
         "time_context": time_context,
         "self_changelog_context": {
