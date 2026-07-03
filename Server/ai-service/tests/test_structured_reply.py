@@ -1,4 +1,4 @@
-from app.core.agent.structured_reply import parse_structured_reply
+from app.core.agent.structured_reply import parse_structured_reply, try_parse_structured_reply
 
 
 def test_parse_structured_reply_json_object():
@@ -17,6 +17,14 @@ def test_parse_structured_reply_markdown_fence():
 
 def test_parse_structured_reply_plain_text_fallback():
     assert parse_structured_reply("我直接说一句。") == ["我直接说一句。"]
+
+
+def test_try_parse_structured_reply_plain_text_returns_none():
+    assert try_parse_structured_reply("我直接说一句。") is None
+
+
+def test_try_parse_structured_reply_json_object():
+    assert try_parse_structured_reply('{"messages":["是的"]}') == ["是的"]
 
 
 def test_parse_structured_reply_caps_message_count():

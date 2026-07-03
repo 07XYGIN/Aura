@@ -24,7 +24,7 @@ from .protocol import (
     relationship_delta_event,
 )
 from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
-from .structured_reply import parse_structured_reply
+from .structured_reply import parse_structured_reply, try_parse_structured_reply
 from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
@@ -109,8 +109,14 @@ def call_model(state: AuraState) -> AuraState:
     if tool_calls:
         return {"messages": [response]}
 
-    structured_response = build_structured_reply_response(response, messages, state)
-    reply_messages, reply_batch = build_reply_messages(structured_response, state)
+    draft_content = message_content_to_text(getattr(response, "content", ""))
+    parsed_reply = try_parse_structured_reply(draft_content)
+    if parsed_reply is not None:
+        reply_messages, reply_batch = build_reply_messages_from_texts(parsed_reply, response, state)
+    else:
+        logging.warning("Aura first response was not valid structured JSON, falling back to reformatting call")
+        structured_response = build_structured_reply_response(response, messages, state)
+        reply_messages, reply_batch = build_reply_messages(structured_response, state)
     return {
         "messages": reply_messages,
         "last_reply_batch": reply_batch,
@@ -273,6 +279,14 @@ def aura_agent(
 def build_reply_messages(response: Any, state: AuraState) -> tuple[list[AIMessage], dict[str, Any]]:
     raw_content = message_content_to_text(getattr(response, "content", ""))
     reply_texts = parse_structured_reply(raw_content)
+    return build_reply_messages_from_texts(reply_texts, response, state)
+
+
+def build_reply_messages_from_texts(
+    reply_texts: list[str],
+    response: Any,
+    state: AuraState,
+) -> tuple[list[AIMessage], dict[str, Any]]:
     turn_id = state.get("turn_id") or f"turn-{uuid4()}"
     batch_id = str(uuid4())
     started_at = parse_iso_datetime(state.get("request_started_at")) or datetime.now(UTC)

@@ -40,9 +40,21 @@ class StructuredReply(BaseModel):
 
 
 def parse_structured_reply(raw_content: Any) -> list[str]:
+    parsed = try_parse_structured_reply(raw_content)
+    if parsed is not None:
+        return parsed
+
     text = normalize_text(raw_content)
     if not text:
         return [FALLBACK_REPLY]
+
+    return [text]
+
+
+def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
+    text = normalize_text(raw_content)
+    if not text:
+        return None
 
     for candidate in json_candidates(text):
         try:
@@ -64,7 +76,7 @@ def parse_structured_reply(raw_content: Any) -> list[str]:
         except ValidationError:
             continue
 
-    return [text]
+    return None
 
 
 def parse_tolerant_messages(text: str) -> list[str]:
