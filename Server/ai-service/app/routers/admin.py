@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_store import get_current_user_id
 from app.core.agent.tools.term_memory import apply_memory_merge, list_memory_merge_candidates
+from app.db.schema_guard import ensure_self_changelog_admin_fields_async
 from app.db.models import (
     AuraProfile,
     ChatMessage,
@@ -174,6 +175,7 @@ async def create_self_update(
     _admin_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    await ensure_self_changelog_admin_fields_async()
     occurred_at = normalize_datetime(request.occurred_at)
     entry = SelfChangelogEntry(
         change_date=occurred_at.date(),
@@ -201,6 +203,7 @@ async def list_self_updates(
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, ge=1, le=100),
 ):
+    await ensure_self_changelog_admin_fields_async()
     filters = []
     if reacted is not None:
         filters.append(SelfChangelogEntry.reacted.is_(reacted))
@@ -226,6 +229,7 @@ async def update_self_update(
     _admin_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    await ensure_self_changelog_admin_fields_async()
     entry = await get_self_update_or_404(session, entry_id)
 
     fields = request.model_fields_set
@@ -261,6 +265,7 @@ async def delete_self_update(
     _admin_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    await ensure_self_changelog_admin_fields_async()
     parsed_id = parse_uuid(entry_id)
     result = await session.execute(delete(SelfChangelogEntry).where(SelfChangelogEntry.id == parsed_id))
     if result.rowcount == 0:

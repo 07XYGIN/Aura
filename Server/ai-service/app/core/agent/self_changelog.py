@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.db.models import SelfChangelogEntry
+from app.db.schema_guard import ensure_self_changelog_admin_fields, ensure_self_changelog_admin_fields_async
 from app.db.session import AsyncSessionLocal, SyncSessionLocal
 
 
@@ -20,6 +21,7 @@ class SelfChangelogContext:
 
 async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
     try:
+        await ensure_self_changelog_admin_fields_async()
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(SelfChangelogEntry)
@@ -41,6 +43,7 @@ async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
 
 def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
     try:
+        ensure_self_changelog_admin_fields()
         with SyncSessionLocal() as session:
             result = session.execute(
                 select(SelfChangelogEntry)
@@ -84,6 +87,7 @@ async def mark_self_changelog_reacted(entry_id: str | None) -> None:
         return
 
     try:
+        await ensure_self_changelog_admin_fields_async()
         async with AsyncSessionLocal() as session:
             entry = await session.get(SelfChangelogEntry, parsed_entry_id)
             if entry is None or entry.reacted:
@@ -105,6 +109,7 @@ def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
         return
 
     try:
+        ensure_self_changelog_admin_fields()
         with SyncSessionLocal() as session:
             entry = session.get(SelfChangelogEntry, parsed_entry_id)
             if entry is None or entry.reacted:
