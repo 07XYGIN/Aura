@@ -86,7 +86,7 @@ def merge_similar_memories_tool(
     safe_threshold = (
         clamp_float(threshold, default=0.52, minimum=0.35, maximum=0.9)
         if clean_mode == "topic"
-        else clamp_float(threshold, default=0.88, minimum=0.8, maximum=0.98)
+        else clamp_float(threshold, default=0.85, minimum=0.8, maximum=0.98)
     )
     safe_limit = clamp_int(limit, default=1, minimum=1, maximum=3)
     safe_scan_limit = (

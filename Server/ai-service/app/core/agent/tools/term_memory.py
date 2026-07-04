@@ -512,8 +512,18 @@ def memory_entry_from_document(doc: Document, relevance_score: float | None = No
 
 
 def normalize_embedding(value: Any) -> list[float]:
-    if not isinstance(value, list):
+    if value is None or isinstance(value, (str, bytes, dict)):
         return []
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(value, list):
+        try:
+            value = list(value)
+        except TypeError:
+            return []
     normalized: list[float] = []
     for item in value:
         try:

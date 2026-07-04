@@ -252,6 +252,15 @@ class TermMemoryTest(unittest.TestCase):
         self.assertEqual(term_memory.cosine_similarity([1.0, 0.0], [0.0, 1.0]), 0.0)
         self.assertEqual(term_memory.cosine_similarity([1.0], [1.0, 0.0]), 0.0)
 
+    def test_normalize_embedding_accepts_vector_like_values(self):
+        class VectorLike:
+            def tolist(self):
+                return [1, "2.5", 3.0]
+
+        self.assertEqual(term_memory.normalize_embedding(VectorLike()), [1.0, 2.5, 3.0])
+        self.assertEqual(term_memory.normalize_embedding((1, 2)), [1.0, 2.0])
+        self.assertEqual(term_memory.normalize_embedding("not-a-vector"), [])
+
     def test_build_similarity_clusters_groups_and_strips_internal_fields(self):
         memories = [
             {

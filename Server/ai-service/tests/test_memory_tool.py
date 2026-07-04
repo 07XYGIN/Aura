@@ -77,6 +77,24 @@ class MergeSimilarMemoriesToolTest(unittest.TestCase):
             scan_limit=80,
         )
 
+    def test_merge_similar_memories_tool_deduplicate_defaults_to_merge_threshold(self):
+        with patch(
+            "app.core.agent.tools.memory.list_memory_merge_candidates",
+            return_value={"items": [], "total": 0, "threshold": 0.85, "scanned": 10},
+        ) as list_candidates:
+            result = merge_similar_memories_tool.invoke(
+                {},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("没有发现需要合并", result)
+        list_candidates.assert_called_once_with(
+            user_id="user-1",
+            threshold=0.85,
+            limit=1,
+            scan_limit=120,
+        )
+
     def test_merge_similar_memories_tool_applies_first_candidate(self):
         candidate = {
             "memory_keys": ["key-a", "key-b"],
