@@ -271,6 +271,7 @@ def apply_memory_merge(
     merged_title: str,
     merged_content: str,
     reason: str | None = None,
+    source: str = "memory_merge_admin",
 ) -> dict[str, Any]:
     keys = [key.strip() for key in memory_keys if isinstance(key, str) and key.strip()]
     unique_keys = list(dict.fromkeys(keys))
@@ -295,7 +296,7 @@ def apply_memory_merge(
         ),
         signals=["memory_merge"],
         extra_metadata={
-            "source": "memory_merge_admin",
+            "source": source,
             "merged_from": unique_keys,
             "merged_at": now_text,
             "merge_reason": merge_reason,

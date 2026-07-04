@@ -58,6 +58,9 @@ class AgentGraphTest(unittest.TestCase):
     def test_save_memory_tool_is_registered(self):
         self.assertIn("save_memory_tool", [item.name for item in tools])
 
+    def test_merge_similar_memories_tool_is_registered(self):
+        self.assertIn("merge_similar_memories_tool", [item.name for item in tools])
+
     def test_trim_short_term_messages_drops_orphan_tool_messages(self):
         messages = [
             ToolMessage(content="orphan result", tool_call_id="call-orphan"),

@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.tools.memory import save_memory_tool
+from app.core.agent.tools.memory import merge_similar_memories_tool, save_memory_tool
 
 
 class SaveMemoryToolTest(unittest.TestCase):
@@ -49,6 +49,78 @@ class SaveMemoryToolTest(unittest.TestCase):
 
         self.assertIn("缺少用户 ID", result)
         save_memory.assert_not_called()
+
+
+class MergeSimilarMemoriesToolTest(unittest.TestCase):
+    def test_merge_similar_memories_tool_requires_user_id(self):
+        with patch("app.core.agent.tools.memory.list_memory_merge_candidates") as list_candidates:
+            result = merge_similar_memories_tool.invoke({})
+
+        self.assertIn("缺少用户 ID", result)
+        list_candidates.assert_not_called()
+
+    def test_merge_similar_memories_tool_returns_when_no_candidates(self):
+        with patch(
+            "app.core.agent.tools.memory.list_memory_merge_candidates",
+            return_value={"items": [], "total": 0, "threshold": 0.9, "scanned": 5},
+        ) as list_candidates:
+            result = merge_similar_memories_tool.invoke(
+                {"threshold": 0.9, "limit": 1, "scan_limit": 80},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("没有发现需要合并", result)
+        list_candidates.assert_called_once_with(
+            user_id="user-1",
+            threshold=0.9,
+            limit=1,
+            scan_limit=80,
+        )
+
+    def test_merge_similar_memories_tool_applies_first_candidate(self):
+        candidate = {
+            "memory_keys": ["key-a", "key-b"],
+            "suggested_title": "火锅偏好",
+            "suggested_content": "喜欢和朋友吃火锅，但不太能吃辣。",
+            "suggested_reason": "内容重复且互补",
+        }
+        with (
+            patch(
+                "app.core.agent.tools.memory.list_memory_merge_candidates",
+                return_value={"items": [candidate], "total": 1, "threshold": 0.88, "scanned": 20},
+            ) as list_candidates,
+            patch(
+                "app.core.agent.tools.memory.apply_memory_merge",
+                return_value={
+                    "memory_key": "merged-key",
+                    "merged_from": ["key-a", "key-b"],
+                    "title": "火锅偏好",
+                    "content": "喜欢和朋友吃火锅，但不太能吃辣。",
+                    "reason": "整理重复记忆",
+                },
+            ) as apply_merge,
+        ):
+            result = merge_similar_memories_tool.invoke(
+                {"threshold": 0.7, "limit": 5, "scan_limit": 999, "reason": "整理重复记忆"},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("已合并 1 组相似长期记忆", result)
+        self.assertIn("合并前的旧记忆已标记为已替代", result)
+        list_candidates.assert_called_once_with(
+            user_id="user-1",
+            threshold=0.8,
+            limit=3,
+            scan_limit=500,
+        )
+        apply_merge.assert_called_once_with(
+            user_id="user-1",
+            memory_keys=["key-a", "key-b"],
+            merged_title="火锅偏好",
+            merged_content="喜欢和朋友吃火锅，但不太能吃辣。",
+            reason="整理重复记忆",
+            source="memory_merge_tool",
+        )
 
 
 if __name__ == "__main__":

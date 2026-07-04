@@ -54,6 +54,7 @@ static/collected/
 *.db
 *.sqlite3
 *.sqlite
+dump.rdb
 alembic/versions/__pycache__/
 
 # ---- 测试 ----

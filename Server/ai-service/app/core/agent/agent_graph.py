@@ -31,7 +31,7 @@ from .self_changelog import load_self_changelog_context_sync, mark_self_changelo
 from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.datetime_tools import get_current_datetime
 from .tools.emotional_support import get_emotional_support_advice
-from .tools.memory import save_memory_tool
+from .tools.memory import merge_similar_memories_tool, save_memory_tool
 from .tools.term_memory import format_memory_context, save_memory
 from .tools.proactive import draft_proactive_message, plan_daily_greetings
 from .tools.relationship import get_relationship_status
@@ -65,6 +65,7 @@ class AuraState(TypedDict, total=False):
 tools = [
     search_memory_tool,
     save_memory_tool,
+    merge_similar_memories_tool,
     get_current_datetime,
     get_relationship_status,
     get_emotional_support_advice,
