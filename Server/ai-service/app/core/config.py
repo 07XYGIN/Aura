@@ -70,6 +70,15 @@ memory_judge_llm = ChatOpenAI(
     extra_body={"thinking": {"type": "disabled"}},
 )
 
+emotion_judge_llm = ChatOpenAI(
+    model=DEEPSEEK_MEMORY_MODEL,
+    api_key=DEEPSEEK_API_KEY or "missing-deepseek-api-key",
+    base_url=DEEPSEEK_BASE_URL,
+    temperature=0.1,
+    model_kwargs={"response_format": {"type": "json_object"}},
+    extra_body={"thinking": {"type": "disabled"}},
+)
+
 HOST = os.getenv('DB_HOST')
 PORT = os.getenv('DB_PORT')
 NAME = os.getenv('DB_NAME')

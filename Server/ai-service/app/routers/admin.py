@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_store import get_current_user_id
+from app.core.agent.tools.term_memory import apply_memory_merge, list_memory_merge_candidates
 from app.db.models import (
     AuraProfile,
     ChatMessage,
@@ -19,13 +20,50 @@ from app.db.models import (
     SelfChangelogEntry,
 )
 from app.db.session import get_db_session
-from app.schemas.admin import SelfUpdateCreateRequest, SelfUpdatePatchRequest
+from app.schemas.admin import MemoryMergeConfirmRequest, SelfUpdateCreateRequest, SelfUpdatePatchRequest
 from app.schemas.response import SuccessResponse
 
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin"],
 )
+
+
+@router.get("/memory-merge/candidates", response_model=SuccessResponse)
+async def list_memory_merge_candidate_rows(
+    admin_user_id: Annotated[str, Depends(get_current_user_id)],
+    userId: str | None = Query(default=None),
+    threshold: float = Query(default=0.85, ge=0.0, le=1.0),
+    limit: int = Query(default=20, ge=1, le=50),
+    scanLimit: int = Query(default=300, ge=2, le=1000),
+):
+    target_user_id = userId.strip() if isinstance(userId, str) and userId.strip() else admin_user_id
+    return SuccessResponse(
+        data=list_memory_merge_candidates(
+            user_id=target_user_id,
+            threshold=threshold,
+            limit=limit,
+            scan_limit=scanLimit,
+        )
+    )
+
+
+@router.post("/memory-merge/confirm", response_model=SuccessResponse)
+async def confirm_memory_merge(
+    request: MemoryMergeConfirmRequest,
+    _admin_user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    try:
+        result = apply_memory_merge(
+            user_id=request.user_id,
+            memory_keys=request.memory_keys,
+            merged_title=request.merged_title,
+            merged_content=request.merged_content,
+            reason=request.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SuccessResponse(data=result)
 
 
 @router.get("/aura/{resource}", response_model=SuccessResponse)

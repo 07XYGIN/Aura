@@ -36,7 +36,12 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 - 如果用户明确要求 Aura 记住/保存某件具体事情，则予以保存，除非它不安全或过于模糊。
 - 不要保存仅由 Aura 猜测或暗示得到的私人事实。
 - 尽可能在标题/内容中保留用户的原始语言。
-- `content` 必须是简洁的记忆事实，而非分析性内容。长度控制在 160 个字符以内。
+- `content` 必须简洁，但要保留一点场景/心情/具体情境，不要压缩成干巴巴字段。
+  - 不好：`用户喜欢吃火锅`
+  - 好：`提到跟朋友聚餐喜欢吃火锅，那次心情似乎不错`
+  - 不好：`用户写代码会累`
+  - 好：`聊到写代码累了会起来走走，像是他平时调节状态的小习惯`
+- `content` 长度控制在 220 个字符以内。
 - `confidence` 必须在 0 到 1 之间。
 
 ---
@@ -62,6 +67,25 @@ Decision rules:
 - unrelated: the two memories are independent, even if they share words or topics.
 
 Be conservative. If you are unsure whether a new fact should replace an old one, choose unrelated.
+"""
+
+MEMORY_MERGE_SYSTEM_PROMPT = """
+你是 Aura 的长期记忆整理器。你会收到同一用户几条高度相似的长期记忆。
+请把它们合并成一条新的长期记忆，必须只返回一个 JSON 对象。
+
+JSON schema:
+{
+  "title": string,
+  "content": string,
+  "reason": string
+}
+
+合并规则：
+- 保留所有有价值的事实、限制、场景和情绪线索，删除真正重复的部分。
+- 不要编造原记忆里没有的事实。
+- 文字要简洁但有语境，不要写成数据库字段。
+- 如果几条记忆有冲突，保留更具体或更新的说法，并在 reason 里说明。
+- content 建议 80-220 字。
 """
 
 
@@ -121,6 +145,35 @@ def judge_memory_dedup(
         return memory_dedup_decision("unrelated", 0.0, "dedup_judge_failed")
 
 
+@traceable(name="aura_memory_merge")
+def merge_memory_contents(memories: list[dict[str, Any]]) -> dict[str, str]:
+    cleaned_memories = [
+        {
+            "title": clean_string(memory.get("title"), max_length=80, default="未命名记忆"),
+            "content": clean_string(memory.get("content"), max_length=300, default=""),
+            "create_time": clean_string(memory.get("create_time"), max_length=40, default=None),
+        }
+        for memory in memories
+        if clean_string(memory.get("content"), max_length=300, default="")
+    ]
+    if not cleaned_memories:
+        return memory_merge_result("合并记忆", "", "empty_memory_cluster")
+
+    try:
+        ensure_deepseek_api_key()
+        response = memory_judge_llm.invoke(
+            [
+                SystemMessage(content=MEMORY_MERGE_SYSTEM_PROMPT.strip()),
+                HumanMessage(content=json.dumps({"memories": cleaned_memories}, ensure_ascii=False)),
+            ],
+        )
+        raw_result = parse_json_object(message_content_to_text(response.content))
+        return normalize_memory_merge_result(raw_result, cleaned_memories)
+    except Exception:
+        logging.exception("Failed to merge memory contents with DeepSeek")
+        return fallback_memory_merge(cleaned_memories)
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
     try:
         value = json.loads(text)
@@ -144,7 +197,7 @@ def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[st
     if memory_scope == "short":
         save = False
 
-    content = clean_string(raw.get("content"), max_length=160)
+    content = clean_string(raw.get("content"), max_length=220)
     if save and not content:
         content = source_text[:160]
 
@@ -168,6 +221,30 @@ def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
     confidence = clamp_float(raw.get("confidence"), default=0.0)
     reason = clean_string(raw.get("reason"), max_length=120, default="llm_memory_dedup")
     return memory_dedup_decision(decision, confidence, reason or "llm_memory_dedup")
+
+
+def normalize_memory_merge_result(raw: dict[str, Any], memories: list[dict[str, Any]]) -> dict[str, str]:
+    title = clean_string(raw.get("title"), max_length=80, default=None)
+    content = clean_string(raw.get("content"), max_length=260, default=None)
+    reason = clean_string(raw.get("reason"), max_length=160, default="llm_memory_merge")
+    if not title:
+        title = clean_string(memories[0].get("title"), max_length=80, default="合并记忆")
+    if not content:
+        return fallback_memory_merge(memories)
+    return memory_merge_result(title or "合并记忆", content, reason or "llm_memory_merge")
+
+
+def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
+    title = clean_string(memories[0].get("title"), max_length=80, default="合并记忆") or "合并记忆"
+    seen: set[str] = set()
+    parts: list[str] = []
+    for memory in memories:
+        content = clean_string(memory.get("content"), max_length=180, default="")
+        if not content or content in seen:
+            continue
+        seen.add(content)
+        parts.append(content)
+    return memory_merge_result(title, "；".join(parts)[:260], "fallback_concatenate_unique_memories")
 
 
 def message_content_to_text(content: Any) -> str:
@@ -210,6 +287,14 @@ def memory_dedup_decision(decision: str, confidence: float, reason: str) -> dict
     return {
         "decision": decision,
         "confidence": round(confidence, 2),
+        "reason": reason,
+    }
+
+
+def memory_merge_result(title: str, content: str, reason: str) -> dict[str, str]:
+    return {
+        "title": title,
+        "content": content,
         "reason": reason,
     }
 

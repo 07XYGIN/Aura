@@ -208,10 +208,11 @@ def aura_agent(
         }
     }
     previous_state = aura.get_state(config)
-    time_context = build_time_context(previous_state.values.get("messages", []) if previous_state and previous_state.values else [], request_started_at)
+    previous_messages = previous_state.values.get("messages", []) if previous_state and previous_state.values else []
+    time_context = build_time_context(previous_messages, request_started_at)
     self_changelog_context = load_self_changelog_context_sync()
 
-    turn_judgement = judge_turn(human_prompt, emotion_state)
+    turn_judgement = judge_turn(human_prompt, emotion_state, recent_messages=previous_messages)
     emotion_state = turn_judgement["emotion"]
     attachments = load_attachments(user_id, attachment_ids)
     logging.info(

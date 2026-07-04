@@ -7,6 +7,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core.agent.memory_judge import (
+    fallback_memory_merge,
     normalize_memory_candidate,
     normalize_memory_dedup_decision,
     parse_json_object,
@@ -62,6 +63,41 @@ class MemoryJudgeTest(unittest.TestCase):
 
         self.assertEqual(decision["decision"], "unrelated")
         self.assertEqual(decision["confidence"], 1.0)
+
+    def test_normalize_long_memory_allows_context_rich_content(self):
+        content = (
+            "提到跟朋友聚餐时喜欢吃火锅，那次心情似乎不错，还说比一个人随便吃点东西更有仪式感。"
+            "这种记忆保留了偏好和场景。"
+        )
+        candidate = normalize_memory_candidate(
+            {
+                "save": True,
+                "memory_scope": "long",
+                "title": "火锅偏好",
+                "content": content,
+                "confidence": 0.86,
+                "reason": "stable_preference_with_context",
+                "signals": ["preference", "context"],
+            },
+            "source",
+        )
+
+        self.assertTrue(candidate["save"])
+        self.assertEqual(candidate["content"], content)
+        self.assertLessEqual(len(candidate["content"]), 220)
+
+    def test_fallback_memory_merge_deduplicates_repeated_contents(self):
+        merged = fallback_memory_merge(
+            [
+                {"title": "火锅偏好", "content": "喜欢和朋友聚餐吃火锅，那次聊起来心情不错。"},
+                {"title": "火锅偏好", "content": "喜欢和朋友聚餐吃火锅，那次聊起来心情不错。"},
+                {"title": "火锅口味", "content": "吃火锅时不太能吃辣，更偏清汤或番茄锅。"},
+            ]
+        )
+
+        self.assertEqual(merged["title"], "火锅偏好")
+        self.assertEqual(merged["content"].count("喜欢和朋友聚餐吃火锅"), 1)
+        self.assertIn("不太能吃辣", merged["content"])
 
 
 if __name__ == "__main__":

@@ -25,3 +25,11 @@ class SelfUpdatePatchRequest(AdminSchema):
     category: str | None = Field(default=None, max_length=64)
     reacted: bool | None = None
     metadata: Any = None
+
+
+class MemoryMergeConfirmRequest(AdminSchema):
+    user_id: str = Field(alias="userId", min_length=1)
+    memory_keys: list[str] = Field(alias="memoryKeys", min_length=2)
+    merged_title: str = Field(alias="mergedTitle", min_length=1, max_length=80)
+    merged_content: str = Field(alias="mergedContent", min_length=1, max_length=320)
+    reason: str | None = Field(default=None, max_length=160)

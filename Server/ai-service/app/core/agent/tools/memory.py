@@ -23,14 +23,14 @@ def save_memory_tool(
     reason: str | None = None,
     signals: list[str] | None = None,
 ) -> str:
-    """保存用户明确值得记住的信息到长期或中期记忆库。"""
+    """保存用户明确值得记住的信息到长期或中期记忆库；content 要简洁但保留场景、心情或具体情境。"""
     configurable: dict[str, Any] = config.get("configurable", {})
     user_id = configurable.get("user_id")
     if not user_id:
         return "缺少用户 ID，无法保存记忆。"
 
     clean_title = clean_text(title, max_length=80) or ("对话记忆" if memory_scope == "long" else "近期线索")
-    clean_content = clean_text(content, max_length=240)
+    clean_content = clean_text(content, max_length=320)
     if not clean_content:
         return "缺少有效记忆内容，未保存。"
 

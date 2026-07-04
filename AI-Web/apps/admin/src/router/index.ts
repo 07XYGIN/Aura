@@ -67,6 +67,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/aura/SelfUpdates.vue'),
         meta: { title: '自我更新日志' },
       },
+      {
+        path: 'aura/memory-merge',
+        name: 'auraMemoryMerge',
+        component: () => import('@/pages/aura/MemoryMerge.vue'),
+        meta: { title: '记忆整理' },
+      },
     ],
   },
   {

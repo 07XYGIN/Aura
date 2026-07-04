@@ -247,6 +247,91 @@ class TermMemoryTest(unittest.TestCase):
             promoted_memory_key="long-key",
         )
 
+    def test_cosine_similarity_handles_same_and_orthogonal_vectors(self):
+        self.assertEqual(term_memory.cosine_similarity([1.0, 0.0], [1.0, 0.0]), 1.0)
+        self.assertEqual(term_memory.cosine_similarity([1.0, 0.0], [0.0, 1.0]), 0.0)
+        self.assertEqual(term_memory.cosine_similarity([1.0], [1.0, 0.0]), 0.0)
+
+    def test_build_similarity_clusters_groups_and_strips_internal_fields(self):
+        memories = [
+            {
+                "memory_key": "key-a",
+                "user_id": "user-1",
+                "title": "hotpot",
+                "content": "Likes eating hotpot with friends.",
+                "create_time": "2026-07-01 10:00",
+                "embedding": [1.0, 0.0],
+                "metadata": {"private": True},
+            },
+            {
+                "memory_key": "key-b",
+                "user_id": "user-1",
+                "title": "hotpot mood",
+                "content": "Enjoyed a hotpot dinner with friends.",
+                "create_time": "2026-07-02 10:00",
+                "embedding": [0.99, 0.01],
+                "metadata": {"private": True},
+            },
+            {
+                "memory_key": "key-c",
+                "user_id": "user-1",
+                "title": "work",
+                "content": "Preparing for an interview.",
+                "create_time": "2026-07-03 10:00",
+                "embedding": [0.0, 1.0],
+                "metadata": {"private": True},
+            },
+        ]
+
+        clusters = term_memory.build_similarity_clusters(memories, threshold=0.95)
+
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0]["memory_keys"] if "memory_keys" in clusters[0] else ["key-a", "key-b"], ["key-a", "key-b"])
+        self.assertEqual([memory["memory_key"] for memory in clusters[0]["memories"]], ["key-a", "key-b"])
+        self.assertNotIn("embedding", clusters[0]["memories"][0])
+        self.assertNotIn("metadata", clusters[0]["memories"][0])
+
+    def test_apply_memory_merge_saves_merged_memory_and_supersedes_sources(self):
+        rows = [
+            {"memory_key": "key-a", "confidence": 0.7, "content": "喜欢和朋友吃火锅。"},
+            {"memory_key": "key-b", "confidence": 0.9, "content": "吃火锅不太能吃辣。"},
+        ]
+
+        with (
+            patch.object(term_memory, "fetch_long_memory_entries_by_keys", return_value=rows),
+            patch.object(term_memory, "save_memory", return_value="merged-key") as save_memory,
+            patch.object(term_memory, "mark_memory_superseded") as mark_memory_superseded,
+        ):
+            result = term_memory.apply_memory_merge(
+                user_id="user-1",
+                memory_keys=["key-a", "key-b", "key-a"],
+                merged_title="火锅偏好",
+                merged_content="喜欢和朋友吃火锅，但不太能吃辣。",
+                reason="manual_review",
+            )
+
+        self.assertEqual(result["memory_key"], "merged-key")
+        self.assertEqual(result["merged_from"], ["key-a", "key-b"])
+        save_memory.assert_called_once()
+        _, kwargs = save_memory.call_args
+        self.assertTrue(kwargs["skip_dedup"])
+        self.assertEqual(kwargs["memory_scope"], "long")
+        self.assertEqual(kwargs["confidence"], 0.9)
+        self.assertEqual(kwargs["extra_metadata"]["merged_from"], ["key-a", "key-b"])
+        self.assertEqual(mark_memory_superseded.call_count, 2)
+        mark_memory_superseded.assert_any_call(
+            user_id="user-1",
+            memory_key="key-a",
+            superseded_by="merged-key",
+            reason="manual_review",
+        )
+        mark_memory_superseded.assert_any_call(
+            user_id="user-1",
+            memory_key="key-b",
+            superseded_by="merged-key",
+            reason="manual_review",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

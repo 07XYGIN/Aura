@@ -1,5 +1,6 @@
 import logging
 import os
+import math
 from datetime import datetime, timedelta
 from typing import Any, Literal
 from uuid import uuid4
@@ -11,7 +12,9 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_postgres import PGVector
 
 from app.core.config import SYNC_DATABASE_URL
-from app.core.agent.memory_judge import judge_memory_dedup
+from app.core.agent.memory_judge import judge_memory_dedup, merge_memory_contents
+from app.db.models import LangchainPgCollection, LangchainPgEmbedding
+from app.db.session import SyncSessionLocal
 
 MemoryScope = Literal["long", "mid", "all"]
 
@@ -42,6 +45,8 @@ LONG_MEMORY_COOLDOWN_BYPASS_THRESHOLD = read_float_env("LONG_MEMORY_COOLDOWN_BYP
 LONG_MEMORY_COOLDOWN_PENALTY = read_float_env("LONG_MEMORY_COOLDOWN_PENALTY", 0.25)
 LONG_MEMORY_DEDUP_THRESHOLD = read_float_env("LONG_MEMORY_DEDUP_THRESHOLD", 0.75)
 LONG_MEMORY_DEDUP_CANDIDATES = read_int_env("LONG_MEMORY_DEDUP_CANDIDATES", 3)
+LONG_MEMORY_MERGE_THRESHOLD = read_float_env("LONG_MEMORY_MERGE_THRESHOLD", 0.85)
+LONG_MEMORY_MERGE_SCAN_LIMIT = read_int_env("LONG_MEMORY_MERGE_SCAN_LIMIT", 300)
 MID_MEMORY_PROMOTION_RECALL_THRESHOLD = read_int_env("MID_MEMORY_PROMOTION_RECALL_THRESHOLD", 3)
 EXPLICIT_MEMORY_LOOKUP_KEYWORDS = (
     "记忆",
@@ -85,6 +90,7 @@ def save_memory(
     confidence: float | None = None,
     signals: list[str] | None = None,
     extra_metadata: dict[str, Any] | None = None,
+    skip_dedup: bool = False,
 ) -> str | None:
     content = (content or "").strip()
     if not content:
@@ -104,8 +110,12 @@ def save_memory(
     if extra_metadata:
         metadata.update({key: value for key, value in extra_metadata.items() if value is not None})
 
-    if scope == "long":
+    if scope == "long" and not skip_dedup:
         return save_long_memory(user_id=user_id, content=content, metadata=metadata)
+    if scope == "long":
+        store = get_memory_vector_store(LONG_TERM_COLLECTION_NAME)
+        store.add_documents([Document(page_content=content, metadata=metadata)])
+        return str(metadata["memory_key"])
 
     store = get_memory_vector_store(collection_name_for_scope(scope))
     store.add_documents([Document(page_content=content, metadata=metadata)])
@@ -210,6 +220,267 @@ def find_similar_long_memory(
 
         return Document(page_content=doc.page_content, metadata=metadata), relevance_score
     return None
+
+
+def list_memory_merge_candidates(
+    user_id: str,
+    threshold: float = LONG_MEMORY_MERGE_THRESHOLD,
+    limit: int = 20,
+    scan_limit: int = LONG_MEMORY_MERGE_SCAN_LIMIT,
+) -> dict[str, Any]:
+    threshold = max(0.0, min(1.0, threshold))
+    limit = min(max(limit, 1), 50)
+    memories = fetch_mergeable_long_memory_entries(user_id=user_id, limit=scan_limit)
+    clusters = build_similarity_clusters(memories, threshold)
+
+    items: list[dict[str, Any]] = []
+    for cluster in clusters[:limit]:
+        merge_result = merge_memory_contents(
+            [
+                {
+                    "title": memory["title"],
+                    "content": memory["content"],
+                    "create_time": memory["create_time"],
+                }
+                for memory in cluster["memories"]
+            ]
+        )
+        items.append(
+            {
+                "cluster_id": cluster["cluster_id"],
+                "similarity": cluster["similarity"],
+                "memory_keys": [memory["memory_key"] for memory in cluster["memories"]],
+                "memories": cluster["memories"],
+                "suggested_title": merge_result["title"],
+                "suggested_content": merge_result["content"],
+                "suggested_reason": merge_result["reason"],
+            }
+        )
+
+    return {
+        "items": items,
+        "total": len(items),
+        "threshold": threshold,
+        "scanned": len(memories),
+    }
+
+
+def apply_memory_merge(
+    user_id: str,
+    memory_keys: list[str],
+    merged_title: str,
+    merged_content: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    keys = [key.strip() for key in memory_keys if isinstance(key, str) and key.strip()]
+    unique_keys = list(dict.fromkeys(keys))
+    if len(unique_keys) < 2:
+        raise ValueError("at least two memory keys are required")
+
+    rows = fetch_long_memory_entries_by_keys(user_id=user_id, memory_keys=unique_keys)
+    if len(rows) < 2:
+        raise ValueError("not enough matching active memories to merge")
+
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+    merge_reason = (reason or "admin_memory_merge")[:160]
+    merged_key = save_memory(
+        user_id=user_id,
+        content=merged_content.strip(),
+        title=merged_title.strip()[:80] or "合并记忆",
+        create_time=now_text,
+        memory_scope="long",
+        confidence=max(
+            [float(row["confidence"]) for row in rows if isinstance(row.get("confidence"), (float, int))],
+            default=0.8,
+        ),
+        signals=["memory_merge"],
+        extra_metadata={
+            "source": "memory_merge_admin",
+            "merged_from": unique_keys,
+            "merged_at": now_text,
+            "merge_reason": merge_reason,
+        },
+        skip_dedup=True,
+    )
+    if not merged_key:
+        raise ValueError("failed to save merged memory")
+
+    for memory_key in unique_keys:
+        mark_memory_superseded(
+            user_id=user_id,
+            memory_key=memory_key,
+            superseded_by=merged_key,
+            reason=merge_reason,
+        )
+
+    return {
+        "memory_key": merged_key,
+        "merged_from": unique_keys,
+        "title": merged_title.strip()[:80] or "合并记忆",
+        "content": merged_content.strip(),
+        "reason": merge_reason,
+    }
+
+
+def fetch_mergeable_long_memory_entries(user_id: str, limit: int = LONG_MEMORY_MERGE_SCAN_LIMIT) -> list[dict[str, Any]]:
+    limit = min(max(limit, 2), 1000)
+    with SyncSessionLocal() as session:
+        result = session.execute(
+            select_long_memory_embeddings(user_id=user_id, limit=limit)
+        )
+        entries = [memory_entry_from_embedding(row) for row in result.scalars().all()]
+
+    return [
+        entry
+        for entry in entries
+        if entry
+        and entry.get("user_id") == user_id
+        and entry.get("embedding")
+        and is_memory_retrievable(entry.get("metadata", {}), "long")
+    ]
+
+
+def fetch_long_memory_entries_by_keys(user_id: str, memory_keys: list[str]) -> list[dict[str, Any]]:
+    key_set = set(memory_keys)
+    with SyncSessionLocal() as session:
+        result = session.execute(
+            select_long_memory_embeddings(user_id=user_id, memory_keys=list(key_set), limit=max(1000, len(key_set)))
+        )
+        entries = [memory_entry_from_embedding(row) for row in result.scalars().all()]
+
+    return [
+        entry
+        for entry in entries
+        if entry
+        and entry.get("memory_key") in key_set
+        and is_memory_retrievable(entry.get("metadata", {}), "long")
+    ]
+
+
+def select_long_memory_embeddings(
+    limit: int,
+    user_id: str | None = None,
+    memory_keys: list[str] | None = None,
+):
+    from sqlalchemy import select
+
+    query = (
+        select(LangchainPgEmbedding)
+        .join(LangchainPgCollection, LangchainPgEmbedding.collection_id == LangchainPgCollection.uuid)
+        .where(LangchainPgCollection.name == LONG_TERM_COLLECTION_NAME)
+        .order_by(LangchainPgEmbedding.id.desc())
+        .limit(limit)
+    )
+    if user_id:
+        query = query.where(LangchainPgEmbedding.cmetadata["user_id"].astext == user_id)
+    if memory_keys:
+        query = query.where(LangchainPgEmbedding.cmetadata["memory_key"].astext.in_(memory_keys))
+    return query
+
+
+def memory_entry_from_embedding(row: LangchainPgEmbedding | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    metadata = dict(row.cmetadata or {})
+    content = (row.document or "").strip()
+    memory_key = metadata.get("memory_key")
+    if not content or not isinstance(memory_key, str) or not memory_key:
+        return None
+    return {
+        "id": str(row.id),
+        "memory_key": memory_key,
+        "user_id": metadata.get("user_id"),
+        "title": metadata.get("title") or "未命名记忆",
+        "content": content,
+        "create_time": metadata.get("create_time"),
+        "confidence": metadata.get("confidence"),
+        "metadata": metadata,
+        "embedding": normalize_embedding(row.embedding),
+    }
+
+
+def normalize_embedding(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[float] = []
+    for item in value:
+        try:
+            normalized.append(float(item))
+        except (TypeError, ValueError):
+            return []
+    return normalized
+
+
+def build_similarity_clusters(memories: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
+    parent = list(range(len(memories)))
+    pair_scores: dict[tuple[int, int], float] = {}
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for left_index in range(len(memories)):
+        left_embedding = memories[left_index].get("embedding") or []
+        for right_index in range(left_index + 1, len(memories)):
+            right_embedding = memories[right_index].get("embedding") or []
+            score = cosine_similarity(left_embedding, right_embedding)
+            if score >= threshold:
+                pair_scores[(left_index, right_index)] = score
+                union(left_index, right_index)
+
+    grouped: dict[int, list[int]] = {}
+    for index in range(len(memories)):
+        grouped.setdefault(find(index), []).append(index)
+
+    clusters: list[dict[str, Any]] = []
+    for indexes in grouped.values():
+        if len(indexes) < 2:
+            continue
+        scores = [
+            pair_scores[(min(left, right), max(left, right))]
+            for left in indexes
+            for right in indexes
+            if left < right and (left, right) in pair_scores
+        ]
+        if not scores:
+            continue
+        cluster_memories = [
+            {key: value for key, value in memories[index].items() if key not in {"embedding", "metadata"}}
+            for index in indexes
+        ]
+        clusters.append(
+            {
+                "cluster_id": "cluster-" + "-".join(memory["memory_key"][:8] for memory in cluster_memories),
+                "similarity": {
+                    "max": round(max(scores), 4),
+                    "min": round(min(scores), 4),
+                    "avg": round(sum(scores) / len(scores), 4),
+                },
+                "memories": cluster_memories,
+            }
+        )
+
+    clusters.sort(key=lambda item: item["similarity"]["max"], reverse=True)
+    return clusters
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0 or right_norm == 0:
+        return 0.0
+    return max(0.0, min(1.0, dot / (left_norm * right_norm)))
 
 
 def search_memory(user_id: str, query: str, k: int = 5, memory_scope: MemoryScope = "all") -> list[Document]:

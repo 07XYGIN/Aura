@@ -81,6 +81,10 @@ const handleLogout = async () => {
           <el-icon><EditPen /></el-icon>
           <span>自我更新日志</span>
         </el-menu-item>
+        <el-menu-item index="/aura/memory-merge">
+          <el-icon><DocumentCopy /></el-icon>
+          <span>记忆整理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 

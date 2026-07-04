@@ -7,6 +7,7 @@ from langsmith import traceable
 
 from app.core.emotion import derive_emotion_state
 
+from .emotion_judge import judge_emotion_state
 from .memory_judge import judge_memory_candidate
 from .protocol import derive_relationship_delta
 
@@ -43,10 +44,19 @@ SELF_HARM_KEYWORDS = (
 
 
 @traceable(name="aura_turn_judge")
-def judge_turn(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def judge_turn(
+    message: str,
+    emotion_state: dict[str, Any] | None = None,
+    recent_messages: list[Any] | None = None,
+) -> dict[str, Any]:
     """Build the per-turn structured judgment used by the graph and SSE events."""
     text = (message or "").strip()
-    emotion = emotion_state or derive_emotion_state(text).to_dict()
+    fallback_emotion = emotion_state or derive_emotion_state(text).to_dict()
+    emotion = judge_emotion_state(
+        text,
+        recent_context=format_recent_messages_for_judge(recent_messages),
+        fallback_emotion=fallback_emotion,
+    )
     relationship_delta = derive_relationship_delta(text, emotion)
     memory_candidate = judge_memory_candidate(text, emotion)
     risk_signal = detect_risk_signal(text)
@@ -105,10 +115,11 @@ def choose_response_mode(
     if risk_signal.get("requires_safety_gate"):
         return "crisis_support"
 
-    if emotion.get("user_emotion") == "lonely":
+    is_current_experience = emotion.get("is_current_experience", True)
+    if emotion.get("user_emotion") == "lonely" and is_current_experience:
         return "lonely_support"
 
-    if emotion.get("support_needed"):
+    if emotion.get("support_needed") and is_current_experience:
         return "emotional_support"
 
     if relationship_delta.get("label") == "需要修复":
@@ -127,7 +138,7 @@ def normalize_turn_judgement(value: dict[str, Any] | None, message: str) -> dict
 
     emotion = value.get("emotion")
     if not isinstance(emotion, dict):
-        emotion = derive_emotion_state(message).to_dict()
+        emotion = judge_emotion_state(message, fallback_emotion=derive_emotion_state(message).to_dict())
 
     relationship_delta = value.get("relationship_delta")
     if not isinstance(relationship_delta, dict):
@@ -186,3 +197,17 @@ def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
         f"- 记忆判断：{memory_summary}\n"
         f"- 风险信号：{risk_summary}"
     )
+
+
+def format_recent_messages_for_judge(messages: list[Any] | None, limit: int = 6) -> str:
+    if not messages:
+        return ""
+
+    lines: list[str] = []
+    for message in messages[-limit:]:
+        content = getattr(message, "content", "")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        role = getattr(message, "type", None) or message.__class__.__name__
+        lines.append(f"{role}: {content.strip()[:180]}")
+    return "\n".join(lines)

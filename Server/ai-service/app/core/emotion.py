@@ -227,9 +227,15 @@ def format_emotion_context(emotion_state: dict | EmotionState | None) -> str:
 
     matched_keywords = ", ".join(emotion_state.get("matched_keywords", [])) or "none"
     support = "yes" if emotion_state.get("support_needed") else "no"
+    is_current = "yes" if emotion_state.get("is_current_experience", True) else "no"
+    confidence = emotion_state.get("emotion_confidence")
+    confidence_text = f"\n- 情绪判断置信度: {confidence}" if confidence is not None else ""
+    reason = emotion_state.get("emotion_reason")
+    reason_text = f"\n- 判断原因: {reason}" if reason else ""
     return (
         "\n\n## 当前情绪上下文\n"
         f"- 识别到的用户情绪: {emotion_state.get('user_emotion', 'neutral')}\n"
+        f"- 是否是用户当下正在经历: {is_current}\n"
         f"- Aura 当前氛围: {emotion_state.get('aura_mood', 'warm')}\n"
         f"- 情绪正负向: {emotion_state.get('valence', 0.1)}\n"
         f"- 情绪唤醒度: {emotion_state.get('arousal', 0.35)}\n"
@@ -237,6 +243,8 @@ def format_emotion_context(emotion_state: dict | EmotionState | None) -> str:
         f"- 亲密感: {emotion_state.get('affection', 0.7)}\n"
         f"- 是否需要更多安抚: {support}\n"
         f"- 命中的关键词: {matched_keywords}\n"
-        f"- 回复建议: {emotion_state.get('response_guidance', DEFAULT_EMOTION.response_guidance)}\n"
+        f"- 回复建议: {emotion_state.get('response_guidance', DEFAULT_EMOTION.response_guidance)}"
+        f"{confidence_text}"
+        f"{reason_text}\n"
         "请用这些信息调整语气和节奏，不要把这些字段直接说给用户。\n"
     )
