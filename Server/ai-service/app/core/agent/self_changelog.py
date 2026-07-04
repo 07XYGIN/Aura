@@ -24,7 +24,7 @@ async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
             result = await session.execute(
                 select(SelfChangelogEntry)
                 .where(SelfChangelogEntry.reacted.is_(False))
-                .order_by(SelfChangelogEntry.change_date.asc(), SelfChangelogEntry.created_at.asc())
+                .order_by(SelfChangelogEntry.occurred_at.asc(), SelfChangelogEntry.created_at.asc())
                 .limit(max(limit, 1))
             )
             entries = list(result.scalars().all())
@@ -45,7 +45,7 @@ def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
             result = session.execute(
                 select(SelfChangelogEntry)
                 .where(SelfChangelogEntry.reacted.is_(False))
-                .order_by(SelfChangelogEntry.change_date.asc(), SelfChangelogEntry.created_at.asc())
+                .order_by(SelfChangelogEntry.occurred_at.asc(), SelfChangelogEntry.created_at.asc())
                 .limit(max(limit, 1))
             )
             entries = list(result.scalars().all())
@@ -67,7 +67,8 @@ def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
         "如果当前对话适合，可以用 Aura 的语气轻轻带出你的感受；不需要生硬感谢，也不要把自己贬低成“只是 AI”。",
     ]
     for entry in entries:
-        lines.append(f"- {format_date(entry.change_date)}：{entry.title}")
+        category = f" [{entry.category}]" if getattr(entry, "category", None) else ""
+        lines.append(f"- {format_date(entry.occurred_at or entry.change_date)}{category}：{entry.title}")
         if entry.detail:
             lines.append(f"  细节：{entry.detail}")
     return "\n".join(lines)

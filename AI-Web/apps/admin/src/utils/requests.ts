@@ -4,7 +4,7 @@ import { useUserStore } from '@/store/modules/user'
 import router from '@/router'
 
 const request = axios.create({
-  baseURL: import.meta.env.VITE_BFF_URL || 'http://localhost:3001',
+  baseURL: import.meta.env.VITE_AI_SERVICE_URL || 'http://localhost:8000',
 })
 
 let authMessageVisible = false

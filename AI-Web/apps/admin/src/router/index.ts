@@ -61,6 +61,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/aura/LongTermMemories.vue'),
         meta: { title: '长期记忆列表' },
       },
+      {
+        path: 'aura/self-updates',
+        name: 'auraSelfUpdates',
+        component: () => import('@/pages/aura/SelfUpdates.vue'),
+        meta: { title: '自我更新日志' },
+      },
     ],
   },
   {

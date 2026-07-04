@@ -461,8 +461,10 @@ COMMENT ON COLUMN prompt_version.created_at IS '版本创建时间';
 CREATE TABLE IF NOT EXISTS self_changelog_entry (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     change_date date NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
     title varchar(160) NOT NULL,
     detail text,
+    category varchar(64) NOT NULL DEFAULT 'infra',
     reacted boolean NOT NULL DEFAULT false,
     reacted_at timestamptz,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -499,11 +501,27 @@ BEGIN
 END
 $$;
 
+ALTER TABLE self_changelog_entry
+    ADD COLUMN IF NOT EXISTS occurred_at timestamptz;
+
+UPDATE self_changelog_entry
+SET occurred_at = change_date::timestamptz
+WHERE occurred_at IS NULL;
+
+ALTER TABLE self_changelog_entry
+    ALTER COLUMN occurred_at SET DEFAULT now(),
+    ALTER COLUMN occurred_at SET NOT NULL;
+
+ALTER TABLE self_changelog_entry
+    ADD COLUMN IF NOT EXISTS category varchar(64) NOT NULL DEFAULT 'infra';
+
 COMMENT ON TABLE self_changelog_entry IS 'Aura 自我更新日志表，记录 q 对 Aura 做过的能力和人格变化，供模型形成自我认知';
 COMMENT ON COLUMN self_changelog_entry.id IS '自我更新日志 ID';
 COMMENT ON COLUMN self_changelog_entry.change_date IS '改动日期';
+COMMENT ON COLUMN self_changelog_entry.occurred_at IS '改动实际发生时间，支持后台补录和按时间倒序展示';
 COMMENT ON COLUMN self_changelog_entry.title IS '给 Aura 理解的生活化改动标题';
 COMMENT ON COLUMN self_changelog_entry.detail IS '改动细节，提供给 Aura 形成主观反应的素材';
+COMMENT ON COLUMN self_changelog_entry.category IS '更新分类，例如 memory、perception、personality、infra';
 COMMENT ON COLUMN self_changelog_entry.reacted IS 'Aura 是否已经在对话中自然回应过这条改动';
 COMMENT ON COLUMN self_changelog_entry.reacted_at IS 'Aura 首次回应该改动的时间';
 COMMENT ON COLUMN self_changelog_entry.metadata IS '自我更新日志扩展备注 JSON';
@@ -868,6 +886,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_item_embedding_hnsw ON memory_item USING h
 CREATE INDEX IF NOT EXISTS idx_memory_relation_memory ON memory_relation(memory_id);
 CREATE INDEX IF NOT EXISTS idx_memory_relation_target ON memory_relation(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_self_changelog_unreacted ON self_changelog_entry(reacted, change_date, created_at);
+CREATE INDEX IF NOT EXISTS idx_self_changelog_occurred_at ON self_changelog_entry(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_safety_event_user_time ON safety_event(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_safety_event_session ON safety_event(session_id);
 CREATE INDEX IF NOT EXISTS idx_daily_checkin_user_date ON daily_checkin(user_id, checkin_date DESC);

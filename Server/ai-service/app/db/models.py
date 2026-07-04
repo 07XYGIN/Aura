@@ -279,8 +279,10 @@ class SelfChangelogEntry(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     change_date: Mapped[date] = mapped_column(Date, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     detail: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="infra", server_default="infra")
     reacted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)

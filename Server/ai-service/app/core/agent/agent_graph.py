@@ -16,6 +16,7 @@ from langsmith import traceable
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import ensure_deepseek_api_key, llm, structured_reply_llm
 from app.core.emotion import format_emotion_context
+from app.core.reply_timing_state import store_reply_timing_state
 from .protocol import (
     assistant_message_event,
     content_event,
@@ -365,11 +366,13 @@ def build_reply_messages_from_texts(
             }
         )
 
-    return ai_messages, {
+    reply_batch = {
         "turn_id": turn_id,
         "batch_id": batch_id,
         "messages": batch_messages,
     }
+    store_reply_timing_state(state.get("user_id"), reply_batch)
+    return ai_messages, reply_batch
 
 
 def build_structured_reply_response(draft_response: Any, messages: list, state: AuraState) -> Any:

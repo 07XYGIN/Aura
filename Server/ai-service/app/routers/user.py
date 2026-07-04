@@ -14,6 +14,7 @@ from app.core.auth_store import (
     revoke_token,
     update_user_info,
 )
+from app.core.agent.tools.term_memory import list_memories_by_user
 from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserUpdateRequest
 
 router = APIRouter(
@@ -43,6 +44,15 @@ async def user_info(
     session: SessionDep,
 ):
     return api_success(data=await get_user_info(session, user_id))
+
+
+@router.get("/memoryList")
+async def memory_list(
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    page: int = 1,
+    pageSize: int = 10,
+):
+    return api_success(data=list_memories_by_user(user_id=user_id, page=page, page_size=pageSize))
 
 
 @router.put("/updateInfo")

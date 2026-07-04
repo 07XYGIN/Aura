@@ -13,8 +13,9 @@ from app.core.exceptions import (
     validation_exception_handler,
 )
 from app.core.logging_config import configure_logging
+from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
-from app.routers import attachments, aura, history, location, memory, msg, user
+from app.routers import admin, attachments, aura, history, location, memory, msg, user
 
 configure_logging()
 
@@ -27,7 +28,11 @@ async def lifespan(app: FastAPI):
         checkpointer.setup()
         agent_graph.aura = agent_graph.build_graph(checkpointer)
         logging.info("Aura 初始化成功")
-        yield
+        proactive_stop_event = start_proactive_scheduler()
+        try:
+            yield
+        finally:
+            await stop_proactive_scheduler(proactive_stop_event)
 
     logging.info("程序关闭")
 
@@ -44,6 +49,7 @@ def create_app() -> FastAPI:
         max_age=86400,
     )
     routers: list[APIRouter] = [
+        admin.router,
         msg.router,
         history.router,
         memory.router,

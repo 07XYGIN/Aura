@@ -77,6 +77,10 @@ const handleLogout = async () => {
           <el-icon><Collection /></el-icon>
           <span>长期记忆列表</span>
         </el-menu-item>
+        <el-menu-item index="/aura/self-updates">
+          <el-icon><EditPen /></el-icon>
+          <span>自我更新日志</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 

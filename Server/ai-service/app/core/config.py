@@ -6,10 +6,29 @@ from langchain_openai import ChatOpenAI
 load_dotenv()
 
 
+def int_env(name: str, default: int, minimum: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return max(minimum, parsed)
+
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
 DEEPSEEK_MEMORY_MODEL = os.getenv("DEEPSEEK_MEMORY_MODEL", "deepseek-v4-flash")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+AURA_PROACTIVE_SCHEDULER_ENABLED = os.getenv("AURA_PROACTIVE_SCHEDULER_ENABLED", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS = int_env("AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS", 15, 5)
+AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS = int_env("AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS", 24, 1)
 AURA_LLM_TEMPERATURE = float(os.getenv("AURA_LLM_TEMPERATURE", "1"))
 DEEPSEEK_REASONING_EFFORT = os.getenv("DEEPSEEK_REASONING_EFFORT", "high").strip().lower()
 if DEEPSEEK_REASONING_EFFORT not in {"high", "max"}:
