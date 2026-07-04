@@ -7,7 +7,12 @@ from typing import Any, Literal
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from app.core.agent.tools.term_memory import apply_memory_merge, list_memory_merge_candidates, save_memory
+from app.core.agent.tools.term_memory import (
+    apply_memory_merge,
+    list_memory_merge_candidates,
+    list_topic_memory_merge_candidates,
+    save_memory,
+)
 
 from .logging_utils import log_tool
 
@@ -63,29 +68,52 @@ def save_memory_tool(
 @log_tool
 def merge_similar_memories_tool(
     config: RunnableConfig,
-    threshold: float = 0.88,
+    threshold: float | None = None,
     limit: int = 1,
-    scan_limit: int = 120,
+    scan_limit: int | None = None,
     reason: str | None = None,
+    mode: Literal["deduplicate", "topic"] = "deduplicate",
+    topic: str | None = None,
 ) -> str:
-    """主动整理当前用户的长期记忆：自动扫描高相似记忆，合并为一条，并让合并前的旧记忆退出可检索范围。"""
+    """主动整理当前用户的长期记忆：可按高相似度去重，或在给出具体主题时按主题归并，并让旧记忆退出可检索范围。"""
     configurable: dict[str, Any] = config.get("configurable", {})
     user_id = configurable.get("user_id")
     if not user_id:
         return "缺少用户 ID，无法整理长期记忆。"
 
-    safe_threshold = clamp_float(threshold, default=0.88, minimum=0.8, maximum=0.98)
+    clean_mode = mode if mode in {"deduplicate", "topic"} else "deduplicate"
+    clean_topic = clean_text(topic, max_length=120)
+    safe_threshold = (
+        clamp_float(threshold, default=0.52, minimum=0.35, maximum=0.9)
+        if clean_mode == "topic"
+        else clamp_float(threshold, default=0.88, minimum=0.8, maximum=0.98)
+    )
     safe_limit = clamp_int(limit, default=1, minimum=1, maximum=3)
-    safe_scan_limit = clamp_int(scan_limit, default=120, minimum=20, maximum=500)
+    safe_scan_limit = (
+        clamp_int(scan_limit, default=20, minimum=2, maximum=80)
+        if clean_mode == "topic"
+        else clamp_int(scan_limit, default=120, minimum=20, maximum=500)
+    )
     clean_reason = clean_text(reason, max_length=120) or "aura_memory_merge_tool"
 
     try:
-        candidates = list_memory_merge_candidates(
-            user_id=str(user_id),
-            threshold=safe_threshold,
-            limit=safe_limit,
-            scan_limit=safe_scan_limit,
-        )
+        if clean_mode == "topic":
+            if not clean_topic:
+                return "缺少明确整理主题，不能按主题归并长期记忆。"
+            candidates = list_topic_memory_merge_candidates(
+                user_id=str(user_id),
+                topic_query=clean_topic,
+                threshold=safe_threshold,
+                limit=safe_limit,
+                scan_limit=safe_scan_limit,
+            )
+        else:
+            candidates = list_memory_merge_candidates(
+                user_id=str(user_id),
+                threshold=safe_threshold,
+                limit=safe_limit,
+                scan_limit=safe_scan_limit,
+            )
     except Exception:
         logging.exception("merge_similar_memories_tool scan failed user_id=%s", user_id)
         return "长期记忆整理失败，先不要声称已经整理完成。"
@@ -93,6 +121,8 @@ def merge_similar_memories_tool(
     raw_items = candidates.get("items") if isinstance(candidates, dict) else None
     items = raw_items if isinstance(raw_items, list) else []
     if not items:
+        if clean_mode == "topic":
+            return f"没有发现足够归并到“{clean_topic}”这个主题下的长期记忆。"
         return "没有发现需要合并的高度相似长期记忆。"
 
     merged_titles: list[str] = []
@@ -142,8 +172,9 @@ def merge_similar_memories_tool(
         return "发现了相似记忆候选，但合并失败，先不要声称已经整理完成。"
 
     skipped_text = f"；另有 {skipped_count} 组候选未合并" if skipped_count else ""
+    mode_text = "同主题长期记忆" if clean_mode == "topic" else "相似长期记忆"
     return (
-        f"已合并 {len(merged_titles)} 组相似长期记忆：{'；'.join(merged_titles)}。"
+        f"已合并 {len(merged_titles)} 组{mode_text}：{'；'.join(merged_titles)}。"
         f"合并前的旧记忆已标记为已替代，不会再作为可引用长期记忆检索{skipped_text}。"
     )
 

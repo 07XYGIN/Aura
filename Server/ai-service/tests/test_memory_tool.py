@@ -122,6 +122,91 @@ class MergeSimilarMemoriesToolTest(unittest.TestCase):
             source="memory_merge_tool",
         )
 
+    def test_merge_similar_memories_tool_topic_mode_requires_topic(self):
+        with patch("app.core.agent.tools.memory.list_topic_memory_merge_candidates") as list_candidates:
+            result = merge_similar_memories_tool.invoke(
+                {"mode": "topic"},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("缺少明确整理主题", result)
+        list_candidates.assert_not_called()
+
+    def test_merge_similar_memories_tool_topic_mode_applies_candidate(self):
+        candidate = {
+            "memory_keys": ["key-a", "key-b", "key-c"],
+            "suggested_title": "Aura 项目改动",
+            "suggested_content": "今天集中折腾 Aura 项目，提到人设、情绪检测和模型采购相关改动。",
+            "suggested_reason": "同一主题下的项目迭代线索",
+        }
+        with (
+            patch(
+                "app.core.agent.tools.memory.list_topic_memory_merge_candidates",
+                return_value={"items": [candidate], "total": 1, "threshold": 0.52, "scanned": 8},
+            ) as list_candidates,
+            patch(
+                "app.core.agent.tools.memory.apply_memory_merge",
+                return_value={
+                    "memory_key": "merged-key",
+                    "merged_from": ["key-a", "key-b", "key-c"],
+                    "title": "Aura 项目改动",
+                    "content": "今天集中折腾 Aura 项目，提到人设、情绪检测和模型采购相关改动。",
+                    "reason": "按主题整理",
+                },
+            ) as apply_merge,
+        ):
+            result = merge_similar_memories_tool.invoke(
+                {
+                    "mode": "topic",
+                    "topic": "今天 Aura 项目改动",
+                    "threshold": 0.2,
+                    "limit": 9,
+                    "scan_limit": 999,
+                    "reason": "按主题整理",
+                },
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("已合并 1 组同主题长期记忆", result)
+        list_candidates.assert_called_once_with(
+            user_id="user-1",
+            topic_query="今天 Aura 项目改动",
+            threshold=0.35,
+            limit=3,
+            scan_limit=80,
+        )
+        apply_merge.assert_called_once_with(
+            user_id="user-1",
+            memory_keys=["key-a", "key-b", "key-c"],
+            merged_title="Aura 项目改动",
+            merged_content="今天集中折腾 Aura 项目，提到人设、情绪检测和模型采购相关改动。",
+            reason="按主题整理",
+            source="memory_merge_tool",
+        )
+
+    def test_merge_similar_memories_tool_topic_mode_defaults_to_topic_threshold(self):
+        with (
+            patch(
+                "app.core.agent.tools.memory.list_topic_memory_merge_candidates",
+                return_value={"items": [], "total": 0, "threshold": 0.52, "scanned": 0},
+            ) as list_candidates,
+            patch("app.core.agent.tools.memory.apply_memory_merge") as apply_merge,
+        ):
+            result = merge_similar_memories_tool.invoke(
+                {"mode": "topic", "topic": "今天 Aura 项目改动"},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("没有发现足够归并", result)
+        list_candidates.assert_called_once_with(
+            user_id="user-1",
+            topic_query="今天 Aura 项目改动",
+            threshold=0.52,
+            limit=1,
+            scan_limit=20,
+        )
+        apply_merge.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

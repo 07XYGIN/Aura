@@ -265,6 +265,97 @@ def list_memory_merge_candidates(
     }
 
 
+def list_topic_memory_merge_candidates(
+    user_id: str,
+    topic_query: str,
+    threshold: float = 0.52,
+    limit: int = 1,
+    scan_limit: int = 20,
+    max_memories: int = 5,
+) -> dict[str, Any]:
+    topic = (topic_query or "").strip()[:120]
+    threshold = max(0.0, min(1.0, threshold))
+    limit = min(max(limit, 1), 3)
+    scan_limit = min(max(scan_limit, 2), 80)
+    max_memories = min(max(max_memories, 2), 8)
+    if not topic:
+        return {"items": [], "total": 0, "threshold": threshold, "scanned": 0, "topic": topic}
+
+    store = get_memory_vector_store(LONG_TERM_COLLECTION_NAME)
+    try:
+        results = store.similarity_search_with_relevance_scores(
+            topic,
+            k=scan_limit,
+            filter={"user_id": user_id},
+            score_threshold=threshold,
+        )
+    except Exception:
+        logging.exception("Failed to search long memories for topic merge user_id=%s topic=%s", user_id, topic)
+        return {"items": [], "total": 0, "threshold": threshold, "scanned": 0, "topic": topic}
+
+    memories: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for doc, score in sorted(results, key=lambda item: item[1], reverse=True):
+        entry = memory_entry_from_document(doc, score)
+        if not entry:
+            continue
+        memory_key = entry["memory_key"]
+        if entry.get("user_id") != user_id or memory_key in seen_keys:
+            continue
+        if not is_memory_retrievable(entry.get("metadata", {}), "long"):
+            continue
+        seen_keys.add(memory_key)
+        memories.append({key: value for key, value in entry.items() if key not in {"metadata"}})
+        if len(memories) >= max_memories:
+            break
+
+    if len(memories) < 2:
+        return {"items": [], "total": 0, "threshold": threshold, "scanned": len(results), "topic": topic}
+
+    items: list[dict[str, Any]] = []
+    for index in range(limit):
+        if index > 0:
+            break
+        merge_result = merge_memory_contents(
+            [
+                {
+                    "title": memory["title"],
+                    "content": memory["content"],
+                    "create_time": memory["create_time"],
+                }
+                for memory in memories
+            ],
+            topic_query=topic,
+        )
+        items.append(
+            {
+                "cluster_id": "topic-" + "-".join(memory["memory_key"][:8] for memory in memories),
+                "topic": topic,
+                "relevance": {
+                    "max": round(max(float(memory.get("relevance_score") or 0.0) for memory in memories), 4),
+                    "min": round(min(float(memory.get("relevance_score") or 0.0) for memory in memories), 4),
+                    "avg": round(
+                        sum(float(memory.get("relevance_score") or 0.0) for memory in memories) / len(memories),
+                        4,
+                    ),
+                },
+                "memory_keys": [memory["memory_key"] for memory in memories],
+                "memories": memories,
+                "suggested_title": merge_result["title"],
+                "suggested_content": merge_result["content"],
+                "suggested_reason": merge_result["reason"],
+            }
+        )
+
+    return {
+        "items": items,
+        "total": len(items),
+        "threshold": threshold,
+        "scanned": len(results),
+        "topic": topic,
+    }
+
+
 def apply_memory_merge(
     user_id: str,
     memory_keys: list[str],
@@ -398,6 +489,26 @@ def memory_entry_from_embedding(row: LangchainPgEmbedding | None) -> dict[str, A
         "metadata": metadata,
         "embedding": normalize_embedding(row.embedding),
     }
+
+
+def memory_entry_from_document(doc: Document, relevance_score: float | None = None) -> dict[str, Any] | None:
+    metadata = dict(doc.metadata or {})
+    content = (doc.page_content or "").strip()
+    memory_key = metadata.get("memory_key")
+    if not content or not isinstance(memory_key, str) or not memory_key:
+        return None
+    entry = {
+        "memory_key": memory_key,
+        "user_id": metadata.get("user_id"),
+        "title": metadata.get("title") or "未命名记忆",
+        "content": content,
+        "create_time": metadata.get("create_time"),
+        "confidence": metadata.get("confidence"),
+        "metadata": metadata,
+    }
+    if relevance_score is not None:
+        entry["relevance_score"] = max(0.0, min(1.0, float(relevance_score)))
+    return entry
 
 
 def normalize_embedding(value: Any) -> list[float]:

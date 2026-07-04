@@ -332,6 +332,85 @@ class TermMemoryTest(unittest.TestCase):
             reason="manual_review",
         )
 
+    def test_list_topic_memory_merge_candidates_requires_two_relevant_memories(self):
+        store = FakeStore(results=[
+            (
+                Document(
+                    page_content="今天调整了 Aura 的人设提示词。",
+                    metadata={
+                        "memory_key": "key-a",
+                        "user_id": "user-1",
+                        "title": "人设调整",
+                        "create_time": "2026-07-04 10:00",
+                    },
+                ),
+                0.8,
+            )
+        ])
+
+        with patch.object(term_memory, "get_memory_vector_store", return_value=store):
+            result = term_memory.list_topic_memory_merge_candidates(
+                user_id="user-1",
+                topic_query="今天 Aura 项目改动",
+            )
+
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["total"], 0)
+
+    def test_list_topic_memory_merge_candidates_merges_topic_matches(self):
+        store = FakeStore(results=[
+            (
+                Document(
+                    page_content="今天调整了 Aura 的人设提示词。",
+                    metadata={
+                        "memory_key": "key-a",
+                        "user_id": "user-1",
+                        "title": "人设调整",
+                        "create_time": "2026-07-04 10:00",
+                    },
+                ),
+                0.82,
+            ),
+            (
+                Document(
+                    page_content="今天把情绪检测从关键词改成 LLM 判断。",
+                    metadata={
+                        "memory_key": "key-b",
+                        "user_id": "user-1",
+                        "title": "情绪检测",
+                        "create_time": "2026-07-04 11:00",
+                    },
+                ),
+                0.76,
+            ),
+        ])
+
+        with (
+            patch.object(term_memory, "get_memory_vector_store", return_value=store),
+            patch.object(
+                term_memory,
+                "merge_memory_contents",
+                return_value={
+                    "title": "Aura 项目改动",
+                    "content": "今天集中调整 Aura 项目，包括人设提示词和情绪检测。",
+                    "reason": "同一主题下的项目迭代线索",
+                },
+            ) as merge_memory_contents,
+        ):
+            result = term_memory.list_topic_memory_merge_candidates(
+                user_id="user-1",
+                topic_query="今天 Aura 项目改动",
+                threshold=0.52,
+            )
+
+        self.assertEqual(result["total"], 1)
+        item = result["items"][0]
+        self.assertEqual(item["memory_keys"], ["key-a", "key-b"])
+        self.assertEqual(item["suggested_title"], "Aura 项目改动")
+        merge_memory_contents.assert_called_once()
+        _, kwargs = merge_memory_contents.call_args
+        self.assertEqual(kwargs["topic_query"], "今天 Aura 项目改动")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -70,7 +70,7 @@ Be conservative. If you are unsure whether a new fact should replace an old one,
 """
 
 MEMORY_MERGE_SYSTEM_PROMPT = """
-你是 Aura 的长期记忆整理器。你会收到同一用户几条高度相似的长期记忆。
+你是 Aura 的长期记忆整理器。你会收到同一用户几条高度相似、或被明确要求按同一主题归并的长期记忆。
 请把它们合并成一条新的长期记忆，必须只返回一个 JSON 对象。
 
 JSON schema:
@@ -85,6 +85,7 @@ JSON schema:
 - 不要编造原记忆里没有的事实。
 - 文字要简洁但有语境，不要写成数据库字段。
 - 如果几条记忆有冲突，保留更具体或更新的说法，并在 reason 里说明。
+- 如果 payload 里有 topic_query，说明这次是按主题整理，不要求几条记忆完全重复；但仍然只能整合同一主题下互相补充的内容，不要把独立偏好或无关生活事件硬揉在一起。
 - content 建议 80-220 字。
 """
 
@@ -146,7 +147,7 @@ def judge_memory_dedup(
 
 
 @traceable(name="aura_memory_merge")
-def merge_memory_contents(memories: list[dict[str, Any]]) -> dict[str, str]:
+def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | None = None) -> dict[str, str]:
     cleaned_memories = [
         {
             "title": clean_string(memory.get("title"), max_length=80, default="未命名记忆"),
@@ -164,7 +165,15 @@ def merge_memory_contents(memories: list[dict[str, Any]]) -> dict[str, str]:
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_MERGE_SYSTEM_PROMPT.strip()),
-                HumanMessage(content=json.dumps({"memories": cleaned_memories}, ensure_ascii=False)),
+                HumanMessage(
+                    content=json.dumps(
+                        {
+                            "topic_query": clean_string(topic_query, max_length=120, default=None),
+                            "memories": cleaned_memories,
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
             ],
         )
         raw_result = parse_json_object(message_content_to_text(response.content))
