@@ -1,5 +1,11 @@
 # Aura Web
 
+## 在整体架构中的位置
+
+- `apps/web` 是 Next.js + React Web 工作台。
+- `apps/bff` 提供统一 API、认证代理和 SSE 转发。
+- 移动端已迁移为仓库根目录 `app/` 下的 Flutter 工程，不再属于 `AI-Web` pnpm workspace。
+
 Aura Web 是 Aura 项目的 Next.js 用户端，面向 AI 陪伴、聊天、记忆、设置和认证流程。
 
 ## 技术栈

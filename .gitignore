@@ -49,6 +49,8 @@ test/
 
 !Server/core-service/src/test/
 !Server/core-service/src/test/**
+!app/test/
+!app/test/**
 
 
 PRINCIPLES.md

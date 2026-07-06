@@ -1,6 +1,6 @@
 # Aura BFF
 
-Aura BFF 是 `AI-Web` Monorepo 中的 NestJS 聚合层，位于前端应用与后端服务之间，为 Web、PC、Admin、Mobile 等客户端提供统一 API 入口。
+Aura BFF 是 `AI-Web` Monorepo 中的 NestJS 聚合层，位于前端应用与后端服务之间，为 Web、PC、Admin 以及根目录 `app/` Flutter 移动端提供统一 API 入口。
 
 ## 当前能力
 
@@ -22,6 +22,8 @@ Next.js Web
   -> BFF 透传 text/event-stream
   -> Web 端增量渲染
 ```
+
+Flutter 移动端后续也复用同一条 BFF 链路，不直接依赖 Java Core Service 或 Python AI Service。
 
 `/api/chat/sse` 是受保护接口，前端需要携带：
 

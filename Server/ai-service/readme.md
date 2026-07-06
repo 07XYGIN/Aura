@@ -1,5 +1,11 @@
 # Aura AI Service
 
+## 在整体架构中的位置
+
+- AI Service 提供 LangGraph 对话编排、SSE 流式输出、工具调用、记忆和历史能力。
+- Web、PC 与根目录 `app/` Flutter 移动端后续都通过 `AI-Web/apps/bff` 消费 AI 对话接口。
+- BFF 负责注入用户身份、代理 SSE，并隔离客户端与 AI Service 的内部地址。
+
 Aura 的 Python AI 对话服务，负责 LangGraph 编排、SSE 流式输出、工具调用、长期记忆和聊天历史。
 
 ## 简介

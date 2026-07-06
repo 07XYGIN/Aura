@@ -1,5 +1,11 @@
 # Aura Admin
 
+## 在整体架构中的位置
+
+- `apps/admin` 是 Vue 3 管理后台。
+- `apps/bff` 后续承接管理端聚合 API。
+- 移动端已迁移为仓库根目录 `app/` 下的 Flutter 工程，不再属于 `AI-Web` pnpm workspace。
+
 Aura Admin 是 Aura 项目的 Vue 3 管理后台，负责用户资料、后台工作台和后续运营管理能力的承载。
 
 ## 技术栈

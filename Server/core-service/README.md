@@ -1,5 +1,11 @@
 # Aura Core Service
 
+## 在整体架构中的位置
+
+- Core Service 提供用户注册、登录、资料和 token 状态能力。
+- Web、PC、Admin 与根目录 `app/` Flutter 移动端都应优先通过 `AI-Web/apps/bff` 访问这些能力。
+- 客户端不直接持有 Core Service 内部地址，BFF 负责统一代理和响应裁剪。
+
 Aura Core Service 是基于 Spring Boot 的核心业务服务，负责用户注册、登录、资料管理、JWT 签发和 Redis 登录态缓存。
 
 ## 技术栈

@@ -1,5 +1,11 @@
 # Aura PC
 
+## 在整体架构中的位置
+
+- `apps/PC` 是 Vue 3 PC 聊天端。
+- `apps/bff` 提供统一 API、认证代理和 SSE 转发。
+- 移动端已迁移为仓库根目录 `app/` 下的 Flutter 工程，不再属于 `AI-Web` pnpm workspace。
+
 Aura PC 是 Aura 项目的 Vue 3 桌面客户端，承担聊天、记忆、设置和登录注册等核心使用场景。
 
 ## 技术栈

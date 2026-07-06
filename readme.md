@@ -13,7 +13,7 @@
 ![Vue.js](https://img.shields.io/badge/Vue.js-3.x-4FC08D?logo=vuedotjs&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16.x-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.x-61DAFB?logo=react&logoColor=white)
-![React Native](https://img.shields.io/badge/React_Native-0.85+-20232A?logo=react&logoColor=61DAFB)
+![Flutter](https://img.shields.io/badge/Flutter-3.44+-02569B?logo=flutter&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 
 ### 服务端
@@ -38,7 +38,7 @@
 
 ## 📖 简介
 
-**Aura** 是一个 AI 陪伴聊天项目，采用前后端分层与多服务协作架构，覆盖 AI 对话、用户认证、管理后台、PC Web、Next.js Web、移动端和 BFF 聚合层。项目横跨 Java、Python、Node.js、Vue、React 与 React Native 多个技术方向。
+**Aura** 是一个 AI 陪伴聊天项目，采用前后端分层与多服务协作架构，覆盖 AI 对话、用户认证、管理后台、PC Web、Next.js Web、移动端和 BFF 聚合层。项目横跨 Java、Python、Node.js、Vue、React 与 Flutter 多个技术方向。
 
 ---
 
@@ -62,9 +62,9 @@
 - 支持主题切换、路由过渡、请求封装和基础 UI 组件
 
 ### 📱 移动端
-- React Native CLI 移动端工程已搭建
-- Android / iOS 原生工程与 Metro 基础配置保留
-- 默认模板屏幕已删除，目前只保留可启动空骨架
+- Flutter 移动端工程位于仓库根目录 `app/`
+- Android 工程已生成，Web 平台保留用于快速调试 UI
+- 默认模板屏幕保留，后续接入聊天、认证与历史记录页面
 - 聊天界面、认证和后端联动仍在接入中
 
 ### 🧩 BFF 聚合层
@@ -78,7 +78,7 @@
 ```
 ┌────────────────────────────────────────────────────────┐
 │                      客户端层                           │
-│  Admin(Vue3)  PC(Vue3)  Web(Next/React)  Mobile(RN)     │
+│  Admin(Vue3)  PC(Vue3)  Web(Next/React)  Mobile(Flutter)│
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
@@ -108,7 +108,6 @@ AI-Web/                       # 前端 Monorepo（pnpm workspace）
 │   ├── admin/                # Vue3 管理后台
 │   ├── PC/                   # Vue3 PC 聊天端
 │   ├── web/                  # Next.js + React 新版 Web 工作台
-│   ├── mobile/               # React Native 移动端
 │   └── ...
 └── package/
     ├── Types/                # 共享 TypeScript 类型包
@@ -118,6 +117,11 @@ Server/                       # 后端服务
 ├── core-service/             # Spring Boot 用户认证与业务服务
 ├── ai-service/               # FastAPI + LangGraph AI 服务
 └── ...
+
+app/                          # Flutter 移动端
+├── lib/                      # Dart 应用代码
+├── android/                  # Android 原生工程
+└── web/                      # Flutter Web 调试入口
 ```
 
 ---
@@ -125,8 +129,9 @@ Server/                       # 后端服务
 ## 🚀 快速开始
 
 ### 环境要求
-- Node.js 18+，移动端建议 Node.js 22.11+
+- Node.js 18+
 - pnpm 10+
+- Flutter 3.44+ / Dart 3.12+
 - Java 17+
 - Python 3.12+ 与 uv
 - PostgreSQL 16+
@@ -164,9 +169,15 @@ pnpm dev:bff                # NestJS BFF
 
 ### 启动移动端
 ```bash
-cd AI-Web
-pnpm --filter mobile start
-pnpm --filter mobile android
+cd app
+flutter run -d chrome
+```
+
+Android 模拟器：
+```bash
+cd app
+flutter emulators --launch Pixel_8_API_36
+flutter run
 ```
 
 ---
@@ -183,7 +194,7 @@ pnpm --filter mobile android
 - [x] Vue3 Admin 基础登录/注册/用户页
 - [x] Vue3 PC 聊天端基础页面
 - [x] Next.js Web 工作台基础页面
-- [x] React Native 与 NestJS BFF 基础骨架清理
+- [x] Flutter 移动端基础工程搭建
 
 ### 🔨 进行中
 - [ ] BFF 对核心服务和 AI 服务的统一聚合
