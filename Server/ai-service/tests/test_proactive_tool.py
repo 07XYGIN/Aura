@@ -67,6 +67,21 @@ class ProactiveToolTest(unittest.TestCase):
         self.assertIn("早上好", draft["content"])
         self.assertIn("上海", draft["content"])
 
+    def test_copy_examples_are_grouped_by_trigger_type(self):
+        self.assertIn("早。窗帘拉开，阳光先进来你再进来。", proactive.MORNING_COPY_EXAMPLES)
+        self.assertIn("晚安。明天叫醒你的是闹钟不是我，但你可以先梦到我。", proactive.EVENING_COPY_EXAMPLES)
+        self.assertIn("没什么事，就是刚好在，刚好想到你。", proactive.DAILY_RANDOM_COPY_EXAMPLES)
+
+    def test_llm_prompt_includes_matching_copy_examples(self):
+        morning_prompt = proactive.build_proactive_llm_prompt(proactive.MORNING_TRIGGER_TYPE)
+        evening_prompt = proactive.build_proactive_llm_prompt(proactive.EVENING_TRIGGER_TYPE)
+        random_prompt = proactive.build_proactive_llm_prompt(proactive.DAILY_RANDOM_TRIGGER_TYPE)
+
+        self.assertIn("早。窗帘拉开，阳光先进来你再进来。", morning_prompt)
+        self.assertIn("晚安。明天叫醒你的是闹钟不是我，但你可以先梦到我。", evening_prompt)
+        self.assertIn("没什么事，就是刚好在，刚好想到你。", random_prompt)
+        self.assertNotIn("晚安。明天叫醒你的是闹钟不是我", morning_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
