@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
+from fnmatch import fnmatch
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -12,6 +13,7 @@ from app.core import proactive_scheduler
 class FakeRedis:
     def __init__(self):
         self.members: dict[str, float] = {}
+        self.values: dict[str, str] = {}
 
     def zadd(self, _key, mapping):
         self.members.update(mapping)
@@ -34,6 +36,19 @@ class FakeRedis:
                 removed += 1
                 del self.members[member]
         return removed
+
+    def set(self, key, value):
+        self.values[key] = str(value)
+        return True
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def delete(self, key):
+        return int(self.values.pop(key, None) is not None)
+
+    def scan_iter(self, match):
+        return [key for key in self.values if fnmatch(key, match)]
 
 
 class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
@@ -85,6 +100,8 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(proactive.status, "sent")
         self.assertEqual(proactive.sent_at, now)
         self.assertEqual(session.add.call_count, 2)
+        added_records = [call.args[0] for call in session.add.call_args_list]
+        self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
         session.commit.assert_awaited_once()
 
     async def test_enqueue_pending_indexes_future_messages_within_lookahead(self):
@@ -102,6 +119,57 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(count, 1)
         enqueue.assert_called_once()
+
+    def test_collect_due_silence_user_ids_skips_triggered_user(self):
+        redis = FakeRedis()
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
+        redis.set("last_user_message:user-1", now.timestamp() - proactive_scheduler.SILENCE_THRESHOLD_SECONDS - 1)
+        redis.set("proactive_triggered:user-1", "1")
+
+        with patch("app.core.silence_state.get_redis_client", return_value=redis):
+            due_user_ids = proactive_scheduler.collect_due_silence_user_ids(now=now)
+
+        self.assertEqual(due_user_ids, [])
+
+    def test_collect_due_silence_user_ids_skips_deep_night(self):
+        redis = FakeRedis()
+        now = datetime(2026, 7, 6, 18, 0, tzinfo=UTC)
+        redis.set("last_user_message:user-1", now.timestamp() - proactive_scheduler.SILENCE_THRESHOLD_SECONDS - 1)
+
+        with patch("app.core.silence_state.get_redis_client", return_value=redis):
+            due_user_ids = proactive_scheduler.collect_due_silence_user_ids(now=now)
+
+        self.assertEqual(due_user_ids, [])
+
+    async def test_trigger_silence_proactive_messages_sends_and_marks_triggered(self):
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
+        user_id = uuid4()
+        session = SimpleNamespace(
+            add=unittest.mock.Mock(),
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
+
+        with (
+            patch(
+                "app.core.proactive_scheduler.build_recent_conversation_context",
+                AsyncMock(return_value="用户: 今天在准备发布"),
+            ),
+            patch("app.core.proactive_scheduler.mark_silence_proactive_triggered", return_value=True) as mark,
+        ):
+            sent_count = await proactive_scheduler.trigger_silence_proactive_messages(
+                session,
+                [str(user_id)],
+                now=now,
+            )
+
+        self.assertEqual(sent_count, 1)
+        session.flush.assert_awaited_once()
+        session.commit.assert_awaited_once()
+        mark.assert_called_once_with(str(user_id))
+        added_records = [call.args[0] for call in session.add.call_args_list]
+        self.assertEqual(getattr(added_records[0], "trigger_type", None), "silence")
+        self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
 
 
 if __name__ == "__main__":

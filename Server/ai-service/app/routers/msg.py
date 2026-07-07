@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from app.core.agent.agent_graph import aura_agent
 from app.core.agent.protocol import error_event, sse_data
 from app.core.emotion import derive_emotion_state
+from app.core.silence_state import schedule_user_message_activity_record
 from app.schemas.request import MessageRequest
 
 router = APIRouter(
@@ -175,6 +176,7 @@ async def send_message(msg: MessageRequest):
             detail=f"Aura 正在处理太多实时对话，请稍后再试。（当前上限 {_sse_max_concurrency}）",
         )
 
+    schedule_user_message_activity_record(msg.user_id)
     return StreamingResponse(
         event_generator(
             msg.message,

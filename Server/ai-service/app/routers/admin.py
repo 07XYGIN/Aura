@@ -370,6 +370,7 @@ def chat_message_admin_dict(message: ChatMessage) -> dict[str, Any]:
         "userId": str(message.user_id),
         "role": message.sender_type,
         "content": message.content,
+        "isProactive": message.is_proactive,
         "createdAt": datetime_iso(message.created_at),
     }
 

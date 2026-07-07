@@ -91,6 +91,7 @@ export const auraMessageConfig: AuraResourceConfig<AuraSessionMessage> = {
     { prop: 'sessionId', label: '会话 ID', minWidth: 200, type: 'text' },
     { prop: 'userId', label: '用户 ID', minWidth: 180, type: 'text' },
     { prop: 'role', label: '角色', width: 110, type: 'tag' },
+    { prop: 'isProactive', label: '主动触发', width: 110, type: 'tag' },
     { prop: 'content', label: '消息内容', minWidth: 360, type: 'text' },
     { prop: 'createdAt', label: '创建时间', minWidth: 180, type: 'text' },
   ],

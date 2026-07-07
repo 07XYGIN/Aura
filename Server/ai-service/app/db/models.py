@@ -147,6 +147,7 @@ class ChatMessage(Base):
     batch_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
     batch_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_proactive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -132,6 +132,7 @@ class ChatMessageDto(TableSchema):
     content_type: str | None = Field(default=None, alias="contentType")
     emotion_label: str | None = Field(default=None, alias="emotionLabel")
     token_count: int | None = Field(default=None, alias="tokenCount")
+    is_proactive: bool | None = Field(default=None, alias="isProactive")
     metadata: Any = None
     created_at: datetime | None = Field(default=None, alias="createdAt")
 

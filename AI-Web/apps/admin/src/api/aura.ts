@@ -51,6 +51,7 @@ export interface AuraSessionMessage {
   userId: string
   role?: string
   content?: string
+  isProactive?: boolean
   createdAt?: string
 }
 

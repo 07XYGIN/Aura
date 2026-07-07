@@ -114,6 +114,7 @@ const pagination = reactive({
 
 const formatValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'boolean') return value ? '是' : '否'
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
   return String(value)
 }

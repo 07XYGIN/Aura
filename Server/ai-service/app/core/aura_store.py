@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.silence_state import schedule_user_message_activity_record
 from app.db.models import (
     AuraProfile,
     ChatMessage,
@@ -236,11 +237,12 @@ class AuraStore:
             if conversation_session is None or conversation_session.user_id != user_id:
                 raise AuraNotFoundError("session not found")
 
+            sender_type = clean_text(request.sender_type) or "assistant"
             message = ChatMessage(
                 id=uuid4(),
                 session_id=session_id,
                 user_id=user_id,
-                sender_type=clean_text(request.sender_type) or "assistant",
+                sender_type=sender_type,
                 sender_id=clean_text(request.sender_id),
                 content=clean_text(request.content) or "",
                 content_type=clean_text(request.content_type) or "text",
@@ -256,6 +258,8 @@ class AuraStore:
 
             self.session.add(message)
             await self.session.flush()
+            if sender_type == "user":
+                schedule_user_message_activity_record(str(user_id))
 
             snapshot = None
             if request.emotion_snapshot:
@@ -535,6 +539,7 @@ def chat_message_dict(message: ChatMessage) -> dict[str, Any]:
         "tokenCount": message.token_count,
         "batchId": str(message.batch_id) if message.batch_id else None,
         "batchIndex": message.batch_index,
+        "isProactive": message.is_proactive,
         "sentAt": datetime_iso(message.sent_at),
         "metadata": json_dumps(message.metadata_json),
         "createdAt": datetime_iso(message.created_at),

@@ -296,6 +296,7 @@ CREATE TABLE IF NOT EXISTS chat_message (
     batch_id uuid,
     batch_index int,
     sent_at timestamptz,
+    is_proactive boolean NOT NULL DEFAULT false,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -331,6 +332,16 @@ BEGIN
     ) THEN
         ALTER TABLE chat_message ADD COLUMN sent_at timestamptz;
     END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_message'
+          AND column_name = 'is_proactive'
+    ) THEN
+        ALTER TABLE chat_message ADD COLUMN is_proactive boolean NOT NULL DEFAULT false;
+    END IF;
 END $$;
 
 COMMENT ON TABLE chat_message IS '消息明细表，保存用户和 Aura 的每条消息';
@@ -346,6 +357,7 @@ COMMENT ON COLUMN chat_message.token_count IS '消息 token 数估算';
 COMMENT ON COLUMN chat_message.batch_id IS '回复批次 ID，用于标识一次模型调用拆出的多条 Aura 消息';
 COMMENT ON COLUMN chat_message.batch_index IS '批次内消息顺序，从 0 开始';
 COMMENT ON COLUMN chat_message.sent_at IS '消息实际或计划发送时间，统一使用带时区时间';
+COMMENT ON COLUMN chat_message.is_proactive IS '是否为 Aura 主动触发消息，例如沉默后的低压力问候';
 COMMENT ON COLUMN chat_message.metadata IS '消息扩展备注 JSON，例如附件列表';
 COMMENT ON COLUMN chat_message.created_at IS '消息创建时间';
 
@@ -873,6 +885,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_session_aura_profile ON conversation
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_time ON chat_message(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_user_time ON chat_message(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_batch ON chat_message(batch_id, batch_index) WHERE batch_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_chat_message_proactive_user_time ON chat_message(user_id, created_at DESC) WHERE is_proactive;
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_user_time ON emotion_snapshot(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_session_time ON emotion_snapshot(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_message ON emotion_snapshot(message_id);

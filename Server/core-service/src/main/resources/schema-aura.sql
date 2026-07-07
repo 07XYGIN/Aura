@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS chat_message (
     content_type varchar(32) NOT NULL DEFAULT 'text',
     emotion_label varchar(64),
     token_count int NOT NULL DEFAULT 0,
+    is_proactive boolean NOT NULL DEFAULT false,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -267,6 +268,7 @@ COMMENT ON TABLE chat_message IS '消息明细表，保存用户和 Aura 的每�
 COMMENT ON COLUMN chat_message.sender_type IS '发送者类型，例如 user、assistant、system';
 COMMENT ON COLUMN chat_message.content IS '消息正文';
 COMMENT ON COLUMN chat_message.emotion_label IS '消息关联的主情绪标签';
+COMMENT ON COLUMN chat_message.is_proactive IS '是否为 Aura 主动触发消息，例如沉默后的低压力问候';
 
 COMMENT ON TABLE emotion_snapshot IS '情绪快照表，保存每轮对话识别出的用户情绪和强度';
 COMMENT ON COLUMN emotion_snapshot.dominant_emotion IS '主导情绪';
@@ -295,6 +297,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_session_user_time ON conversation_se
 CREATE INDEX IF NOT EXISTS idx_conversation_session_aura_profile ON conversation_session(aura_profile_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_time ON chat_message(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_user_time ON chat_message(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_message_proactive_user_time ON chat_message(user_id, created_at DESC) WHERE is_proactive;
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_user_time ON emotion_snapshot(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_session_time ON emotion_snapshot(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emotion_snapshot_message ON emotion_snapshot(message_id);
