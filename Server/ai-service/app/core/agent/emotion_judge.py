@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
-from app.core.config import emotion_judge_llm, ensure_deepseek_api_key
+from app.core.config import emotion_judge_llm, ensure_llm_api_key
 from app.core.emotion import DEFAULT_EMOTION, derive_emotion_state
 
 EMOTION_JUDGE_SYSTEM_PROMPT = """
@@ -113,7 +113,7 @@ def judge_emotion_state(
     }
 
     try:
-        ensure_deepseek_api_key()
+        ensure_llm_api_key()
         response = emotion_judge_llm.invoke(
             [
                 SystemMessage(content=EMOTION_JUDGE_SYSTEM_PROMPT.strip()),
@@ -123,7 +123,7 @@ def judge_emotion_state(
         raw = parse_json_object(message_content_to_text(response.content))
         return normalize_emotion_judgement(raw, fallback, text)
     except Exception:
-        logging.exception("Failed to judge emotion context with DeepSeek")
+        logging.exception("Failed to judge emotion context with the configured LLM")
         return suppress_retrospective_false_positive(fallback, text)
 
 

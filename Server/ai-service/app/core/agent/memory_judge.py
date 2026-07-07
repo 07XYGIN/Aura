@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
-from app.core.config import ensure_deepseek_api_key, memory_judge_llm
+from app.core.config import ensure_llm_api_key, memory_judge_llm
 
 MEMORY_JUDGE_SYSTEM_PROMPT = """
 ---
@@ -102,7 +102,7 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
     }
 
     try:
-        ensure_deepseek_api_key()
+        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_JUDGE_SYSTEM_PROMPT.strip()),
@@ -112,7 +112,7 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
         raw_candidate = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_candidate(raw_candidate, text)
     except Exception:
-        logging.exception("Failed to judge memory candidate with DeepSeek")
+        logging.exception("Failed to judge memory candidate with the configured LLM")
         return memory_candidate(False, "short", None, None, 0.0, "memory_judge_failed", [])
 
 
@@ -132,7 +132,7 @@ def judge_memory_dedup(
         return memory_dedup_decision("unrelated", 0.0, "empty_memory")
 
     try:
-        ensure_deepseek_api_key()
+        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_DEDUP_SYSTEM_PROMPT.strip()),
@@ -142,7 +142,7 @@ def judge_memory_dedup(
         raw_decision = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_dedup_decision(raw_decision)
     except Exception:
-        logging.exception("Failed to judge memory deduplication with DeepSeek")
+        logging.exception("Failed to judge memory deduplication with the configured LLM")
         return memory_dedup_decision("unrelated", 0.0, "dedup_judge_failed")
 
 
@@ -161,7 +161,7 @@ def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | Non
         return memory_merge_result("合并记忆", "", "empty_memory_cluster")
 
     try:
-        ensure_deepseek_api_key()
+        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_MERGE_SYSTEM_PROMPT.strip()),
@@ -179,7 +179,7 @@ def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | Non
         raw_result = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_merge_result(raw_result, cleaned_memories)
     except Exception:
-        logging.exception("Failed to merge memory contents with DeepSeek")
+        logging.exception("Failed to merge memory contents with the configured LLM")
         return fallback_memory_merge(cleaned_memories)
 
 
