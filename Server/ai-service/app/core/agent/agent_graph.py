@@ -14,7 +14,7 @@ from langgraph.types import Checkpointer
 from langsmith import traceable
 
 from app.core.attachment_store import format_attachment_context, load_attachments
-from app.core.config import ensure_llm_api_key, llm, structured_reply_llm
+from app.core.config import llm, structured_reply_llm
 from app.core.emotion import format_emotion_context
 from app.core.reply_timing_state import store_reply_timing_state
 from .protocol import (
@@ -103,7 +103,6 @@ def turn_judge(state: AuraState) -> AuraState:
 
 @traceable(name="aura_final_response_generation")
 def call_model(state: AuraState) -> AuraState:
-    ensure_llm_api_key()
     system_prompt = build_runtime_system_prompt(state)
     messages = [SystemMessage(content=system_prompt)] + trim_short_term_messages(state["messages"])
     response = llm_with_tools.invoke(messages)

@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
-from app.core.config import ensure_llm_api_key, memory_judge_llm
+from app.core.config import memory_judge_llm
 
 MEMORY_JUDGE_SYSTEM_PROMPT = """
 ---
@@ -102,7 +102,6 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
     }
 
     try:
-        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_JUDGE_SYSTEM_PROMPT.strip()),
@@ -132,7 +131,6 @@ def judge_memory_dedup(
         return memory_dedup_decision("unrelated", 0.0, "empty_memory")
 
     try:
-        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_DEDUP_SYSTEM_PROMPT.strip()),
@@ -161,7 +159,6 @@ def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | Non
         return memory_merge_result("合并记忆", "", "empty_memory_cluster")
 
     try:
-        ensure_llm_api_key()
         response = memory_judge_llm.invoke(
             [
                 SystemMessage(content=MEMORY_MERGE_SYSTEM_PROMPT.strip()),

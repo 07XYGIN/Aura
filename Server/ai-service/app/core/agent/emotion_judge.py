@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
-from app.core.config import emotion_judge_llm, ensure_llm_api_key
+from app.core.config import emotion_judge_llm
 from app.core.emotion import DEFAULT_EMOTION, derive_emotion_state
 
 EMOTION_JUDGE_SYSTEM_PROMPT = """
@@ -113,7 +113,6 @@ def judge_emotion_state(
     }
 
     try:
-        ensure_llm_api_key()
         response = emotion_judge_llm.invoke(
             [
                 SystemMessage(content=EMOTION_JUDGE_SYSTEM_PROMPT.strip()),
