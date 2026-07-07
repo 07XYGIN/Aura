@@ -382,3 +382,14 @@ html::view-transition-new(aura-sidebar) {
     animation-delay: 0s !important;
   }
 }
+
+.aura-markdown .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+.aura-markdown .katex {
+  font-size: 1em;
+}

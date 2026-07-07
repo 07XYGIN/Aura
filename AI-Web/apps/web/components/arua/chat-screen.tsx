@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { ImagePlus, Mic, Paperclip, SendHorizontal, Square, Star, Trash2 } from 'lucide-react'
+import { Copy, ImagePlus, Mic, Paperclip, SendHorizontal, Square, Star, Trash2 } from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
+import { ChatMessageContent } from '@/components/arua/chat-message-content'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { UseSse } from '@ai-web/utils/main'
 import { cn } from '@/lib/utils'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { getCurrentUserId } from '@/lib/current-user'
 import { getPythonApiBaseUrl } from '@/lib/python-request'
 import type { BrowserSpeechRecognition, ChatMessage } from '@/types/arua'
@@ -297,6 +299,7 @@ export function AruaChatScreen() {
     const [emotionReport, setEmotionReport] = useState<AuraEmotionReportPreview | null>(null)
     const [isPurchasingReport, setIsPurchasingReport] = useState(false)
     const [cityAdcode, setCityAdcode] = useState<string | null>(() => readCachedCityAdcode())
+    const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
     const [markedWeirdMessageIds, setMarkedWeirdMessageIds] = useState<Set<string>>(
         () => new Set(),
     )
@@ -883,6 +886,27 @@ export function AruaChatScreen() {
         }
     }
 
+    const handleCopyMessage = async (chatMessage: ChatMessage) => {
+        if (!chatMessage.content) {
+            return
+        }
+
+        try {
+            await copyTextToClipboard(chatMessage.content)
+            setCopiedMessageId(chatMessage.id)
+            window.setTimeout(() => {
+                setCopiedMessageId((currentId) => (currentId === chatMessage.id ? null : currentId))
+            }, 1400)
+            toast.success('已复制消息', {
+                position: 'top-center',
+            })
+        } catch {
+            toast.error('复制失败', {
+                position: 'top-center',
+            })
+        }
+    }
+
     const handleDeleteMessage = async (messageId: string) => {
         if (isStreaming || deletingMessageId) {
             return
@@ -990,9 +1014,10 @@ export function AruaChatScreen() {
                                                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--aura-text-muted)] [animation-delay:240ms]" />
                                             </span>
                                         ) : chatMessage.content ? (
-                                            <p className="break-words whitespace-pre-wrap">
-                                                {chatMessage.content}
-                                            </p>
+                                            <ChatMessageContent
+                                                content={chatMessage.content}
+                                                isUser={isUser}
+                                            />
                                         ) : null}
 
                                         {chatMessage.attachments?.length ? (
@@ -1035,6 +1060,23 @@ export function AruaChatScreen() {
                                         >
                                             😶 有点奇怪
                                         </button>
+                                    ) : null}
+                                    {chatMessage.content ? (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            className={cn(
+                                                'mx-1 self-center rounded-full text-[var(--aura-text-muted)] opacity-0 transition-opacity hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)] group-hover/message:opacity-100 focus-visible:opacity-100',
+                                                isUser ? 'order-first' : 'order-last',
+                                                copiedMessageId === chatMessage.id && 'opacity-100',
+                                            )}
+                                            aria-label="复制消息"
+                                            title={copiedMessageId === chatMessage.id ? '已复制' : '复制消息'}
+                                            onClick={() => handleCopyMessage(chatMessage)}
+                                        >
+                                            <Copy className="h-3.5 w-3.5" />
+                                        </Button>
                                     ) : null}
                                     <Button
                                         type="button"
