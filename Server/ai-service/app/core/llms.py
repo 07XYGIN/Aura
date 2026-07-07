@@ -9,7 +9,7 @@ load_dotenv()
 
 
 # Change these four lines when one task should use a different model.
-CHAT_MODEL = LONGCAT
+CHAT_MODEL = DEEPSEEK
 STRUCTURED_REPLY_MODEL = LONGCAT
 MEMORY_JUDGE_MODEL = DEEPSEEK_FLASH
 EMOTION_JUDGE_MODEL = DEEPSEEK_FLASH
