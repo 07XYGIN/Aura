@@ -647,10 +647,61 @@ def get_history(user_id: str) -> list:
                 "batchId": additional_kwargs.get("reply_batch_id") or additional_kwargs.get("batch_id"),
                 "batchIndex": additional_kwargs.get("batch_index"),
                 "batchTotal": additional_kwargs.get("batch_total"),
+                "isProactive": additional_kwargs.get("is_proactive"),
             })
             last_role = "aura"
             last_content = content
     return history
+
+
+def append_proactive_history_message(
+    user_id: str,
+    content: str,
+    message_id: str,
+    sent_at: datetime,
+    trigger_type: str = "silence",
+) -> bool:
+    if aura is None:
+        logging.warning("Skip proactive history append because Aura graph has not been initialized")
+        return False
+
+    normalized_user_id = str(user_id or "").strip()
+    normalized_content = str(content or "").strip()
+    normalized_message_id = str(message_id or "").strip()
+    if not normalized_user_id or not normalized_content or not normalized_message_id:
+        return False
+
+    turn_id = f"proactive-{normalized_message_id}"
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": normalized_user_id,
+            "user_id": normalized_user_id,
+        }
+    }
+    try:
+        aura.update_state(
+            config,
+            {
+                "messages": [
+                    AIMessage(
+                        id=f"ai-{turn_id}",
+                        content=normalized_content,
+                        additional_kwargs={
+                            "turn_id": turn_id,
+                            "sent_at": sent_at.isoformat(),
+                            "is_proactive": True,
+                            "proactive_message_id": normalized_message_id,
+                            "trigger_type": trigger_type,
+                        },
+                    )
+                ],
+                "user_id": normalized_user_id,
+            },
+        )
+    except Exception:
+        logging.exception("Failed to append proactive message to Aura history user_id=%s", normalized_user_id)
+        return False
+    return True
 
 
 def delete_history_message(user_id: str, message_id: str) -> bool:

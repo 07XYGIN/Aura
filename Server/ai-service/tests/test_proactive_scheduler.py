@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatch
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -120,6 +120,123 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 1)
         enqueue.assert_called_once()
 
+    def test_upcoming_daily_greeting_plans_include_morning_and_evening(self):
+        now = datetime(2026, 7, 4, 21, 0, tzinfo=UTC)
+        plans = proactive_scheduler.upcoming_daily_greeting_plans_for_user(
+            user_id="user-1",
+            timezone="Asia/Shanghai",
+            now=now,
+            lookahead_hours=24,
+        )
+
+        self.assertEqual(
+            [plan["trigger_type"] for plan in plans],
+            [
+                proactive_scheduler.MORNING_TRIGGER_TYPE,
+                proactive_scheduler.EVENING_TRIGGER_TYPE,
+            ],
+        )
+        self.assertEqual(plans[0]["window"], "06:00:00-08:00:00")
+        self.assertEqual(plans[1]["window"], "20:00:00-23:00:00")
+
+    async def test_ensure_daily_greeting_messages_creates_upcoming_slots(self):
+        now = datetime(2026, 7, 4, 21, 0, tzinfo=UTC)
+        user_id = uuid4()
+        session = SimpleNamespace(
+            add=unittest.mock.Mock(),
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
+
+        with (
+            patch(
+                "app.core.proactive_scheduler.load_daily_greeting_targets",
+                AsyncMock(
+                    return_value=[
+                        {
+                            "user_id": user_id,
+                            "timezone": "Asia/Shanghai",
+                            "city_adcode": None,
+                        }
+                    ]
+                ),
+            ),
+            patch(
+                "app.core.proactive_scheduler.daily_greeting_already_planned",
+                AsyncMock(return_value=False),
+            ),
+            patch("app.core.proactive_scheduler.enqueue_proactive_messages", return_value=2) as enqueue,
+        ):
+            queued_count = await proactive_scheduler.ensure_daily_greeting_messages(session, now=now)
+
+        self.assertEqual(queued_count, 2)
+        self.assertEqual(session.add.call_count, 2)
+        session.flush.assert_awaited_once()
+        session.commit.assert_awaited_once()
+        added_records = [call.args[0] for call in session.add.call_args_list]
+        self.assertEqual(
+            [record.trigger_type for record in added_records],
+            [
+                proactive_scheduler.MORNING_TRIGGER_TYPE,
+                proactive_scheduler.EVENING_TRIGGER_TYPE,
+            ],
+        )
+        enqueue.assert_called_once()
+
+    async def test_daily_greeting_already_planned_checks_local_day_bounds(self):
+        result = SimpleNamespace(scalar_one_or_none=lambda: uuid4())
+        session = SimpleNamespace(execute=AsyncMock(return_value=result))
+
+        exists = await proactive_scheduler.daily_greeting_already_planned(
+            session,
+            uuid4(),
+            proactive_scheduler.MORNING_TRIGGER_TYPE,
+            date(2026, 7, 5),
+            "Asia/Shanghai",
+        )
+
+        self.assertTrue(exists)
+        session.execute.assert_awaited_once()
+
+    async def test_prepare_daily_morning_content_uses_weather_when_city_exists(self):
+        user_id = uuid4()
+        profile_result = SimpleNamespace(first=lambda: ("Asia/Shanghai", None))
+        session = SimpleNamespace(execute=AsyncMock(return_value=profile_result))
+        proactive = SimpleNamespace(
+            user_id=user_id,
+            trigger_type=proactive_scheduler.MORNING_TRIGGER_TYPE,
+            content=proactive_scheduler.DAILY_GREETING_PLACEHOLDER,
+            metadata_json={"city_adcode": "310000"},
+        )
+
+        with (
+            patch(
+                "app.core.proactive_scheduler.fetch_weather",
+                return_value={
+                    "status": "1",
+                    "city": "上海",
+                    "weather": "小雨",
+                    "temperature": "24",
+                },
+            ) as weather,
+            patch(
+                "app.core.proactive_scheduler.draft_proactive_message_with_llm",
+                return_value={
+                    "content": "早上好，上海小雨，出门记得带伞。",
+                    "tone": "温和",
+                    "should_send": True,
+                    "source": "llm",
+                },
+            ),
+        ):
+            content = await proactive_scheduler.prepare_proactive_message_content(session, proactive)
+
+        self.assertEqual(content, "早上好，上海小雨，出门记得带伞。")
+        self.assertEqual(proactive.content, content)
+        self.assertEqual(proactive.metadata_json["draft_source"], "llm")
+        self.assertEqual(proactive.metadata_json["weather"]["city"], "上海")
+        weather.assert_called_once_with("310000")
+
     def test_collect_due_silence_user_ids_skips_triggered_user(self):
         redis = FakeRedis()
         now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
@@ -155,6 +272,16 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
                 "app.core.proactive_scheduler.build_recent_conversation_context",
                 AsyncMock(return_value="用户: 今天在准备发布"),
             ),
+            patch(
+                "app.core.proactive_scheduler.draft_proactive_message_with_llm",
+                return_value={
+                    "content": "刚刚想到你，过来轻轻放一句问候。",
+                    "tone": "温和",
+                    "should_send": True,
+                    "source": "llm",
+                },
+            ),
+            patch("app.core.proactive_scheduler.append_proactive_history_message", return_value=True) as append_history,
             patch("app.core.proactive_scheduler.mark_silence_proactive_triggered", return_value=True) as mark,
         ):
             sent_count = await proactive_scheduler.trigger_silence_proactive_messages(
@@ -170,6 +297,8 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         added_records = [call.args[0] for call in session.add.call_args_list]
         self.assertEqual(getattr(added_records[0], "trigger_type", None), "silence")
         self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
+        append_history.assert_called_once()
+        self.assertEqual(append_history.call_args.kwargs["trigger_type"], "silence")
 
 
 if __name__ == "__main__":

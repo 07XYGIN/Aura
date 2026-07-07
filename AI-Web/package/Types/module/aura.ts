@@ -12,6 +12,7 @@ export type AuraHistoryMessage = {
     batchId?: string
     batchIndex?: number
     batchTotal?: number
+    isProactive?: boolean
 }
 
 export type AuraMemoryMetadata = {

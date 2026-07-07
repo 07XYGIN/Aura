@@ -13,6 +13,10 @@ from .logging_utils import log_tool
 @log_tool
 def get_weather(city_adcode: str | None = None) -> dict[str, str]:
     """按高德 adcode 查询天气；没有城市时不要猜测，先让用户补充城市。"""
+    return fetch_weather(city_adcode)
+
+
+def fetch_weather(city_adcode: str | None = None) -> dict[str, str]:
     if not city_adcode:
         return {
             "status": "0",

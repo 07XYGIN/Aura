@@ -1,6 +1,9 @@
 import sys
 import unittest
 from pathlib import Path
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import END
@@ -9,7 +12,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.agent_graph import build_runtime_system_prompt, should_continue, tools, trim_short_term_messages, turn_judge
+from app.core.agent.agent_graph import (
+    append_proactive_history_message,
+    build_runtime_system_prompt,
+    should_continue,
+    tools,
+    trim_short_term_messages,
+    turn_judge,
+)
 
 
 class AgentGraphTest(unittest.TestCase):
@@ -60,6 +70,28 @@ class AgentGraphTest(unittest.TestCase):
 
     def test_merge_similar_memories_tool_is_registered(self):
         self.assertIn("merge_similar_memories_tool", [item.name for item in tools])
+
+    def test_append_proactive_history_message_updates_graph_state(self):
+        fake_aura = SimpleNamespace(update_state=unittest.mock.Mock())
+        sent_at = datetime(2026, 7, 7, 10, 0, tzinfo=UTC)
+
+        with patch("app.core.agent.agent_graph.aura", fake_aura):
+            appended = append_proactive_history_message(
+                user_id="user-1",
+                content="我在。",
+                message_id="msg-1",
+                sent_at=sent_at,
+                trigger_type="silence",
+            )
+
+        self.assertTrue(appended)
+        config, state = fake_aura.update_state.call_args.args
+        self.assertEqual(config["configurable"]["thread_id"], "user-1")
+        message = state["messages"][0]
+        self.assertEqual(message.type, "ai")
+        self.assertEqual(message.content, "我在。")
+        self.assertTrue(message.additional_kwargs["is_proactive"])
+        self.assertEqual(message.additional_kwargs["trigger_type"], "silence")
 
     def test_trim_short_term_messages_drops_orphan_tool_messages(self):
         messages = [

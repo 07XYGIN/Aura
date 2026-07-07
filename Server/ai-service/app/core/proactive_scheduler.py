@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Iterable
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -10,7 +10,15 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.agent.tools.proactive import build_proactive_message_draft
+from app.core.agent.agent_graph import append_proactive_history_message
+from app.core.agent.tools.proactive import (
+    DAILY_GREETING_WINDOWS,
+    EVENING_TRIGGER_TYPE,
+    MORNING_TRIGGER_TYPE,
+    build_daily_greeting_plan,
+    draft_proactive_message_with_llm,
+)
+from app.core.agent.tools.weather import fetch_weather
 from app.core.config import (
     AURA_PROACTIVE_SCHEDULER_ENABLED,
     AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS,
@@ -23,7 +31,7 @@ from app.core.silence_state import (
     mark_silence_proactive_triggered,
     silence_proactive_already_triggered,
 )
-from app.db.models import ChatMessage, ConversationSession, ProactiveMessage
+from app.db.models import ChatMessage, ConversationSession, ProactiveMessage, UserProfile, Users
 from app.db.session import AsyncSessionLocal
 
 PROACTIVE_QUEUE_KEY = "proactive_message_queue"
@@ -36,6 +44,10 @@ SILENCE_DEEP_NIGHT_START_HOUR = 1
 SILENCE_DEEP_NIGHT_END_HOUR = 7
 SILENCE_CONTEXT_MESSAGE_LIMIT = 6
 SILENCE_CONTEXT_MAX_LENGTH = 160
+DAILY_GREETING_USER_LIMIT = 500
+DAILY_GREETING_PLACEHOLDER = "Aura 正在准备这条主动问候。"
+DAILY_GREETING_TRIGGER_TYPES = {MORNING_TRIGGER_TYPE, EVENING_TRIGGER_TYPE}
+DEFAULT_DAILY_GREETING_TIMEZONE = "Asia/Shanghai"
 
 _scheduler_task: asyncio.Task | None = None
 
@@ -60,6 +72,7 @@ def collect_due_silence_user_ids(
     now: datetime | None = None,
     threshold_seconds: int = SILENCE_THRESHOLD_SECONDS,
 ) -> list[str]:
+    logging.info('定时任务 执行 collect_due_silence_user_ids')
     now = now or datetime.now(UTC)
     if is_deep_night(now):
         return []
@@ -174,6 +187,188 @@ async def build_recent_conversation_context(
     return " / ".join(parts)[:SILENCE_CONTEXT_MAX_LENGTH]
 
 
+def resolve_daily_greeting_timezone(timezone: str | None) -> tuple[ZoneInfo, str]:
+    timezone_name = (timezone or DEFAULT_DAILY_GREETING_TIMEZONE).strip() or DEFAULT_DAILY_GREETING_TIMEZONE
+    try:
+        return ZoneInfo(timezone_name), timezone_name
+    except Exception:
+        logging.warning("Invalid daily greeting timezone=%s, fallback to %s", timezone, DEFAULT_DAILY_GREETING_TIMEZONE)
+        return ZoneInfo(DEFAULT_DAILY_GREETING_TIMEZONE), DEFAULT_DAILY_GREETING_TIMEZONE
+
+
+def local_day_bounds_utc(target_date: date, timezone: ZoneInfo) -> tuple[datetime, datetime]:
+    start_local = datetime.combine(target_date, time.min, tzinfo=timezone)
+    end_local = start_local + timedelta(days=1)
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
+def local_time_in_window(local_value: datetime, start: time, end: time) -> bool:
+    current = local_value.timetz().replace(tzinfo=None)
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def upcoming_daily_greeting_plans_for_user(
+    user_id: str,
+    timezone: str | None,
+    now: datetime,
+    lookahead_hours: int = AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS,
+) -> list[dict]:
+    zone, timezone_name = resolve_daily_greeting_timezone(timezone)
+    normalized_now = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    lookahead_at = normalized_now + timedelta(hours=lookahead_hours)
+    local_now = normalized_now.astimezone(zone)
+    days_to_scan = max(2, int(lookahead_hours / 24) + 2)
+    plans: list[dict] = []
+
+    for offset in range(days_to_scan):
+        greeting_date = local_now.date() + timedelta(days=offset)
+        daily_plan = build_daily_greeting_plan(
+            user_id=user_id,
+            timezone=timezone_name,
+            now=local_now,
+            target_date=greeting_date,
+        )
+        for trigger_type, slot_name in (
+            (MORNING_TRIGGER_TYPE, "morning"),
+            (EVENING_TRIGGER_TYPE, "evening"),
+        ):
+            slot = daily_plan[slot_name]
+            scheduled_local = datetime.fromisoformat(slot["scheduled_at"])
+            scheduled_utc = scheduled_local.astimezone(UTC)
+            window = DAILY_GREETING_WINDOWS[trigger_type]
+            if scheduled_utc <= normalized_now:
+                is_today = greeting_date == local_now.date()
+                if not (
+                    is_today
+                    and local_time_in_window(local_now, window["start"], window["end"])
+                ):
+                    continue
+                scheduled_utc = normalized_now + timedelta(seconds=1)
+                scheduled_local = scheduled_utc.astimezone(zone)
+
+            if not (normalized_now < scheduled_utc <= lookahead_at):
+                continue
+            plans.append(
+                {
+                    "trigger_type": trigger_type,
+                    "slot": slot_name,
+                    "scheduled_at": scheduled_utc,
+                    "scheduled_local_at": scheduled_local,
+                    "greeting_date": daily_plan["date"],
+                    "timezone": timezone_name,
+                    "window": slot["window"],
+                    "reply_spec": slot["reply_spec"],
+                }
+            )
+
+    plans.sort(key=lambda item: item["scheduled_at"])
+    return plans
+
+
+async def load_daily_greeting_targets(
+    session: AsyncSession,
+    limit: int = DAILY_GREETING_USER_LIMIT,
+) -> list[dict]:
+    result = await session.execute(
+        select(Users.id, UserProfile.timezone, UserProfile.city_adcode)
+        .outerjoin(UserProfile, UserProfile.user_id == Users.id)
+        .order_by(Users.created_at.asc())
+        .limit(limit)
+    )
+    targets: list[dict] = []
+    for user_id, timezone, city_adcode in result.all():
+        targets.append(
+            {
+                "user_id": user_id,
+                "timezone": timezone or DEFAULT_DAILY_GREETING_TIMEZONE,
+                "city_adcode": city_adcode,
+            }
+        )
+    return targets
+
+
+async def daily_greeting_already_planned(
+    session: AsyncSession,
+    user_id: UUID,
+    trigger_type: str,
+    greeting_date: date,
+    timezone: str | None,
+) -> bool:
+    zone, _timezone_name = resolve_daily_greeting_timezone(timezone)
+    day_start, day_end = local_day_bounds_utc(greeting_date, zone)
+    result = await session.execute(
+        select(ProactiveMessage.id)
+        .where(
+            ProactiveMessage.user_id == user_id,
+            ProactiveMessage.trigger_type == trigger_type,
+            ProactiveMessage.scheduled_at >= day_start,
+            ProactiveMessage.scheduled_at < day_end,
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def ensure_daily_greeting_messages(
+    session: AsyncSession,
+    now: datetime | None = None,
+) -> int:
+    now = now or datetime.now(UTC)
+    targets = await load_daily_greeting_targets(session)
+    messages: list[ProactiveMessage] = []
+
+    for target in targets:
+        user_id = target["user_id"]
+        for plan in upcoming_daily_greeting_plans_for_user(
+            user_id=str(user_id),
+            timezone=target.get("timezone"),
+            now=now,
+        ):
+            if await daily_greeting_already_planned(
+                session,
+                user_id,
+                plan["trigger_type"],
+                date.fromisoformat(plan["greeting_date"]),
+                plan["timezone"],
+            ):
+                continue
+
+            title = "Aura 早安问候" if plan["trigger_type"] == MORNING_TRIGGER_TYPE else "Aura 晚安问候"
+            proactive = ProactiveMessage(
+                id=uuid4(),
+                user_id=user_id,
+                trigger_type=plan["trigger_type"],
+                title=title,
+                content=DAILY_GREETING_PLACEHOLDER,
+                scheduled_at=plan["scheduled_at"],
+                status="pending",
+                metadata_json={
+                    "source": "daily_greeting_scheduler",
+                    "trigger_type": plan["trigger_type"],
+                    "slot": plan["slot"],
+                    "greeting_date": plan["greeting_date"],
+                    "timezone": plan["timezone"],
+                    "window": plan["window"],
+                    "reply_spec": plan["reply_spec"],
+                    "scheduled_local_at": plan["scheduled_local_at"].isoformat(),
+                    "city_adcode": target.get("city_adcode"),
+                },
+            )
+            session.add(proactive)
+            messages.append(proactive)
+
+    if not messages:
+        return 0
+
+    await session.flush()
+    queued_count = enqueue_proactive_messages(messages)
+    await session.commit()
+    logging.info("Daily greeting scheduler planned %s message(s)", len(messages))
+    return queued_count
+
+
 async def trigger_silence_proactive_messages(
     session: AsyncSession,
     user_ids: list[str],
@@ -193,7 +388,11 @@ async def trigger_silence_proactive_messages(
             continue
 
         user_context = await build_recent_conversation_context(session, user_id)
-        draft = build_proactive_message_draft(SILENCE_TRIGGER_TYPE, user_context)
+        draft = await asyncio.to_thread(
+            draft_proactive_message_with_llm,
+            SILENCE_TRIGGER_TYPE,
+            user_context,
+        )
         if not draft.get("should_send", True):
             continue
 
@@ -231,6 +430,64 @@ async def trigger_silence_proactive_messages(
     return sent_count
 
 
+async def load_daily_greeting_context(session: AsyncSession, user_id: UUID) -> dict:
+    result = await session.execute(
+        select(UserProfile.timezone, UserProfile.city_adcode)
+        .where(UserProfile.user_id == user_id)
+        .limit(1)
+    )
+    row = result.first()
+    if not row:
+        return {
+            "timezone": DEFAULT_DAILY_GREETING_TIMEZONE,
+            "city_adcode": None,
+        }
+    timezone, city_adcode = row
+    return {
+        "timezone": timezone or DEFAULT_DAILY_GREETING_TIMEZONE,
+        "city_adcode": city_adcode,
+    }
+
+
+async def prepare_proactive_message_content(
+    session: AsyncSession,
+    proactive: ProactiveMessage,
+) -> str:
+    if proactive.trigger_type not in DAILY_GREETING_TRIGGER_TYPES:
+        return str(proactive.content or "").strip()
+
+    metadata = dict(getattr(proactive, "metadata_json", None) or {})
+    profile_context = await load_daily_greeting_context(session, proactive.user_id)
+    city_adcode = metadata.get("city_adcode") or profile_context.get("city_adcode")
+    weather_context: dict | None = None
+    if proactive.trigger_type == MORNING_TRIGGER_TYPE and city_adcode:
+        weather_context = await asyncio.to_thread(fetch_weather, str(city_adcode))
+
+    draft = await asyncio.to_thread(
+        draft_proactive_message_with_llm,
+        proactive.trigger_type,
+        "",
+        weather_context,
+    )
+    if not draft.get("should_send", True):
+        return ""
+
+    content = str(draft.get("content") or "").strip()
+    if not content:
+        return ""
+
+    metadata.update(
+        {
+            "draft_source": draft.get("source"),
+            "tone": draft.get("tone"),
+            "weather": weather_context or {},
+        }
+    )
+    proactive.content = content
+    proactive.metadata_json = metadata
+    return content
+
+
 async def send_proactive_message_records(
     session: AsyncSession,
     messages: Iterable[ProactiveMessage],
@@ -238,7 +495,15 @@ async def send_proactive_message_records(
 ) -> int:
     now = now or datetime.now(UTC)
     sent_count = 0
+    changed_count = 0
     for proactive in messages:
+        content = await prepare_proactive_message_content(session, proactive)
+        if not content:
+            proactive.status = "skipped"
+            proactive.updated_at = now
+            changed_count += 1
+            continue
+
         session_record = ConversationSession(
             id=uuid4(),
             user_id=proactive.user_id,
@@ -258,7 +523,7 @@ async def send_proactive_message_records(
             user_id=proactive.user_id,
             sender_type="assistant",
             sender_id="aura",
-            content=proactive.content,
+            content=content,
             content_type="text",
             sent_at=now,
             is_proactive=True,
@@ -269,15 +534,24 @@ async def send_proactive_message_records(
                 "scheduled_at": proactive.scheduled_at.isoformat(),
             },
         )
+        append_proactive_history_message(
+            user_id=str(proactive.user_id),
+            content=content,
+            message_id=str(chat_message.id),
+            sent_at=now,
+            trigger_type=proactive.trigger_type,
+        )
         proactive.status = "sent"
         proactive.sent_at = now
         proactive.updated_at = now
         session.add(session_record)
         session.add(chat_message)
         sent_count += 1
+        changed_count += 1
 
-    if sent_count:
+    if changed_count:
         await session.commit()
+    if sent_count:
         logging.info("Proactive scheduler sent %s message(s)", sent_count)
     return sent_count
 
@@ -323,6 +597,7 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
     async with AsyncSessionLocal() as session:
         silence_user_ids = collect_due_silence_user_ids(now=now)
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
+        await ensure_daily_greeting_messages(session, now=now)
         await enqueue_pending_proactive_messages(session, now=now)
         due_ids = pop_due_proactive_message_ids(now=now)
         scheduled_sent_count = await process_due_proactive_messages(session, due_ids, now=now)
