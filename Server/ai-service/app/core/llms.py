@@ -3,13 +3,13 @@ import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-from app.core.owned_llms import DEEPSEEK, DEEPSEEK_FLASH, DZMM_APEX_SIGMA_16K, LONGCAT
+from app.core.owned_llms import DEEPSEEK, DEEPSEEK_FLASH, LONGCAT
 
 load_dotenv()
 
 
 # Change these four lines when one task should use a different model.
-CHAT_MODEL = DZMM_APEX_SIGMA_16K
+CHAT_MODEL = LONGCAT
 STRUCTURED_REPLY_MODEL = LONGCAT
 MEMORY_JUDGE_MODEL = DEEPSEEK_FLASH
 EMOTION_JUDGE_MODEL = DEEPSEEK_FLASH
@@ -22,8 +22,6 @@ emotion_judge_llm：判断情绪上下文
 
 AURA_LLM_TEMPERATURE = 1.0
 AURA_LLM_REASONING_EFFORT = "high"
-
-DEEPSEEK_MODELS = (DEEPSEEK, DEEPSEEK_FLASH)
 
 
 def create_llm(
@@ -43,18 +41,11 @@ def create_llm(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
-    if "max_tokens" in model_config:
-        kwargs["max_tokens"] = model_config["max_tokens"]
-    if json_mode and model_config in DEEPSEEK_MODELS:
+    if json_mode and model_config in (DEEPSEEK, DEEPSEEK_FLASH):
         kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
-    if model_config in (LONGCAT, *DEEPSEEK_MODELS):
+    if model_config in (LONGCAT, DEEPSEEK, DEEPSEEK_FLASH):
         kwargs["extra_body"] = {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}}
-    if "top_p" in model_config or "repetition_penalty" in model_config:
-        kwargs["extra_body"] = {
-            **(kwargs.get("extra_body") or {}),
-            **{name: model_config[name] for name in ("top_p", "repetition_penalty") if name in model_config},
-        }
-    if model_config in DEEPSEEK_MODELS and thinking_enabled:
+    if model_config in (DEEPSEEK, DEEPSEEK_FLASH) and thinking_enabled:
         kwargs["reasoning_effort"] = AURA_LLM_REASONING_EFFORT
     return ChatOpenAI(**kwargs)
 
@@ -68,7 +59,7 @@ llm = create_llm(
 structured_reply_llm = create_llm(
     STRUCTURED_REPLY_MODEL,
     json_mode=True,
-    thinking_enabled=STRUCTURED_REPLY_MODEL in DEEPSEEK_MODELS,
+    thinking_enabled=STRUCTURED_REPLY_MODEL in (DEEPSEEK, DEEPSEEK_FLASH),
 )
 
 memory_judge_llm = create_llm(
