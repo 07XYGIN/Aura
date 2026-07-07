@@ -9,18 +9,18 @@ load_dotenv()
 
 
 # Change these four lines when one task should use a different model.
-CHAT_MODEL = LONGCAT
-STRUCTURED_REPLY_MODEL = LONGCAT
+CHAT_MODEL = DEEPSEEK
+STRUCTURED_REPLY_MODEL = DEEPSEEK
 MEMORY_JUDGE_MODEL = LONGCAT
-EMOTION_JUDGE_MODEL = LONGCAT
+EMOTION_JUDGE_MODEL = DEEPSEEK
+"""
+CHAT_MODEL：主对话模型
+structured_reply_llm：把回复整理成 Aura 需要的 JSON 消息数组
+memory_judge_llm：判断是否写入记忆、合并记忆
+emotion_judge_llm：判断情绪上下文
+"""
 
-# Example:
-# CHAT_MODEL = DEEPSEEK
-# STRUCTURED_REPLY_MODEL = LONGCAT
-# MEMORY_JUDGE_MODEL = QWEN_PLUS
-# EMOTION_JUDGE_MODEL = GLM
-
-AURA_LLM_TEMPERATURE = 1.0
+AURA_LLM_TEMPERATURE = 1.9
 AURA_LLM_REASONING_EFFORT = "high"
 
 
