@@ -3,10 +3,12 @@ import os
 from dotenv import load_dotenv
 
 from app.core.llms import (
-    ACTIVE_LLM,
-    ACTIVE_PROVIDER,
     AURA_LLM_REASONING_EFFORT,
     AURA_LLM_TEMPERATURE,
+    CHAT_MODEL,
+    EMOTION_JUDGE_MODEL,
+    MEMORY_JUDGE_MODEL,
+    STRUCTURED_REPLY_MODEL,
     emotion_judge_llm,
     llm,
     memory_judge_llm,
@@ -16,10 +18,12 @@ from app.core.llms import (
 load_dotenv()
 
 __all__ = [
-    "ACTIVE_LLM",
-    "ACTIVE_PROVIDER",
     "AURA_LLM_REASONING_EFFORT",
     "AURA_LLM_TEMPERATURE",
+    "CHAT_MODEL",
+    "EMOTION_JUDGE_MODEL",
+    "MEMORY_JUDGE_MODEL",
+    "STRUCTURED_REPLY_MODEL",
     "emotion_judge_llm",
     "llm",
     "memory_judge_llm",
