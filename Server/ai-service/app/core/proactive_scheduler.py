@@ -48,6 +48,7 @@ DAILY_GREETING_USER_LIMIT = 500
 DAILY_GREETING_PLACEHOLDER = "Aura 正在准备这条主动问候。"
 DAILY_GREETING_TRIGGER_TYPES = {MORNING_TRIGGER_TYPE, EVENING_TRIGGER_TYPE}
 DEFAULT_DAILY_GREETING_TIMEZONE = "Asia/Shanghai"
+DAILY_GREETING_STALE_GRACE_SECONDS = 15 * 60
 
 _scheduler_task: asyncio.Task | None = None
 
@@ -56,6 +57,22 @@ def proactive_score(value: datetime) -> float:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.timestamp()
+
+
+def normalize_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def is_stale_daily_greeting(proactive: ProactiveMessage, now: datetime) -> bool:
+    if proactive.trigger_type not in DAILY_GREETING_TRIGGER_TYPES:
+        return False
+    allowed_lag = timedelta(
+        seconds=max(AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS, 60)
+        + DAILY_GREETING_STALE_GRACE_SECONDS
+    )
+    return normalize_utc(proactive.scheduled_at) < normalize_utc(now) - allowed_lag
 
 
 def is_deep_night(now: datetime, timezone: ZoneInfo = SILENCE_TIMEZONE) -> bool:
@@ -202,13 +219,6 @@ def local_day_bounds_utc(target_date: date, timezone: ZoneInfo) -> tuple[datetim
     return start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
-def local_time_in_window(local_value: datetime, start: time, end: time) -> bool:
-    current = local_value.timetz().replace(tzinfo=None)
-    if start <= end:
-        return start <= current <= end
-    return current >= start or current <= end
-
-
 def upcoming_daily_greeting_plans_for_user(
     user_id: str,
     timezone: str | None,
@@ -237,16 +247,8 @@ def upcoming_daily_greeting_plans_for_user(
             slot = daily_plan[slot_name]
             scheduled_local = datetime.fromisoformat(slot["scheduled_at"])
             scheduled_utc = scheduled_local.astimezone(UTC)
-            window = DAILY_GREETING_WINDOWS[trigger_type]
             if scheduled_utc <= normalized_now:
-                is_today = greeting_date == local_now.date()
-                if not (
-                    is_today
-                    and local_time_in_window(local_now, window["start"], window["end"])
-                ):
-                    continue
-                scheduled_utc = normalized_now + timedelta(seconds=1)
-                scheduled_local = scheduled_utc.astimezone(zone)
+                continue
 
             if not (normalized_now < scheduled_utc <= lookahead_at):
                 continue
@@ -497,6 +499,15 @@ async def send_proactive_message_records(
     sent_count = 0
     changed_count = 0
     for proactive in messages:
+        if is_stale_daily_greeting(proactive, now):
+            metadata = dict(getattr(proactive, "metadata_json", None) or {})
+            metadata["skipped_reason"] = "stale_daily_greeting"
+            proactive.metadata_json = metadata
+            proactive.status = "skipped"
+            proactive.updated_at = now
+            changed_count += 1
+            continue
+
         content = await prepare_proactive_message_content(session, proactive)
         if not content:
             proactive.status = "skipped"
@@ -517,6 +528,9 @@ async def send_proactive_message_records(
                 "trigger_type": proactive.trigger_type,
             },
         )
+        session.add(session_record)
+        await session.flush()
+
         chat_message = ChatMessage(
             id=uuid4(),
             session_id=session_record.id,
@@ -544,7 +558,6 @@ async def send_proactive_message_records(
         proactive.status = "sent"
         proactive.sent_at = now
         proactive.updated_at = now
-        session.add(session_record)
         session.add(chat_message)
         sent_count += 1
         changed_count += 1
@@ -611,14 +624,15 @@ async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:
     )
     while not stop_event.is_set():
         try:
+            await asyncio.wait_for(stop_event.wait(), timeout=AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS)
+            break
+        except TimeoutError:
+            pass
+
+        try:
             await run_proactive_scheduler_tick()
         except Exception:
             logging.exception("Proactive scheduler tick failed")
-
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS)
-        except TimeoutError:
-            continue
     logging.info("Proactive scheduler stopped")
 
 

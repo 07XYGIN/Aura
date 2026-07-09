@@ -84,9 +84,18 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [proactive]))
+        write_events = []
+
+        def record_add(record):
+            write_events.append(type(record).__name__)
+
+        async def record_flush():
+            write_events.append("flush")
+
         session = SimpleNamespace(
             execute=AsyncMock(return_value=result),
-            add=unittest.mock.Mock(),
+            add=unittest.mock.Mock(side_effect=record_add),
+            flush=AsyncMock(side_effect=record_flush),
             commit=AsyncMock(),
         )
 
@@ -100,6 +109,8 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(proactive.status, "sent")
         self.assertEqual(proactive.sent_at, now)
         self.assertEqual(session.add.call_count, 2)
+        self.assertEqual(write_events, ["ConversationSession", "flush", "ChatMessage"])
+        session.flush.assert_awaited_once()
         added_records = [call.args[0] for call in session.add.call_args_list]
         self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
         session.commit.assert_awaited_once()
@@ -138,6 +149,88 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(plans[0]["window"], "06:00:00-08:00:00")
         self.assertEqual(plans[1]["window"], "20:00:00-23:00:00")
+
+    def test_upcoming_daily_greeting_plans_do_not_reschedule_missed_slot_to_now(self):
+        now = datetime(2026, 7, 4, 0, 30, tzinfo=UTC)
+
+        def fake_daily_plan(*, target_date, **_kwargs):
+            return {
+                "date": target_date.isoformat(),
+                "morning": {
+                    "scheduled_at": datetime.combine(
+                        target_date,
+                        datetime.min.time().replace(hour=8),
+                        tzinfo=proactive_scheduler.ZoneInfo("Asia/Shanghai"),
+                    ).isoformat(),
+                    "window": "06:00:00-08:00:00",
+                    "reply_spec": "morning",
+                },
+                "evening": {
+                    "scheduled_at": datetime.combine(
+                        target_date,
+                        datetime.min.time().replace(hour=21),
+                        tzinfo=proactive_scheduler.ZoneInfo("Asia/Shanghai"),
+                    ).isoformat(),
+                    "window": "20:00:00-23:00:00",
+                    "reply_spec": "evening",
+                },
+            }
+
+        with patch(
+            "app.core.proactive_scheduler.build_daily_greeting_plan",
+            side_effect=fake_daily_plan,
+        ):
+            plans = proactive_scheduler.upcoming_daily_greeting_plans_for_user(
+                user_id="user-1",
+                timezone="Asia/Shanghai",
+                now=now,
+                lookahead_hours=24,
+            )
+
+        self.assertIn(
+            proactive_scheduler.EVENING_TRIGGER_TYPE,
+            [plan["trigger_type"] for plan in plans],
+        )
+        self.assertFalse(
+            any(
+                plan["trigger_type"] == proactive_scheduler.MORNING_TRIGGER_TYPE
+                and plan["greeting_date"] == "2026-07-04"
+                for plan in plans
+            )
+        )
+
+    async def test_stale_daily_greeting_is_skipped_instead_of_sent(self):
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
+        proactive = SimpleNamespace(
+            id=uuid4(),
+            user_id=uuid4(),
+            trigger_type=proactive_scheduler.MORNING_TRIGGER_TYPE,
+            title="morning",
+            content=proactive_scheduler.DAILY_GREETING_PLACEHOLDER,
+            scheduled_at=now - timedelta(hours=2),
+            status="pending",
+            sent_at=None,
+            updated_at=None,
+            metadata_json={},
+        )
+        session = SimpleNamespace(
+            add=unittest.mock.Mock(),
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
+
+        sent_count = await proactive_scheduler.send_proactive_message_records(
+            session,
+            [proactive],
+            now=now,
+        )
+
+        self.assertEqual(sent_count, 0)
+        self.assertEqual(proactive.status, "skipped")
+        self.assertEqual(proactive.metadata_json["skipped_reason"], "stale_daily_greeting")
+        session.add.assert_not_called()
+        session.flush.assert_not_awaited()
+        session.commit.assert_awaited_once()
 
     async def test_ensure_daily_greeting_messages_creates_upcoming_slots(self):
         now = datetime(2026, 7, 4, 21, 0, tzinfo=UTC)
@@ -288,10 +381,10 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
                 session,
                 [str(user_id)],
                 now=now,
-            )
+        )
 
         self.assertEqual(sent_count, 1)
-        session.flush.assert_awaited_once()
+        self.assertEqual(session.flush.await_count, 2)
         session.commit.assert_awaited_once()
         mark.assert_called_once_with(str(user_id))
         added_records = [call.args[0] for call in session.add.call_args_list]
@@ -299,6 +392,23 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
         append_history.assert_called_once()
         self.assertEqual(append_history.call_args.kwargs["trigger_type"], "silence")
+
+    async def test_scheduler_loop_waits_before_first_tick(self):
+        stop_event = proactive_scheduler.asyncio.Event()
+
+        with (
+            patch("app.core.proactive_scheduler.AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS", 60),
+            patch("app.core.proactive_scheduler.run_proactive_scheduler_tick", AsyncMock()) as tick,
+        ):
+            task = proactive_scheduler.asyncio.create_task(
+                proactive_scheduler.proactive_scheduler_loop(stop_event)
+            )
+            await proactive_scheduler.asyncio.sleep(0)
+            tick.assert_not_awaited()
+
+            stop_event.set()
+            await task
+            tick.assert_not_awaited()
 
 
 if __name__ == "__main__":
