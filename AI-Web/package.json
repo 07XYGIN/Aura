@@ -10,6 +10,7 @@
     "build:all": "pnpm -r --filter \"./apps/*\" build",
     "clean": "pnpm -r exec rm -rf node_modules dist .turbo"
   },
+
   "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=10.0.0"

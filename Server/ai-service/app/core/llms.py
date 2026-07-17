@@ -3,16 +3,16 @@ import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-from app.core.owned_llms import DEEPSEEK, DEEPSEEK_FLASH, LONGCAT
+from app.core.owned_llms import DEEPSEEK, DEEPSEEK_FLASH, ERGOUZI_GROK_4_5, LONGCAT
 
 load_dotenv()
 
 
 # Change these four lines when one task should use a different model.
-CHAT_MODEL = DEEPSEEK
-STRUCTURED_REPLY_MODEL = LONGCAT
-MEMORY_JUDGE_MODEL = DEEPSEEK_FLASH
-EMOTION_JUDGE_MODEL = DEEPSEEK_FLASH
+CHAT_MODEL = ERGOUZI_GROK_4_5
+STRUCTURED_REPLY_MODEL = ERGOUZI_GROK_4_5
+MEMORY_JUDGE_MODEL = ERGOUZI_GROK_4_5
+EMOTION_JUDGE_MODEL = ERGOUZI_GROK_4_5
 """
 CHAT_MODEL：主对话模型
 structured_reply_llm：把回复整理成 Aura 需要的 JSON 消息数组
@@ -20,7 +20,7 @@ memory_judge_llm：判断是否写入记忆、合并记忆
 emotion_judge_llm：判断情绪上下文
 """
 
-AURA_LLM_TEMPERATURE = 1.0
+AURA_LLM_TEMPERATURE = 2.0
 AURA_LLM_REASONING_EFFORT = "high"
 
 

@@ -27,3 +27,9 @@ GLM = {
     "base_url": "https://api.z.ai/api/paas/v4",
     "model": "glm-5.2",
 }
+
+ERGOUZI_GROK_4_5 = {
+    "api_key_env": "ERGOUZI_API_KEY",
+    "base_url": "https://ergouzi.life/v1",
+    "model": "grok-4.5",
+}
