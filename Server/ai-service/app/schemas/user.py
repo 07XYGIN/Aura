@@ -9,7 +9,6 @@ class UserRegisterRequest(BaseModel):
     email: str | None = None
     age: int | None = None
     sex: int
-    invite_code: str | None = Field(default=None, alias="inviteCode")
 
 
 class UserLoginRequest(BaseModel):

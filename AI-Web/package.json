@@ -5,7 +5,7 @@
   "description": "A pnpm monorepo with ai project",
   "scripts": {
     "dev:admin": "pnpm --filter admin dev",
-    "dev:web": "pnpm --filter web dev",
+    "dev:web": "npx pnpm --filter web dev",
     "dev:bff": "pnpm --filter bff start:dev",
     "build:all": "pnpm -r --filter \"./apps/*\" build",
     "clean": "pnpm -r exec rm -rf node_modules dist .turbo"

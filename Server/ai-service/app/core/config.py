@@ -59,4 +59,7 @@ PASSWORD = os.getenv('DB_PASSWORD')
 
 
 PG_DATABASE_URL = f'postgresql+asyncpg://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}'
+
+
 SYNC_DATABASE_URL = f'postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}'
+print(SYNC_DATABASE_URL)

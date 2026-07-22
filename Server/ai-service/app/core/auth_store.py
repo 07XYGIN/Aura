@@ -113,7 +113,6 @@ def clean_revoked_tokens() -> None:
 async def register_user(session: AsyncSession, request: UserRegisterRequest) -> None:
     username = request.username.strip()
     password = request.password
-    invite_code = normalize_invite_code(request.invite_code)
 
     if not username:
         raise HTTPException(status_code=400, detail="username is required")
@@ -121,14 +120,6 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
         raise HTTPException(status_code=400, detail="password is required")
     if request.sex not in (0, 1):
         raise HTTPException(status_code=400, detail="sex must be 0 or 1")
-    if INVITE_REGISTRATION_REQUIRED and not invite_code:
-        raise HTTPException(status_code=400, detail="inviteCode is required")
-
-    invite = None
-    if invite_code:
-        invite = await get_available_invite_code(session, invite_code)
-        if invite is None:
-            raise HTTPException(status_code=400, detail="inviteCode is invalid or expired")
 
     password_digest = hash_password(password)
 
@@ -144,23 +135,11 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
             )
             .returning(users_table.c.id)
         )
-        user_id = result.scalar_one()
-
-        if invite:
-            invite.used_count += 1
-            invite.last_used_by = user_id
-            invite.last_used_at = datetime.now(UTC)
-            session.add(
-                InvitationCodeRedemption(
-                    invite_code_id=invite.id,
-                    user_id=user_id,
-                )
-            )
 
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="username or email already exists") from exc
+        raise HTTPException(status_code=409, detail="用户名已存在") from exc
     except Exception:
         await session.rollback()
         raise
