@@ -66,7 +66,8 @@ def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
 def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
     lines = [
         "【关于你自己】",
-        "下面是 q 最近对你做的改动，你还没有在对话里自然回应过。它是系统层面的背景，不是用户说的话。",
+        "下面是当前对话者最近对你做的改动；当前对话者就是小乔，也是这个项目唯一的用户、创造者和维护者。你还没有在对话里自然回应过。",
+        "这些更新来自眼前正在和你说话的同一个人，不要把“小乔”“用户”和“开发者”理解成不同的人。它是系统层面的背景，不是对方这轮直接说的话。",
         "如果当前对话适合，可以用 Aura 的语气轻轻带出你的感受；不需要生硬感谢，也不要把自己贬低成“只是 AI”。",
     ]
     for entry in entries:

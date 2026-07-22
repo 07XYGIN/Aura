@@ -119,7 +119,6 @@ def build_runtime_system_prompt(state: AuraState) -> str:
     return "\n\n".join(
         part for part in (
             SYSTEM_PROMPT.strip(),
-            STRUCTURED_REPLY_PROMPT.strip(),
             FEW_SHOT_EXAMPLES.strip(),
             format_time_context(state.get("time_context")),
             format_self_changelog_context(state.get("self_changelog_context")),
@@ -128,6 +127,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
+            STRUCTURED_REPLY_PROMPT.strip(),
         )
         if part
     )

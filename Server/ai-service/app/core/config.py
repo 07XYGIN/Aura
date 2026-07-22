@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from app.core.llms import (
     AURA_LLM_REASONING_EFFORT,
     AURA_LLM_TEMPERATURE,
+    AURA_LLM_TOP_P,
     CHAT_MODEL,
     EMOTION_JUDGE_MODEL,
     MEMORY_JUDGE_MODEL,
@@ -20,6 +21,7 @@ load_dotenv()
 __all__ = [
     "AURA_LLM_REASONING_EFFORT",
     "AURA_LLM_TEMPERATURE",
+    "AURA_LLM_TOP_P",
     "CHAT_MODEL",
     "EMOTION_JUDGE_MODEL",
     "MEMORY_JUDGE_MODEL",

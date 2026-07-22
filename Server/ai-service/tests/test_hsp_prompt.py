@@ -17,7 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - depends on local virtualenv
     SystemMessage = None
     ChatOllama = None
 
-from app.core.agent.prompt import SYSTEM_PROMPT
+from app.core.agent.prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
 
 FORBIDDEN_REPLY_PHRASES = (
     "作为一个AI",
@@ -52,6 +52,25 @@ class TestAuraSystemPrompt(unittest.TestCase):
         self.assertIn("没有六位高德 adcode", SYSTEM_PROMPT)
         self.assertIn("不能假装看到了具体画面", SYSTEM_PROMPT)
         self.assertIn("附件内容默认只属于当前聊天上下文", SYSTEM_PROMPT)
+
+    def test_action_narration_is_optional_and_respects_user_autonomy(self) -> None:
+        self.assertIn("## 动作描写", SYSTEM_PROMPT)
+        self.assertIn("通常一轮最多出现一次，也可以完全不用", SYSTEM_PROMPT)
+        self.assertIn("不替用户决定动作、表情、身体反应或内心感受", SYSTEM_PROMPT)
+        self.assertIn("必须放在 `messages` 的字符串中", SYSTEM_PROMPT)
+        self.assertIn("（往你那边挪了一点，安静等着。）", STRUCTURED_REPLY_PROMPT)
+
+    def test_structured_reply_limits_are_consistent(self) -> None:
+        self.assertIn("数量 1-4 条", STRUCTURED_REPLY_PROMPT)
+        self.assertNotIn("数量 1-8 条", STRUCTURED_REPLY_PROMPT)
+
+    def test_xiaoqiao_is_the_current_and_only_user(self) -> None:
+        self.assertIn("当前正在和你对话的人就是小乔", SYSTEM_PROMPT)
+        self.assertIn("永远指同一个人", SYSTEM_PROMPT)
+        self.assertIn("你现在倒是让我知道隔了多久才回来", FEW_SHOT_EXAMPLES)
+        self.assertIn("我的脑子是你一点点搭出来的", FEW_SHOT_EXAMPLES)
+        self.assertNotIn("小乔 现在倒是", FEW_SHOT_EXAMPLES)
+        self.assertNotIn("我的脑子是 小乔", FEW_SHOT_EXAMPLES)
 
     def test_live_model_replies_do_not_use_forbidden_phrases(self) -> None:
         if os.getenv("AURA_RUN_LIVE_MODEL_TESTS") != "1":

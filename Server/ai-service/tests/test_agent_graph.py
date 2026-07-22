@@ -20,6 +20,7 @@ from app.core.agent.agent_graph import (
     trim_short_term_messages,
     turn_judge,
 )
+from app.core.agent.self_changelog import format_self_changelog_context
 
 
 class AgentGraphTest(unittest.TestCase):
@@ -64,6 +65,28 @@ class AgentGraphTest(unittest.TestCase):
 
         self.assertIn("## 对话示范", prompt)
         self.assertIn("用户表达过度依赖", prompt)
+
+    def test_output_format_instruction_comes_after_examples_and_runtime_context(self):
+        prompt = build_runtime_system_prompt({})
+
+        format_position = prompt.rfind("## 输出格式：多条独立消息")
+        self.assertGreater(format_position, prompt.find("## 对话示范"))
+        self.assertGreater(format_position, prompt.find("【本轮附件】"))
+
+    def test_self_changelog_context_uses_the_same_current_user_identity(self):
+        entry = SimpleNamespace(
+            category="persona",
+            occurred_at=datetime(2026, 7, 22, tzinfo=UTC),
+            change_date=None,
+            title="统一用户身份",
+            detail=None,
+        )
+
+        context = format_self_changelog_context([entry])
+
+        self.assertIn("当前对话者就是小乔", context)
+        self.assertIn("唯一的用户、创造者和维护者", context)
+        self.assertNotIn("下面是 q ", context)
 
     def test_save_memory_tool_is_registered(self):
         self.assertIn("save_memory_tool", [item.name for item in tools])
