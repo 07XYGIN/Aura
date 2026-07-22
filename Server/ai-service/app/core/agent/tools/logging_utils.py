@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from functools import wraps
 from typing import Any, Callable, TypeVar, cast
@@ -9,38 +8,17 @@ from typing import Any, Callable, TypeVar, cast
 TFunc = TypeVar("TFunc", bound=Callable[..., Any])
 
 
-def _preview(value: Any, limit: int = 800) -> str:
-    try:
-        text = json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        text = repr(value)
-
-    if len(text) > limit:
-        return text[:limit] + "..."
-    return text
-
-
 def log_tool(func: TFunc) -> TFunc:
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any):
-        logging.info(
-            "命中 %s tool args=%s kwargs=%s",
-            func.__name__,
-            _preview(args),
-            _preview(kwargs),
-        )
+        logging.info("调用聊天工具 tool=%s", func.__name__)
         try:
             result = func(*args, **kwargs)
         except Exception:
-            logging.exception(
-                "%s tool failed args=%s kwargs=%s",
-                func.__name__,
-                _preview(args),
-                _preview(kwargs),
-            )
+            logging.exception("聊天工具调用失败 tool=%s", func.__name__)
             raise
 
-        logging.info("%s tool result=%s", func.__name__, _preview(result))
+        logging.info("聊天工具调用完成 tool=%s", func.__name__)
         return result
 
     return cast(TFunc, wrapper)

@@ -12,7 +12,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_postgres import PGVector
 
 from app.core.config import SYNC_DATABASE_URL
-from app.core.agent.memory_judge import judge_memory_dedup, merge_memory_contents
+from app.core.agent.judges.memory import judge_memory_dedup, merge_memory_contents
 from app.db.models import LangchainPgCollection, LangchainPgEmbedding
 from app.db.session import SyncSessionLocal
 
@@ -206,7 +206,7 @@ def find_similar_long_memory(
             score_threshold=LONG_MEMORY_DEDUP_THRESHOLD,
         )
     except Exception:
-        logging.exception("Failed to search similar long memories for dedup")
+        logging.exception("检索相似长期记忆失败")
         return None
 
     for doc, score in sorted(results, key=lambda item: item[1], reverse=True):
@@ -290,7 +290,7 @@ def list_topic_memory_merge_candidates(
             score_threshold=threshold,
         )
     except Exception:
-        logging.exception("Failed to search long memories for topic merge user_id=%s topic=%s", user_id, topic)
+        logging.exception("按主题检索长期记忆失败 user_id=%s topic=%s", user_id, topic)
         return {"items": [], "total": 0, "threshold": threshold, "scanned": 0, "topic": topic}
 
     memories: list[dict[str, Any]] = []
@@ -658,7 +658,7 @@ def search_memory_collection(
         )
     except Exception:
         logging.exception(
-            "Failed to search %s memory collection user_id=%s query=%s",
+            "检索记忆集合失败 scope=%s user_id=%s query=%s",
             memory_scope,
             user_id,
             query,
@@ -696,9 +696,9 @@ def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
     layered = search_layered_memories(user_id=user_id, query=query, k=k)
     sections: list[str] = []
     if layered["long"]:
-        sections.append("长期记忆（稳定事实，仅在当前话题确实相关时自然引用）：\n" + format_docs(layered["long"]))
+        sections.append("稳定记忆（只在当前话题确实相关时自然使用）：\n" + format_docs(layered["long"]))
     if layered["mid"]:
-        sections.append("中期记忆（近期线索，3-5 天未提及会淡出）：\n" + format_docs(layered["mid"]))
+        sections.append("近期线索（可能已经变化，使用前结合当前对话判断）：\n" + format_docs(layered["mid"]))
     if not sections:
         return "没有检索到可引用的长期或中期记忆。不要编造用户偏好、天气、城市、食物或共同经历。"
     return "\n\n".join(sections)
@@ -709,9 +709,7 @@ def format_docs(docs: list[Document]) -> str:
     for doc in docs:
         title = doc.metadata.get("title") or "未命名记忆"
         create_time = doc.metadata.get("create_time") or "未知时间"
-        confidence = doc.metadata.get("confidence")
-        confidence_text = f"，置信度 {confidence}" if confidence is not None else ""
-        lines.append(f"- {title}（{create_time}{confidence_text}）：{doc.page_content}")
+        lines.append(f"- {title}（记录于 {create_time}）：{doc.page_content}")
     return "\n".join(lines)
 
 
@@ -795,7 +793,8 @@ def fetch_memory_rows(user_id: str, collection_name: str) -> list[dict[str, Any]
 
 def get_memory_retention_status(user_id: str) -> dict[str, Any]:
     return {
-        "plan": "permanent",
+        "plan": "personal",
+        "planLabel": "个人永久记忆",
         "permanent": True,
         "daysRemaining": None,
         "shouldPrompt": False,
@@ -806,8 +805,9 @@ def get_memory_retention_status(user_id: str) -> dict[str, Any]:
         },
         "midTerm": {
             "forgetAfterDays": MEDIUM_MEMORY_FORGET_DAYS,
-            "promotionRecallThreshold": MID_MEMORY_PROMOTION_RECALL_THRESHOLD,
-            "policy": "not_recalled_within_window",
+            "promotionRecallThreshold": None,
+            "policy": "explicit_review",
+            "policyLabel": "只有明确重要或人工整理后才转为长期记忆",
         },
         "shortTerm": {
             "source": "chat_history",
@@ -961,8 +961,6 @@ def touch_recalled_memories(user_id: str, docs: list[Document], collection_name:
         return
 
     touch_memory_keys(user_id=user_id, memory_keys=memory_keys, collection_name=collection_name)
-    if collection_name == MEDIUM_TERM_COLLECTION_NAME:
-        promote_mid_term_memories(user_id=user_id, memory_keys=memory_keys)
 
 
 def touch_memory_keys(user_id: str, memory_keys: list[str], collection_name: str) -> None:
@@ -1051,7 +1049,7 @@ def mark_memory_superseded(user_id: str, memory_key: str, superseded_by: str, re
                 )
             conn.commit()
     except Exception:
-        logging.exception("Failed to mark long memory superseded user_id=%s memory_key=%s", user_id, memory_key)
+        logging.exception("标记长期记忆已替代失败 user_id=%s memory_key=%s", user_id, memory_key)
 
 
 def promote_mid_term_memories(user_id: str, memory_keys: list[str]) -> None:
@@ -1071,7 +1069,7 @@ def promote_mid_term_memories(user_id: str, memory_keys: list[str]) -> None:
         promoted_key = save_memory(
             user_id=user_id,
             content=row["document"],
-            title=str(metadata.get("title") or "Recent context"),
+            title=str(metadata.get("title") or "近期线索"),
             create_time=str(metadata.get("create_time") or datetime.now().strftime("%Y-%m-%d %H:%M")),
             memory_scope="long",
             confidence=metadata.get("confidence") if isinstance(metadata.get("confidence"), (float, int)) else None,
@@ -1114,7 +1112,7 @@ def fetch_promotable_mid_memory_rows(user_id: str, memory_keys: list[str]) -> li
                 )
                 return list(cursor.fetchall())
     except Exception:
-        logging.exception("Failed to fetch promotable mid-term memories user_id=%s", user_id)
+        logging.exception("读取可晋升中期记忆失败 user_id=%s", user_id)
         return []
 
 
@@ -1148,7 +1146,7 @@ def mark_mid_memory_promoted(user_id: str, memory_key: str, promoted_memory_key:
                 )
             conn.commit()
     except Exception:
-        logging.exception("Failed to mark mid-term memory promoted user_id=%s memory_key=%s", user_id, memory_key)
+        logging.exception("标记中期记忆已晋升失败 user_id=%s memory_key=%s", user_id, memory_key)
 
 
 def parse_memory_create_time(value: Any) -> datetime | None:
@@ -1178,24 +1176,3 @@ def memory_sort_key(metadata: dict[str, Any]) -> datetime:
 
 def collection_name_for_scope(memory_scope: MemoryScope | Literal["long", "mid"]) -> str:
     return MEDIUM_TERM_COLLECTION_NAME if memory_scope == "mid" else LONG_TERM_COLLECTION_NAME
-
-
-def has_permanent_memory(user_id: str) -> bool:
-    try:
-        with psycopg.connect(SYNC_DATABASE_URL, row_factory=dict_row) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT permanent_memory
-                    FROM user_memory_entitlement
-                    WHERE user_id = CAST(%(user_id)s AS uuid)
-                      AND (expires_at IS NULL OR expires_at > now())
-                    """,
-                    {
-                        "user_id": user_id,
-                    },
-                )
-                row = cursor.fetchone()
-                return bool(row and row["permanent_memory"])
-    except Exception:
-        return False

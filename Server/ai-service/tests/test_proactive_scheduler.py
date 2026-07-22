@@ -67,7 +67,7 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(due_id, redis.members)
         self.assertIn(future_id, redis.members)
 
-    async def test_process_due_proactive_messages_marks_sent_and_writes_chat_message(self):
+    async def test_process_due_proactive_messages_marks_sent_and_updates_checkpoint(self):
         now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
         proactive_id = uuid4()
         user_id = uuid4()
@@ -84,35 +84,23 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [proactive]))
-        write_events = []
-
-        def record_add(record):
-            write_events.append(type(record).__name__)
-
-        async def record_flush():
-            write_events.append("flush")
-
         session = SimpleNamespace(
             execute=AsyncMock(return_value=result),
-            add=unittest.mock.Mock(side_effect=record_add),
-            flush=AsyncMock(side_effect=record_flush),
             commit=AsyncMock(),
         )
 
-        sent_count = await proactive_scheduler.process_due_proactive_messages(
-            session,
-            [str(proactive_id)],
-            now=now,
-        )
+        with patch("app.core.proactive_scheduler.append_proactive_history_message", return_value=True) as append_history:
+            sent_count = await proactive_scheduler.process_due_proactive_messages(
+                session,
+                [str(proactive_id)],
+                now=now,
+            )
 
         self.assertEqual(sent_count, 1)
         self.assertEqual(proactive.status, "sent")
         self.assertEqual(proactive.sent_at, now)
-        self.assertEqual(session.add.call_count, 2)
-        self.assertEqual(write_events, ["ConversationSession", "flush", "ChatMessage"])
-        session.flush.assert_awaited_once()
-        added_records = [call.args[0] for call in session.add.call_args_list]
-        self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
+        append_history.assert_called_once()
+        self.assertEqual(append_history.call_args.kwargs["trigger_type"], "daily_care")
         session.commit.assert_awaited_once()
 
     async def test_enqueue_pending_indexes_future_messages_within_lookahead(self):
@@ -384,12 +372,12 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(sent_count, 1)
-        self.assertEqual(session.flush.await_count, 2)
+        self.assertEqual(session.flush.await_count, 1)
         session.commit.assert_awaited_once()
         mark.assert_called_once_with(str(user_id))
         added_records = [call.args[0] for call in session.add.call_args_list]
         self.assertEqual(getattr(added_records[0], "trigger_type", None), "silence")
-        self.assertTrue(any(getattr(record, "is_proactive", False) for record in added_records))
+        self.assertEqual(len(added_records), 1)
         append_history.assert_called_once()
         self.assertEqual(append_history.call_args.kwargs["trigger_type"], "silence")
 

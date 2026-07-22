@@ -7,3 +7,4 @@ class SuccessResponse(BaseModel):
     code: int = 200
     data: Any = None
     msg: Literal["成功"] = "成功"
+    message: Literal["成功"] = "成功"

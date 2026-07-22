@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.agent.agent_graph import append_proactive_history_message
-from app.core.agent.tools.proactive import (
+from app.core.agent.agent_graph import append_proactive_history_message, get_history
+from app.core.proactive.service import (
     DAILY_GREETING_WINDOWS,
     EVENING_TRIGGER_TYPE,
     MORNING_TRIGGER_TYPE,
@@ -20,9 +20,11 @@ from app.core.agent.tools.proactive import (
 )
 from app.core.agent.tools.weather import fetch_weather
 from app.core.config import (
+    AURA_CITY_ADCODE,
     AURA_PROACTIVE_SCHEDULER_ENABLED,
     AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS,
     AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS,
+    AURA_TIMEZONE,
 )
 from app.core.redis_client import get_redis_client, redis_available, safe_redis_call
 from app.core.silence_state import (
@@ -31,7 +33,7 @@ from app.core.silence_state import (
     mark_silence_proactive_triggered,
     silence_proactive_already_triggered,
 )
-from app.db.models import ChatMessage, ConversationSession, ProactiveMessage, UserProfile, Users
+from app.db.models import ProactiveMessage, Users
 from app.db.session import AsyncSessionLocal
 
 PROACTIVE_QUEUE_KEY = "proactive_message_queue"
@@ -47,7 +49,7 @@ SILENCE_CONTEXT_MAX_LENGTH = 160
 DAILY_GREETING_USER_LIMIT = 500
 DAILY_GREETING_PLACEHOLDER = "Aura 正在准备这条主动问候。"
 DAILY_GREETING_TRIGGER_TYPES = {MORNING_TRIGGER_TYPE, EVENING_TRIGGER_TYPE}
-DEFAULT_DAILY_GREETING_TIMEZONE = "Asia/Shanghai"
+DEFAULT_DAILY_GREETING_TIMEZONE = AURA_TIMEZONE
 DAILY_GREETING_STALE_GRACE_SECONDS = 15 * 60
 
 _scheduler_task: asyncio.Task | None = None
@@ -183,23 +185,19 @@ async def enqueue_pending_proactive_messages(
 
 
 async def build_recent_conversation_context(
-    session: AsyncSession,
+    _session: AsyncSession,
     user_id: UUID,
     limit: int = SILENCE_CONTEXT_MESSAGE_LIMIT,
 ) -> str:
-    result = await session.execute(
-        select(ChatMessage.sender_type, ChatMessage.content)
-        .where(ChatMessage.user_id == user_id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(limit)
-    )
-    rows = list(result.all())
+    rows = await asyncio.to_thread(get_history, str(user_id))
     parts: list[str] = []
-    for sender_type, content in reversed(rows):
+    for item in rows[-limit:]:
+        sender_type = str(item.get("role") or "")
+        content = item.get("content")
         text = " ".join(str(content or "").split())
         if not text:
             continue
-        role = "用户" if sender_type == "user" else "Aura"
+        role = "用户" if sender_type in {"user", "human"} else "Aura"
         parts.append(f"{role}: {text[:80]}")
     return " / ".join(parts)[:SILENCE_CONTEXT_MAX_LENGTH]
 
@@ -209,7 +207,7 @@ def resolve_daily_greeting_timezone(timezone: str | None) -> tuple[ZoneInfo, str
     try:
         return ZoneInfo(timezone_name), timezone_name
     except Exception:
-        logging.warning("Invalid daily greeting timezone=%s, fallback to %s", timezone, DEFAULT_DAILY_GREETING_TIMEZONE)
+        logging.warning("主动问候时区无效 timezone=%s，回退到 %s", timezone, DEFAULT_DAILY_GREETING_TIMEZONE)
         return ZoneInfo(DEFAULT_DAILY_GREETING_TIMEZONE), DEFAULT_DAILY_GREETING_TIMEZONE
 
 
@@ -274,18 +272,17 @@ async def load_daily_greeting_targets(
     limit: int = DAILY_GREETING_USER_LIMIT,
 ) -> list[dict]:
     result = await session.execute(
-        select(Users.id, UserProfile.timezone, UserProfile.city_adcode)
-        .outerjoin(UserProfile, UserProfile.user_id == Users.id)
+        select(Users.id)
         .order_by(Users.created_at.asc())
         .limit(limit)
     )
     targets: list[dict] = []
-    for user_id, timezone, city_adcode in result.all():
+    for user_id in result.scalars().all():
         targets.append(
             {
                 "user_id": user_id,
-                "timezone": timezone or DEFAULT_DAILY_GREETING_TIMEZONE,
-                "city_adcode": city_adcode,
+                "timezone": AURA_TIMEZONE,
+                "city_adcode": AURA_CITY_ADCODE,
             }
         )
     return targets
@@ -367,7 +364,7 @@ async def ensure_daily_greeting_messages(
     await session.flush()
     queued_count = enqueue_proactive_messages(messages)
     await session.commit()
-    logging.info("Daily greeting scheduler planned %s message(s)", len(messages))
+    logging.info("主动问候计划完成 message_count=%s", len(messages))
     return queued_count
 
 
@@ -386,7 +383,7 @@ async def trigger_silence_proactive_messages(
         try:
             user_id = UUID(str(user_id_value))
         except ValueError:
-            logging.warning("Ignore invalid silence proactive user id from Redis: %s", user_id_value)
+            logging.warning("Redis 中的沉默触达用户 ID 无效，已忽略 value=%s", user_id_value)
             continue
 
         user_context = await build_recent_conversation_context(session, user_id)
@@ -432,22 +429,10 @@ async def trigger_silence_proactive_messages(
     return sent_count
 
 
-async def load_daily_greeting_context(session: AsyncSession, user_id: UUID) -> dict:
-    result = await session.execute(
-        select(UserProfile.timezone, UserProfile.city_adcode)
-        .where(UserProfile.user_id == user_id)
-        .limit(1)
-    )
-    row = result.first()
-    if not row:
-        return {
-            "timezone": DEFAULT_DAILY_GREETING_TIMEZONE,
-            "city_adcode": None,
-        }
-    timezone, city_adcode = row
+async def load_daily_greeting_context(_session: AsyncSession, _user_id: UUID) -> dict:
     return {
-        "timezone": timezone or DEFAULT_DAILY_GREETING_TIMEZONE,
-        "city_adcode": city_adcode,
+        "timezone": AURA_TIMEZONE,
+        "city_adcode": AURA_CITY_ADCODE,
     }
 
 
@@ -515,57 +500,24 @@ async def send_proactive_message_records(
             changed_count += 1
             continue
 
-        session_record = ConversationSession(
-            id=uuid4(),
-            user_id=proactive.user_id,
-            channel="proactive",
-            title=proactive.title or "Aura 主动消息",
-            status="active",
-            started_at=now,
-            metadata_json={
-                "source": "proactive_scheduler",
-                "proactive_message_id": str(proactive.id),
-                "trigger_type": proactive.trigger_type,
-            },
-        )
-        session.add(session_record)
-        await session.flush()
-
-        chat_message = ChatMessage(
-            id=uuid4(),
-            session_id=session_record.id,
-            user_id=proactive.user_id,
-            sender_type="assistant",
-            sender_id="aura",
-            content=content,
-            content_type="text",
-            sent_at=now,
-            is_proactive=True,
-            metadata_json={
-                "source": "proactive_scheduler",
-                "proactive_message_id": str(proactive.id),
-                "trigger_type": proactive.trigger_type,
-                "scheduled_at": proactive.scheduled_at.isoformat(),
-            },
-        )
+        message_id = str(uuid4())
         append_proactive_history_message(
             user_id=str(proactive.user_id),
             content=content,
-            message_id=str(chat_message.id),
+            message_id=message_id,
             sent_at=now,
             trigger_type=proactive.trigger_type,
         )
         proactive.status = "sent"
         proactive.sent_at = now
         proactive.updated_at = now
-        session.add(chat_message)
         sent_count += 1
         changed_count += 1
 
     if changed_count:
         await session.commit()
     if sent_count:
-        logging.info("Proactive scheduler sent %s message(s)", sent_count)
+        logging.info("主动消息发送完成 sent_count=%s", sent_count)
     return sent_count
 
 
@@ -583,7 +535,7 @@ async def process_due_proactive_messages(
         try:
             parsed_ids.append(UUID(str(message_id)))
         except ValueError:
-            logging.warning("Ignore invalid proactive message id from Redis: %s", message_id)
+            logging.warning("Redis 中的主动消息 ID 无效，已忽略 value=%s", message_id)
 
     if not parsed_ids:
         return 0
@@ -619,7 +571,7 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
 
 async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:
     logging.info(
-        "Proactive scheduler started interval_seconds=%s",
+        "主动消息调度器启动 interval_seconds=%s",
         AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS,
     )
     while not stop_event.is_set():
@@ -632,19 +584,19 @@ async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:
         try:
             await run_proactive_scheduler_tick()
         except Exception:
-            logging.exception("Proactive scheduler tick failed")
-    logging.info("Proactive scheduler stopped")
+            logging.exception("主动消息调度周期执行失败")
+    logging.info("主动消息调度器已停止")
 
 
 def start_proactive_scheduler() -> asyncio.Event | None:
     global _scheduler_task
 
     if not AURA_PROACTIVE_SCHEDULER_ENABLED:
-        logging.info("Proactive scheduler disabled by config")
+        logging.info("主动消息调度器已由配置关闭")
         return None
 
     if _scheduler_task and not _scheduler_task.done():
-        logging.info("Proactive scheduler already running")
+        logging.info("主动消息调度器已经在运行")
         return None
 
     stop_event = asyncio.Event()

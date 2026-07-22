@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.tools import term_memory
+from app.core.memory import service as term_memory
 
 
 class FakeStore:
@@ -25,7 +25,7 @@ class FakeStore:
         self.added_documents.extend(documents)
 
 
-class TermMemoryTest(unittest.TestCase):
+class MemoryServiceTest(unittest.TestCase):
     def test_rank_memory_results_drops_below_threshold(self):
         doc = Document(page_content="用户喜欢蛋糕", metadata={"memory_scope": "long"})
 
@@ -185,13 +185,10 @@ class TermMemoryTest(unittest.TestCase):
             reason="job changed",
         )
 
-    def test_touch_recalled_memories_uses_given_collection_and_promotes_mid_only(self):
+    def test_touch_recalled_memories_only_updates_recall_metadata(self):
         doc = Document(page_content="x", metadata={"memory_key": "key-1"})
 
-        with (
-            patch.object(term_memory, "touch_memory_keys") as touch_memory_keys,
-            patch.object(term_memory, "promote_mid_term_memories") as promote_mid_term_memories,
-        ):
+        with patch.object(term_memory, "touch_memory_keys") as touch_memory_keys:
             term_memory.touch_recalled_memories("user-1", [doc], term_memory.LONG_TERM_COLLECTION_NAME)
 
         touch_memory_keys.assert_called_once_with(
@@ -199,9 +196,7 @@ class TermMemoryTest(unittest.TestCase):
             memory_keys=["key-1"],
             collection_name=term_memory.LONG_TERM_COLLECTION_NAME,
         )
-        promote_mid_term_memories.assert_not_called()
-
-    def test_touch_recalled_memories_promotes_mid_after_touch(self):
+    def test_touching_mid_memory_does_not_promote_it_automatically(self):
         doc = Document(page_content="x", metadata={"memory_key": "key-1"})
 
         with (
@@ -215,7 +210,7 @@ class TermMemoryTest(unittest.TestCase):
             memory_keys=["key-1"],
             collection_name=term_memory.MEDIUM_TERM_COLLECTION_NAME,
         )
-        promote_mid_term_memories.assert_called_once_with(user_id="user-1", memory_keys=["key-1"])
+        promote_mid_term_memories.assert_not_called()
 
     def test_promote_mid_term_memories_saves_long_and_marks_mid(self):
         row = {
@@ -224,9 +219,9 @@ class TermMemoryTest(unittest.TestCase):
             "cmetadata": {
                 "memory_key": "mid-key",
                 "title": "interview",
-                "create_time": "2026-06-30 10:00",
+                "create_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "recall_count": 3,
-                "last_recalled_at": "2026-06-30 10:00",
+                "last_recalled_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             },
         }
 

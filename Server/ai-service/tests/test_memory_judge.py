@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.memory_judge import (
+from app.core.agent.judges.memory import (
     fallback_memory_merge,
     normalize_memory_candidate,
     normalize_memory_dedup_decision,

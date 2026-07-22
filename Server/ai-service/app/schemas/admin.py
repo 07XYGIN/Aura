@@ -28,7 +28,6 @@ class SelfUpdatePatchRequest(AdminSchema):
 
 
 class MemoryMergeConfirmRequest(AdminSchema):
-    user_id: str = Field(alias="userId", min_length=1)
     memory_keys: list[str] = Field(alias="memoryKeys", min_length=2)
     merged_title: str = Field(alias="mergedTitle", min_length=1, max_length=80)
     merged_content: str = Field(alias="mergedContent", min_length=1, max_length=320)

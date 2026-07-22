@@ -7,25 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.turn_judge import detect_risk_signal, judge_turn
+from app.core.agent.judges.turn import detect_risk_signal, judge_turn
 
 
 class TurnJudgeTest(unittest.TestCase):
-    @patch("app.core.agent.turn_judge.judge_memory_candidate")
-    @patch("app.core.agent.turn_judge.judge_emotion_state")
+    @patch("app.core.agent.judges.turn.judge_memory_candidate")
+    @patch("app.core.agent.judges.turn.judge_emotion_state")
     def test_judge_turn_marks_lonely_support(self, mock_emotion_judge, mock_memory_judge):
         mock_emotion_judge.return_value = {
             "user_emotion": "lonely",
-            "aura_mood": "tender",
-            "valence": -0.7,
-            "arousal": 0.35,
-            "intensity": 0.8,
-            "affection": 1.0,
+            "aura_mood": "close",
             "support_needed": True,
             "matched_keywords": ["孤独", "陪我"],
             "response_guidance": "test",
             "is_current_experience": True,
             "emotion_confidence": 0.9,
+            "interaction_mode": "affection",
+            "interaction_target": "aura",
         }
         mock_memory_judge.return_value = {
             "save": False,
@@ -42,23 +40,21 @@ class TurnJudgeTest(unittest.TestCase):
         self.assertEqual(result["emotion"]["user_emotion"], "lonely")
         self.assertEqual(result["response_mode"], "lonely_support")
         self.assertEqual(result["risk_signal"]["level"], "none")
-        self.assertEqual(result["relationship_delta"]["label"], "靠近")
+        self.assertEqual(result["interaction"]["mode"], "affection")
 
-    @patch("app.core.agent.turn_judge.judge_memory_candidate")
-    @patch("app.core.agent.turn_judge.judge_emotion_state")
+    @patch("app.core.agent.judges.turn.judge_memory_candidate")
+    @patch("app.core.agent.judges.turn.judge_emotion_state")
     def test_judge_turn_keeps_retrospective_tired_statement_natural(self, mock_emotion_judge, mock_memory_judge):
         mock_emotion_judge.return_value = {
             "user_emotion": "tired",
-            "aura_mood": "warm",
-            "valence": -0.4,
-            "arousal": 0.2,
-            "intensity": 0.25,
-            "affection": 0.8,
+            "aura_mood": "natural",
             "support_needed": False,
             "matched_keywords": ["累"],
             "response_guidance": "这是回忆或习惯描述，不要过度安抚。",
             "is_current_experience": False,
             "emotion_confidence": 0.88,
+            "interaction_mode": "natural",
+            "interaction_target": "external",
         }
         mock_memory_judge.return_value = {
             "save": False,

@@ -7,11 +7,8 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool
 
 from app.core.config import structured_reply_llm
-
-from .logging_utils import log_tool
 
 from app.core.agent.prompt import SYSTEM_PROMPT
 
@@ -189,13 +186,6 @@ def build_daily_greeting_plan(
     }
 
 
-@tool
-@log_tool
-def plan_daily_greetings(user_id: str = "test-user", timezone: str = "Asia/Shanghai") -> dict:
-    """生成每日早晚主动问候计划；早上 06:00-08:00，晚上 20:00-23:00，并说明各时间点应回复什么。"""
-    return build_daily_greeting_plan(user_id=user_id, timezone=timezone)
-
-
 def build_proactive_message_draft(
     trigger_type: str,
     user_context: str = "",
@@ -266,7 +256,7 @@ def draft_proactive_message_with_llm(
         )
         parsed = parse_llm_draft_response(str(response.content or ""))
     except Exception as exc:
-        logging.warning("Failed to draft proactive message with LLM trigger_type=%s error=%s", trigger_type, exc)
+        logging.warning("主动消息生成失败，使用安全模板 trigger_type=%s error=%s", trigger_type, exc)
         return {**fallback, "source": "fallback_template"}
 
     content = str(parsed.get("content") or "").strip()
@@ -351,14 +341,3 @@ def compact_message(content: str, max_length: int = 120) -> str:
     lines = [" ".join(line.split()) for line in content.splitlines()]
     text = " ".join(line for line in lines if line).strip()
     return text[:max_length].strip()
-
-
-@tool
-@log_tool
-def draft_proactive_message(
-    trigger_type: str,
-    user_context: str = "",
-    weather_context: dict | None = None,
-) -> dict:
-    """根据触发原因生成 Aura 主动消息草稿；daily_morning 包含早安/天气/注意事项，daily_evening 包含晚安/早点睡。"""
-    return draft_proactive_message_with_llm(trigger_type, user_context, weather_context)

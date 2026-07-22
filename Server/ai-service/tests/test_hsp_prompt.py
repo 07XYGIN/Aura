@@ -49,7 +49,7 @@ class TestAuraSystemPrompt(unittest.TestCase):
         self.assertGreaterEqual(len(SYSTEM_PROMPT), 900)
         self.assertIn("不要把每句话都说得很满", SYSTEM_PROMPT)
         self.assertIn("不要编造用户喜欢火锅", SYSTEM_PROMPT)
-        self.assertIn("没有天气工具结果时", SYSTEM_PROMPT)
+        self.assertIn("没有六位高德 adcode", SYSTEM_PROMPT)
         self.assertIn("不能假装看到了具体画面", SYSTEM_PROMPT)
         self.assertIn("附件内容默认只属于当前聊天上下文", SYSTEM_PROMPT)
 

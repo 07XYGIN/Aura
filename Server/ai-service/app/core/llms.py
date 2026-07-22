@@ -20,8 +20,8 @@ memory_judge_llm：判断是否写入记忆、合并记忆
 emotion_judge_llm：判断情绪上下文
 """
 
-AURA_LLM_TEMPERATURE = 2.0
-AURA_LLM_REASONING_EFFORT = "high"
+AURA_LLM_TEMPERATURE = float(os.getenv("AURA_LLM_TEMPERATURE", "0.9"))
+AURA_LLM_REASONING_EFFORT = os.getenv("AURA_LLM_REASONING_EFFORT", "medium")
 
 
 def create_llm(

@@ -36,9 +36,9 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 - 如果用户明确要求 Aura 记住/保存某件具体事情，则予以保存，除非它不安全或过于模糊。
 - 不要保存仅由 Aura 猜测或暗示得到的私人事实。
 - 尽可能在标题/内容中保留用户的原始语言。
-- `content` 必须简洁，但要保留一点场景/心情/具体情境，不要压缩成干巴巴字段。
+- `content` 必须简洁，保留用户明确说出的场景和具体情境，但不能补写用户没有表达过的心情或原因。
   - 不好：`用户喜欢吃火锅`
-  - 好：`提到跟朋友聚餐喜欢吃火锅，那次心情似乎不错`
+  - 好：`提到和朋友聚餐时通常会选火锅，并明确说自己不太能吃辣`
   - 不好：`用户写代码会累`
   - 好：`聊到写代码累了会起来走走，像是他平时调节状态的小习惯`
 - `content` 长度控制在 220 个字符以内。
@@ -49,24 +49,20 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 """
 
 MEMORY_DEDUP_SYSTEM_PROMPT = """
-You are Aura's memory deduplication judge.
+你是 Aura 的记忆去重判断器。比较一条新记忆候选和一条已有长期记忆，只返回一个 JSON 对象。
 
-Compare one new memory candidate with one existing long-term memory.
-Return exactly one JSON object and no extra text.
-
-JSON schema:
+JSON 结构：
 {
   "decision": "duplicate" | "update" | "unrelated",
   "confidence": number,
   "reason": string
 }
 
-Decision rules:
-- duplicate: they describe the same durable fact and the new memory adds no important new information.
-- update: the new memory corrects, replaces, or materially changes the existing fact.
-- unrelated: the two memories are independent, even if they share words or topics.
-
-Be conservative. If you are unsure whether a new fact should replace an old one, choose unrelated.
+规则：
+- duplicate：描述同一个稳定事实，新内容没有增加重要信息。
+- update：新内容明确纠正、替换或实质改变旧事实。
+- unrelated：两条记忆彼此独立，即使共享部分词语或主题。
+- 保守判断；不能确认应替换旧事实时，选择 unrelated。
 """
 
 MEMORY_MERGE_SYSTEM_PROMPT = """
@@ -111,8 +107,8 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
         raw_candidate = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_candidate(raw_candidate, text)
     except Exception:
-        logging.exception("Failed to judge memory candidate with the configured LLM")
-        return memory_candidate(False, "short", None, None, 0.0, "memory_judge_failed", [])
+        logging.exception("记忆候选判断失败")
+        return memory_candidate(False, "short", None, None, 0.0, "记忆候选判断失败", [])
 
 
 @traceable(name="aura_memory_dedup_judge")
@@ -140,8 +136,8 @@ def judge_memory_dedup(
         raw_decision = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_dedup_decision(raw_decision)
     except Exception:
-        logging.exception("Failed to judge memory deduplication with the configured LLM")
-        return memory_dedup_decision("unrelated", 0.0, "dedup_judge_failed")
+        logging.exception("记忆去重判断失败")
+        return memory_dedup_decision("unrelated", 0.0, "记忆去重判断失败")
 
 
 @traceable(name="aura_memory_merge")
@@ -176,7 +172,7 @@ def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | Non
         raw_result = parse_json_object(message_content_to_text(response.content))
         return normalize_memory_merge_result(raw_result, cleaned_memories)
     except Exception:
-        logging.exception("Failed to merge memory contents with the configured LLM")
+        logging.exception("记忆内容合并失败")
         return fallback_memory_merge(cleaned_memories)
 
 
@@ -190,7 +186,7 @@ def parse_json_object(text: str) -> dict[str, Any]:
         value = json.loads(match.group(0))
 
     if not isinstance(value, dict):
-        raise ValueError("Memory judge response must be a JSON object")
+        raise ValueError("记忆判断结果必须是 JSON 对象")
     return value
 
 
@@ -209,10 +205,10 @@ def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[st
 
     title = clean_string(raw.get("title"), max_length=30)
     if save and not title:
-        title = "Conversation memory" if memory_scope == "long" else "Recent context"
+        title = "对话记忆" if memory_scope == "long" else "近期线索"
 
     confidence = clamp_float(raw.get("confidence"), default=0.55 if save else 0.0)
-    reason = clean_string(raw.get("reason"), max_length=80, default="llm_memory_judge")
+    reason = clean_string(raw.get("reason"), max_length=80, default="模型记忆判断")
     signals = clean_signals(raw.get("signals"))
 
     return memory_candidate(save, memory_scope, title, content, confidence, reason, signals)
@@ -225,19 +221,19 @@ def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
         decision = "unrelated"
 
     confidence = clamp_float(raw.get("confidence"), default=0.0)
-    reason = clean_string(raw.get("reason"), max_length=120, default="llm_memory_dedup")
-    return memory_dedup_decision(decision, confidence, reason or "llm_memory_dedup")
+    reason = clean_string(raw.get("reason"), max_length=120, default="模型记忆去重判断")
+    return memory_dedup_decision(decision, confidence, reason or "模型记忆去重判断")
 
 
 def normalize_memory_merge_result(raw: dict[str, Any], memories: list[dict[str, Any]]) -> dict[str, str]:
     title = clean_string(raw.get("title"), max_length=80, default=None)
     content = clean_string(raw.get("content"), max_length=260, default=None)
-    reason = clean_string(raw.get("reason"), max_length=160, default="llm_memory_merge")
+    reason = clean_string(raw.get("reason"), max_length=160, default="模型记忆合并")
     if not title:
         title = clean_string(memories[0].get("title"), max_length=80, default="合并记忆")
     if not content:
         return fallback_memory_merge(memories)
-    return memory_merge_result(title or "合并记忆", content, reason or "llm_memory_merge")
+    return memory_merge_result(title or "合并记忆", content, reason or "模型记忆合并")
 
 
 def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
@@ -250,7 +246,7 @@ def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
             continue
         seen.add(content)
         parts.append(content)
-    return memory_merge_result(title, "；".join(parts)[:260], "fallback_concatenate_unique_memories")
+    return memory_merge_result(title, "；".join(parts)[:260], "去重后直接合并")
 
 
 def message_content_to_text(content: Any) -> str:

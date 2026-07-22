@@ -14,7 +14,7 @@ from app.core.auth_store import (
     revoke_token,
     update_user_info,
 )
-from app.core.agent.tools.term_memory import list_memories_by_user
+from app.core.memory.service import list_memories_by_user
 from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserUpdateRequest
 
 router = APIRouter(
@@ -28,14 +28,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 @router.post("/register")
 async def register(request: UserRegisterRequest, session: SessionDep):
     await register_user(session, request)
-    return api_success(message="Account created")
+    return api_success(message="账号创建成功")
 
 
 @router.post("/login")
 async def login(request: UserLoginRequest, session: SessionDep):
     user = await authenticate_user(session, request)
     token = create_access_token(user["id"])
-    return api_success(message="Login success", token=token)
+    return api_success(message="登录成功", token=token)
 
 
 @router.get("/userInfo")
@@ -62,7 +62,7 @@ async def update_info(
     session: SessionDep,
 ):
     await update_user_info(session, user_id, request)
-    return api_success(message="User updated")
+    return api_success(message="用户信息更新成功")
 
 
 @router.delete("/{username}")
@@ -72,7 +72,7 @@ async def delete_current_user(
     session: SessionDep,
 ):
     await delete_user(session, user_id, username)
-    return api_success(message="User deleted")
+    return api_success(message="用户删除成功")
 
 
 @router.get("/logout/{user_id}")
@@ -82,12 +82,12 @@ async def logout(
     token: Annotated[str, Depends(oauth2_scheme)],
 ):
     if user_id != current_user_id:
-        return {"code": 403, "message": "cannot logout another user", "msg": "forbidden"}
+        return {"code": 403, "message": "不能退出其他用户的登录状态", "msg": "无权限"}
     revoke_token(token)
-    return api_success(message="Logout success")
+    return api_success(message="退出登录成功")
 
 
-def api_success(data=None, message="success", token: str | None = None):
+def api_success(data=None, message="成功", token: str | None = None):
     response = {
         "code": 200,
         "data": data,

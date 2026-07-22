@@ -37,7 +37,7 @@ async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
                 text=format_self_changelog_context(entries),
             )
     except Exception:
-        logging.exception("Failed to load Aura self changelog context")
+        logging.exception("读取 Aura 自我更新上下文失败")
         return SelfChangelogContext(entry_id=None, text="")
 
 
@@ -59,7 +59,7 @@ def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
                 text=format_self_changelog_context(entries),
             )
     except Exception:
-        logging.exception("Failed to load Aura self changelog context")
+        logging.exception("读取 Aura 自我更新上下文失败")
         return SelfChangelogContext(entry_id=None, text="")
 
 
@@ -96,7 +96,7 @@ async def mark_self_changelog_reacted(entry_id: str | None) -> None:
             entry.reacted_at = datetime.now(UTC)
             await session.commit()
     except Exception:
-        logging.exception("Failed to mark Aura self changelog reacted entry_id=%s", entry_id)
+        logging.exception("标记 Aura 自我更新已回应失败 entry_id=%s", entry_id)
 
 
 def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
@@ -118,7 +118,7 @@ def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
             entry.reacted_at = datetime.now(UTC)
             session.commit()
     except Exception:
-        logging.exception("Failed to mark Aura self changelog reacted entry_id=%s", entry_id)
+        logging.exception("标记 Aura 自我更新已回应失败 entry_id=%s", entry_id)
 
 
 def format_date(value: Any) -> str:

@@ -33,7 +33,7 @@ async def resolve_adcode(
 
     public_ip = resolve_public_ip(request)
     if not public_ip:
-        raise HTTPException(status_code=400, detail="client public ip is required")
+        raise HTTPException(status_code=400, detail="无法获取客户端公网 IP，请手动提供城市")
 
     return SuccessResponse(data=resolve_by_ip(amap_key, public_ip))
 
@@ -41,13 +41,13 @@ async def resolve_adcode(
 def get_amap_key() -> str:
     amap_key = os.getenv("AMAP_KEY") or os.getenv("amap_key") or ""
     if not amap_key:
-        raise HTTPException(status_code=500, detail="AMAP_KEY is not configured")
+        raise HTTPException(status_code=500, detail="尚未配置高德地图 API Key")
     return amap_key
 
 
 def resolve_by_coordinates(amap_key: str, longitude: float, latitude: float) -> dict[str, Any]:
     if longitude < -180 or longitude > 180 or latitude < -90 or latitude > 90:
-        raise HTTPException(status_code=400, detail="location coordinates out of range")
+        raise HTTPException(status_code=400, detail="经纬度超出有效范围")
 
     data = get_amap(
         amap_key,
@@ -61,7 +61,7 @@ def resolve_by_coordinates(amap_key: str, longitude: float, latitude: float) -> 
     component = data.get("regeocode", {}).get("addressComponent", {})
     adcode = str(component.get("adcode") or "").strip()
     if not adcode:
-        raise HTTPException(status_code=502, detail="Amap did not return adcode")
+        raise HTTPException(status_code=502, detail="高德地图没有返回城市编码")
 
     return {
         "adcode": adcode,
@@ -86,7 +86,7 @@ def resolve_by_city(amap_key: str, city: str) -> dict[str, Any]:
     districts = data.get("districts") or []
     district = next((item for item in districts if item.get("adcode")), None)
     if not district:
-        raise HTTPException(status_code=400, detail="city adcode not found")
+        raise HTTPException(status_code=400, detail="没有找到对应城市编码")
 
     return {
         "adcode": district.get("adcode"),
@@ -102,7 +102,7 @@ def resolve_by_ip(amap_key: str, public_ip: str) -> dict[str, Any]:
     data = get_amap(amap_key, "/ip", {"ip": public_ip})
     adcode = str(data.get("adcode") or "").strip()
     if not adcode:
-        raise HTTPException(status_code=502, detail="Amap did not return adcode from IP")
+        raise HTTPException(status_code=502, detail="高德地图没有根据 IP 返回城市编码")
 
     return {
         "adcode": adcode,
@@ -124,12 +124,12 @@ def get_amap(amap_key: str, path: str, params: dict[str, Any]) -> dict[str, Any]
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="Amap request failed") from exc
+        raise HTTPException(status_code=502, detail="高德地图接口请求失败") from exc
 
     if data.get("status") != "1":
         raise HTTPException(
             status_code=502,
-            detail=data.get("info") or f"Amap request failed: {data.get('infocode', 'unknown')}",
+            detail=f"高德地图接口返回失败（错误码：{data.get('infocode', '未知')}）",
         )
 
     return data

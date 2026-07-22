@@ -32,7 +32,7 @@ class AgentGraphTest(unittest.TestCase):
     def test_turn_judge_uses_precomputed_judgement(self):
         judgement = {
             "emotion": {"user_emotion": "lonely", "support_needed": True},
-            "relationship_delta": {"label": "靠近"},
+            "interaction": {"mode": "affection", "target": "aura"},
             "memory_candidate": {"save": False, "memory_scope": "short"},
             "risk_signal": {"level": "none", "requires_safety_gate": False},
             "response_mode": "lonely_support",
@@ -48,7 +48,7 @@ class AgentGraphTest(unittest.TestCase):
             {
                 "emotion": {"user_emotion": "lonely", "support_needed": True},
                 "turn_judgement": {
-                    "relationship_delta": {"label": "靠近"},
+                    "interaction": {"mode": "affection", "target": "aura"},
                     "memory_candidate": {"save": True, "memory_scope": "mid"},
                     "risk_signal": {"level": "none"},
                     "response_mode": "lonely_support",
@@ -68,8 +68,19 @@ class AgentGraphTest(unittest.TestCase):
     def test_save_memory_tool_is_registered(self):
         self.assertIn("save_memory_tool", [item.name for item in tools])
 
-    def test_merge_similar_memories_tool_is_registered(self):
-        self.assertIn("merge_similar_memories_tool", [item.name for item in tools])
+    def test_chat_tool_registry_only_contains_runtime_tools(self):
+        self.assertEqual(
+            ["search_memory_tool", "save_memory_tool", "get_weather"],
+            [item.name for item in tools],
+        )
+
+    def test_runtime_prompt_does_not_advertise_removed_pseudo_tools(self):
+        prompt = build_runtime_system_prompt({})
+
+        self.assertNotIn("get_emotional_support_advice", prompt)
+        self.assertNotIn("get_relationship_status", prompt)
+        self.assertNotIn("plan_daily_greetings", prompt)
+        self.assertNotIn("merge_similar_memories_tool", prompt)
 
     def test_append_proactive_history_message_updates_graph_state(self):
         fake_aura = SimpleNamespace(update_state=unittest.mock.Mock())

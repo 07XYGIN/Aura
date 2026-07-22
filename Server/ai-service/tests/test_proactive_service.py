@@ -6,10 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from app.core.agent.tools import proactive
+from app.core.proactive import service as proactive
 
 
-class ProactiveToolTest(unittest.TestCase):
+class ProactiveServiceTest(unittest.TestCase):
     def test_daily_greeting_plan_uses_requested_windows(self):
         now = datetime(2026, 7, 8, 5, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
 
@@ -52,7 +52,7 @@ class ProactiveToolTest(unittest.TestCase):
 
     def test_llm_draft_falls_back_to_safe_morning_template(self):
         fake_llm = SimpleNamespace(invoke=unittest.mock.Mock(side_effect=RuntimeError("offline")))
-        with patch("app.core.agent.tools.proactive.structured_reply_llm", fake_llm):
+        with patch("app.core.proactive.service.structured_reply_llm", fake_llm):
             draft = proactive.draft_proactive_message_with_llm(
                 proactive.MORNING_TRIGGER_TYPE,
                 weather_context={

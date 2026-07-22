@@ -8,26 +8,26 @@ from uuid import UUID, uuid4
 
 import bcrypt
 import jwt
+from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import Column, Integer, MetaData, SmallInteger, String, Table, delete, func, insert, or_, select, update
+from sqlalchemy import Column, Integer, MetaData, SmallInteger, String, Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import InvitationCode, InvitationCodeRedemption
 from app.db.session import get_db_session
 from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserUpdateRequest
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-to-a-strong-32-byte-secret-key")
+load_dotenv()
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("JWT_SECRET_KEY 必须配置为至少 32 个字符的随机密钥")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE = timedelta(milliseconds=int(os.getenv("JWT_EXPIRE_TIME", "86400000")))
-INVITE_REGISTRATION_REQUIRED = (
-    os.getenv("INVITE_REGISTRATION_REQUIRED", "true").strip().lower() != "false"
-)
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 password_hash = PasswordHash.recommended()
 revoked_tokens: dict[str, int] = {}
@@ -69,13 +69,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def validate_password_length(password: str) -> None:
     if len(password.encode("utf-8")) > 72:
-        raise HTTPException(status_code=400, detail="password must be 72 bytes or shorter")
+        raise HTTPException(status_code=400, detail="密码长度不能超过 72 字节")
 
 
 async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="登录凭证无效或已过期",
         headers={"WWW-Authenticate": "Bearer"},
     )
     clean_revoked_tokens()
@@ -115,11 +115,11 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
     password = request.password
 
     if not username:
-        raise HTTPException(status_code=400, detail="username is required")
+        raise HTTPException(status_code=400, detail="用户名不能为空")
     if not password:
-        raise HTTPException(status_code=400, detail="password is required")
+        raise HTTPException(status_code=400, detail="密码不能为空")
     if request.sex not in (0, 1):
-        raise HTTPException(status_code=400, detail="sex must be 0 or 1")
+        raise HTTPException(status_code=400, detail="性别字段只能是 0 或 1")
 
     password_digest = hash_password(password)
 
@@ -149,7 +149,7 @@ async def authenticate_user(session: AsyncSession, request: UserLoginRequest) ->
     username = request.username.strip()
     user = await find_user_by_username(session, username)
     if not user or not verify_password(request.password, user["password"]):
-        raise HTTPException(status_code=401, detail="username or password is incorrect")
+        raise HTTPException(status_code=401, detail="用户名或密码不正确")
     return user_to_dict(user, include_password=True)
 
 
@@ -170,7 +170,7 @@ async def update_user_info(
     username = request.username.strip() if request.username else user["username"]
 
     if request.sex is not None and request.sex not in (0, 1):
-        raise HTTPException(status_code=400, detail="sex must be 0 or 1")
+        raise HTTPException(status_code=400, detail="性别字段只能是 0 或 1")
 
     try:
         values = {
@@ -187,33 +187,16 @@ async def update_user_info(
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="username or email already exists") from exc
+        raise HTTPException(status_code=409, detail="用户名或邮箱已存在") from exc
 
 
 async def delete_user(session: AsyncSession, user_id: str, username: str) -> None:
     user = await get_user_record(session, user_id)
     if user["username"] != username:
-        raise HTTPException(status_code=403, detail="cannot delete another user")
+        raise HTTPException(status_code=403, detail="不能删除其他用户")
 
     await session.execute(delete(users_table).where(users_table.c.id == UUID(user_id)))
     await session.commit()
-
-
-async def get_available_invite_code(session: AsyncSession, invite_code: str) -> InvitationCode | None:
-    result = await session.execute(
-        select(InvitationCode)
-        .where(
-            InvitationCode.code == invite_code.upper(),
-            InvitationCode.disabled_at.is_(None),
-            or_(
-                InvitationCode.expires_at.is_(None),
-                InvitationCode.expires_at > datetime.now(UTC),
-            ),
-            InvitationCode.used_count < InvitationCode.max_uses,
-        )
-        .with_for_update()
-    )
-    return result.scalar_one_or_none()
 
 
 async def find_user_by_username(session: AsyncSession, username: str) -> Mapping[str, Any] | None:
@@ -227,12 +210,12 @@ async def get_user_record(session: AsyncSession, user_id: str) -> Mapping[str, A
     try:
         parsed_user_id = UUID(user_id)
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail="invalid user id") from exc
+        raise HTTPException(status_code=401, detail="用户 ID 无效") from exc
 
     result = await session.execute(select(users_table).where(users_table.c.id == parsed_user_id))
     user = result.mappings().first()
     if user is None:
-        raise HTTPException(status_code=404, detail="user not found")
+        raise HTTPException(status_code=404, detail="用户不存在")
     return user
 
 
@@ -247,12 +230,6 @@ def user_to_dict(user: Mapping[str, Any], include_password: bool = False) -> dic
     if include_password:
         data["password"] = user["password"]
     return data
-
-
-def normalize_invite_code(invite_code: str | None) -> str | None:
-    if not invite_code or not invite_code.strip():
-        return None
-    return invite_code.strip().upper()
 
 
 def blank_to_none(value: str | None) -> str | None:

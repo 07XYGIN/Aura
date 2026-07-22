@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.logging_config import http_logger, to_log_text, truncate
+from app.core.logging_config import http_logger
 
 
 class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
@@ -15,11 +14,11 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         started_at = time.perf_counter()
         request_body = await request.body()
         http_logger.info(
-            "--> %s %s query=%s body=%s",
+            "请求开始 method=%s path=%s query_keys=%s body_bytes=%s",
             request.method,
             request.url.path,
-            dict(request.query_params),
-            body_to_log_text(request_body),
+            list(request.query_params.keys()),
+            len(request_body),
         )
 
         async def receive():
@@ -32,7 +31,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         except Exception:
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             http_logger.exception(
-                "<-- %s %s ERROR elapsed=%.2fms",
+                "请求失败 method=%s path=%s elapsed_ms=%.2f",
                 request.method,
                 request.url.path,
                 elapsed_ms,
@@ -43,7 +42,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         content_type = response.headers.get("content-type", "")
         if "text/event-stream" in content_type:
             http_logger.info(
-                "<-- %s %s status=%s content-type=%s elapsed=%.2fms body=<streaming>",
+                "请求完成 method=%s path=%s status=%s content_type=%s elapsed_ms=%.2f body=<流式响应>",
                 request.method,
                 request.url.path,
                 response.status_code,
@@ -57,12 +56,12 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
             response_body += chunk
 
         http_logger.info(
-            "<-- %s %s status=%s elapsed=%.2fms body=%s",
+            "请求完成 method=%s path=%s status=%s elapsed_ms=%.2f body_bytes=%s",
             request.method,
             request.url.path,
             response.status_code,
             elapsed_ms,
-            body_to_log_text(response_body),
+            len(response_body),
         )
 
         headers = dict(response.headers)
@@ -74,12 +73,3 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
             media_type=response.media_type,
             background=response.background,
         )
-
-
-def body_to_log_text(body: bytes) -> str:
-    if not body:
-        return "<empty>"
-    try:
-        return to_log_text(json.loads(body.decode("utf-8")))
-    except Exception:
-        return truncate(body.decode("utf-8", errors="replace"))

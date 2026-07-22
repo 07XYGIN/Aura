@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from app.core.agent.tools.term_memory import (
+from app.core.memory.service import (
     clear_memories_by_user,
     delete_memory_by_id,
     get_memory_retention_status,
@@ -39,7 +39,7 @@ async def get_memory(userId: str, query: str, k: int = 1):
     return SuccessResponse(data=memory_list)
 
 
-@router.get("/retention", response_model=SuccessResponse, summary="Get free memory retention status")
+@router.get("/retention", response_model=SuccessResponse, summary="获取个人记忆保留状态")
 async def get_memory_retention(userId: str):
     return SuccessResponse(data=get_memory_retention_status(user_id=userId))
 

@@ -38,7 +38,7 @@ def _redis_client_or_none() -> Redis | None:
     try:
         return get_redis_client()
     except Exception:
-        logging.warning("Redis client initialization failed for silence state", exc_info=True)
+        logging.warning("沉默状态所需的 Redis 客户端初始化失败", exc_info=True)
         return None
 
 
@@ -92,7 +92,7 @@ def _log_background_record_error(future) -> None:
     try:
         future.result()
     except Exception:
-        logging.warning("Background silence activity record failed", exc_info=True)
+        logging.warning("后台记录用户活跃时间失败", exc_info=True)
 
 
 def list_tracked_silence_user_ids() -> list[str]:

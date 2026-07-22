@@ -7,12 +7,7 @@ from typing import Any, Literal
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from app.core.agent.tools.term_memory import (
-    apply_memory_merge,
-    list_memory_merge_candidates,
-    list_topic_memory_merge_candidates,
-    save_memory,
-)
+from app.core.memory.service import save_memory
 
 from .logging_utils import log_tool
 
@@ -28,174 +23,53 @@ def save_memory_tool(
     reason: str | None = None,
     signals: list[str] | None = None,
 ) -> str:
-    """保存用户明确值得记住的信息到长期或中期记忆库；content 要简洁但保留场景、心情或具体情境。"""
+    """保存当前用户以后确实需要继续使用的信息。
+
+    用户明确要求记住，或内容属于稳定偏好、边界、重要事实、共同事件和近期待跟进事项时调用。
+    普通闲聊、一次性情绪、模型猜测和工具结果不要保存。
+    """
     configurable: dict[str, Any] = config.get("configurable", {})
     user_id = configurable.get("user_id")
     if not user_id:
         return "缺少用户 ID，无法保存记忆。"
 
-    clean_title = clean_text(title, max_length=80) or ("对话记忆" if memory_scope == "long" else "近期线索")
-    clean_content = clean_text(content, max_length=320)
+    clean_title = clean_text(title, 80) or ("对话记忆" if memory_scope == "long" else "近期线索")
+    clean_content = clean_text(content, 320)
     if not clean_content:
         return "缺少有效记忆内容，未保存。"
 
-    clean_reason = clean_text(reason, max_length=120)
-    clean_signals = clean_signal_list(signals)
-
     try:
-        memory_key = save_memory(
+        saved_key = save_memory(
             user_id=str(user_id),
             content=clean_content,
             title=clean_title,
             create_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
             memory_scope=memory_scope,
             confidence=clamp_confidence(confidence),
-            signals=clean_signals,
+            signals=clean_signal_list(signals),
             extra_metadata={
                 "source": "save_memory_tool",
-                "reason": clean_reason,
+                "reason": clean_text(reason, 120),
             },
         )
     except Exception:
-        logging.exception("save_memory_tool failed user_id=%s title=%s", user_id, clean_title)
+        logging.exception("保存记忆失败 user_id=%s title=%s", user_id, clean_title)
         return "记忆保存失败，先不要声称已经记住。"
 
-    scope_label = "长期" if memory_scope == "long" else "中期"
-    return f"已保存{scope_label}记忆：{clean_title}（memory_key={memory_key}）"
-
-
-@tool
-@log_tool
-def merge_similar_memories_tool(
-    config: RunnableConfig,
-    threshold: float | None = None,
-    limit: int = 1,
-    scan_limit: int | None = None,
-    reason: str | None = None,
-    mode: Literal["deduplicate", "topic"] = "deduplicate",
-    topic: str | None = None,
-) -> str:
-    """主动整理当前用户的长期记忆：可按高相似度去重，或在给出具体主题时按主题归并，并让旧记忆退出可检索范围。"""
-    configurable: dict[str, Any] = config.get("configurable", {})
-    user_id = configurable.get("user_id")
-    if not user_id:
-        return "缺少用户 ID，无法整理长期记忆。"
-
-    clean_mode = mode if mode in {"deduplicate", "topic"} else "deduplicate"
-    clean_topic = clean_text(topic, max_length=120)
-    safe_threshold = (
-        clamp_float(threshold, default=0.52, minimum=0.35, maximum=0.9)
-        if clean_mode == "topic"
-        else clamp_float(threshold, default=0.85, minimum=0.8, maximum=0.98)
-    )
-    safe_limit = clamp_int(limit, default=1, minimum=1, maximum=3)
-    safe_scan_limit = (
-        clamp_int(scan_limit, default=20, minimum=2, maximum=80)
-        if clean_mode == "topic"
-        else clamp_int(scan_limit, default=120, minimum=20, maximum=500)
-    )
-    clean_reason = clean_text(reason, max_length=120) or "aura_memory_merge_tool"
-
-    try:
-        if clean_mode == "topic":
-            if not clean_topic:
-                return "缺少明确整理主题，不能按主题归并长期记忆。"
-            candidates = list_topic_memory_merge_candidates(
-                user_id=str(user_id),
-                topic_query=clean_topic,
-                threshold=safe_threshold,
-                limit=safe_limit,
-                scan_limit=safe_scan_limit,
-            )
-        else:
-            candidates = list_memory_merge_candidates(
-                user_id=str(user_id),
-                threshold=safe_threshold,
-                limit=safe_limit,
-                scan_limit=safe_scan_limit,
-            )
-    except Exception:
-        logging.exception("merge_similar_memories_tool scan failed user_id=%s", user_id)
-        return "长期记忆整理失败，先不要声称已经整理完成。"
-
-    raw_items = candidates.get("items") if isinstance(candidates, dict) else None
-    items = raw_items if isinstance(raw_items, list) else []
-    if not items:
-        if clean_mode == "topic":
-            return f"没有发现足够归并到“{clean_topic}”这个主题下的长期记忆。"
-        return "没有发现需要合并的高度相似长期记忆。"
-
-    merged_titles: list[str] = []
-    skipped_count = 0
-    for item in items[:safe_limit]:
-        if not isinstance(item, dict):
-            skipped_count += 1
-            continue
-
-        raw_keys = item.get("memory_keys")
-        memory_keys = (
-            [key.strip() for key in raw_keys if isinstance(key, str) and key.strip()]
-            if isinstance(raw_keys, list)
-            else []
-        )
-        merged_title = clean_text(item.get("suggested_title"), max_length=80) or "合并记忆"
-        merged_content = clean_text(item.get("suggested_content"), max_length=520)
-        if len(memory_keys) < 2 or not merged_content:
-            skipped_count += 1
-            continue
-
-        try:
-            result = apply_memory_merge(
-                user_id=str(user_id),
-                memory_keys=memory_keys,
-                merged_title=merged_title,
-                merged_content=merged_content,
-                reason=clean_reason,
-                source="memory_merge_tool",
-            )
-        except Exception:
-            logging.exception(
-                "merge_similar_memories_tool apply failed user_id=%s memory_keys=%s",
-                user_id,
-                memory_keys,
-            )
-            skipped_count += 1
-            continue
-
-        merged_from = result.get("merged_from") if isinstance(result, dict) else None
-        merged_count = len(merged_from) if isinstance(merged_from, list) else len(memory_keys)
-        result_title = result.get("title") if isinstance(result, dict) else merged_title
-        title = clean_text(result_title, max_length=80) or merged_title
-        merged_titles.append(f"{title}（{merged_count} 条）")
-
-    if not merged_titles:
-        return "发现了相似记忆候选，但合并失败，先不要声称已经整理完成。"
-
-    skipped_text = f"；另有 {skipped_count} 组候选未合并" if skipped_count else ""
-    mode_text = "同主题长期记忆" if clean_mode == "topic" else "相似长期记忆"
-    return (
-        f"已合并 {len(merged_titles)} 组{mode_text}：{'；'.join(merged_titles)}。"
-        f"合并前的旧记忆已标记为已替代，不会再作为可引用长期记忆检索{skipped_text}。"
-    )
+    if not saved_key:
+        return "这条内容没有形成新的有效记忆，先不要声称已经保存。"
+    scope_label = "长期" if memory_scope == "long" else "近期"
+    return f"已保存{scope_label}记忆：{clean_title}。"
 
 
 def clean_text(value: Any, max_length: int) -> str:
-    if not isinstance(value, str):
-        return ""
-    return value.strip()[:max_length]
+    return value.strip()[:max_length] if isinstance(value, str) else ""
 
 
 def clean_signal_list(value: list[str] | None) -> list[str]:
     if not isinstance(value, list):
         return []
-    signals: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            continue
-        signal = item.strip()[:40]
-        if signal:
-            signals.append(signal)
-    return signals[:8]
+    return [item.strip()[:40] for item in value if isinstance(item, str) and item.strip()][:8]
 
 
 def clamp_confidence(value: Any) -> float:
@@ -204,19 +78,3 @@ def clamp_confidence(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.8
     return max(0.0, min(1.0, number))
-
-
-def clamp_float(value: Any, default: float, minimum: float, maximum: float) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(maximum, number))
-
-
-def clamp_int(value: Any, default: int, minimum: int, maximum: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(maximum, number))

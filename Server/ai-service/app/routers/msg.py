@@ -31,7 +31,7 @@ def _positive_int_env(name: str, default: int) -> int:
     try:
         parsed = int(value)
     except ValueError:
-        logging.warning("Invalid %s=%r, fallback to %s", name, value, default)
+        logging.warning("环境变量不是有效正整数 name=%s value=%r，回退到 default=%s", name, value, default)
         return default
     return max(parsed, 1)
 
@@ -49,9 +49,9 @@ def _configure_sse_runtime_for_tests(max_concurrency: int, queue_size: int = 32)
     global _sse_executor, _sse_max_concurrency, _sse_queue_size, _sse_slots
 
     if max_concurrency < 1:
-        raise ValueError("max_concurrency must be greater than 0")
+        raise ValueError("最大并发数必须大于 0")
     if queue_size < 1:
-        raise ValueError("queue_size must be greater than 0")
+        raise ValueError("队列大小必须大于 0")
 
     previous_executor = _sse_executor
     _sse_max_concurrency = max_concurrency
@@ -72,7 +72,7 @@ def _release_sse_slot() -> None:
     try:
         _sse_slots.release()
     except ValueError:
-        logging.error("Aura SSE slot release called more than once")
+        logging.error("Aura SSE 并发槽被重复释放")
 
 
 async def event_generator(
@@ -91,7 +91,7 @@ async def event_generator(
     released = False
 
     logging.info(
-        "Aura SSE stream start user_id=%s client_message_id=%s message_length=%s",
+        "Aura SSE 对话流开始 user_id=%s client_message_id=%s message_length=%s",
         user_id,
         client_message_id,
         len(message),
@@ -123,7 +123,7 @@ async def event_generator(
                     put_future.cancel()
                     return False
             except Exception:
-                logging.exception("Aura SSE queue write failed")
+                logging.exception("Aura SSE 队列写入失败")
                 return False
 
     def produce_events() -> None:
@@ -142,11 +142,11 @@ async def event_generator(
                 if not put_from_thread(sse_data(event)):
                     break
         except Exception:
-            logging.exception("Aura SSE stream failed")
+            logging.exception("Aura SSE 对话流失败")
             put_from_thread(sse_data(error_event("Aura 服务暂时没有组织好回复，请稍后再试。")))
         finally:
             logging.info(
-                "Aura SSE stream end， user_id为=%s duration_ms=%s",
+                "Aura SSE 对话流结束 user_id=%s duration_ms=%s",
                 user_id,
                 round((time.perf_counter() - started_at) * 1000),
             )

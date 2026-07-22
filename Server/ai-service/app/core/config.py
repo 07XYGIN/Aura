@@ -43,6 +43,16 @@ def int_env(name: str, default: int, minimum: int) -> int:
 
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+AURA_TIMEZONE = os.getenv("AURA_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
+AURA_CITY_ADCODE = os.getenv("AURA_CITY_ADCODE", "").strip() or None
+AURA_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "AURA_CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 AURA_PROACTIVE_SCHEDULER_ENABLED = os.getenv("AURA_PROACTIVE_SCHEDULER_ENABLED", "true").strip().lower() not in {
     "0",
     "false",
@@ -62,4 +72,3 @@ PG_DATABASE_URL = f'postgresql+asyncpg://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}'
 
 
 SYNC_DATABASE_URL = f'postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}'
-print(SYNC_DATABASE_URL)

@@ -34,7 +34,7 @@ def ensure_self_changelog_admin_fields() -> None:
 
         with sync_engine.begin() as connection:
             if not inspect(connection).has_table(SELF_CHANGELOG_TABLE):
-                logging.warning("self_changelog_entry table is missing; skip admin schema guard")
+                logging.warning("缺少 self_changelog_entry 表，跳过管理端结构检查")
                 return
             for statement in SELF_CHANGELOG_ADMIN_DDL:
                 connection.execute(text(statement))
@@ -52,7 +52,7 @@ async def ensure_self_changelog_admin_fields_async() -> None:
             lambda sync_connection: inspect(sync_connection).has_table(SELF_CHANGELOG_TABLE)
         )
         if not table_exists:
-            logging.warning("self_changelog_entry table is missing; skip admin schema guard")
+            logging.warning("缺少 self_changelog_entry 表，跳过管理端结构检查")
             return
         for statement in SELF_CHANGELOG_ADMIN_DDL:
             await connection.execute(text(statement))

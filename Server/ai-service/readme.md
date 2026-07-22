@@ -12,7 +12,8 @@
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-Qwen3-000000?logo=ollama&logoColor=white)
+![DeepSeek](https://img.shields.io/badge/DeepSeek-Chat-4D6BFE)
+![Ollama](https://img.shields.io/badge/Ollama-Embeddings-000000?logo=ollama&logoColor=white)
 
 ### 数据库
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)
@@ -25,9 +26,9 @@
 
 ## 📖 简介
 
-**Aura AI Service** 位于 `Server/ai-service/`，是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，使用 Ollama 本地模型处理多轮对话，并通过 Server-Sent Events（SSE）向客户端持续输出响应片段。
+**Aura AI Service** 位于 `Server/ai-service/`，是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，默认使用 DeepSeek 处理对话和判断任务，使用本地 Ollama Embedding 生成记忆向量，并通过 Server-Sent Events（SSE）向客户端输出回复事件。
 
-服务同时提供聊天历史读取、长期记忆写入与语义检索、附件、位置、情绪、关系状态、管理端资源查询和主动消息调度能力。Web、PC 与根目录 `app/` Flutter 移动端后续都通过 `AI-Web/apps/bff` 消费这些能力。
+服务同时提供聊天历史读取、长期记忆写入与语义检索、附件、位置、自我更新管理和主动消息调度能力。Web、PC 与根目录 `app/` Flutter 移动端后续都通过 `AI-Web/apps/bff` 消费这些能力。
 
 ---
 
@@ -35,18 +36,17 @@
 
 ### 🤖 AI 对话
 - 基于 LangGraph `StateGraph` 编排聊天节点与工具节点
-- 使用 `qwen3:8b` 作为主要对话模型
+- 默认使用 DeepSeek 作为主对话模型，模型配置集中在 `app/core/llms.py`
 - `/api/send/sse/` 通过 SSE 持续输出模型响应片段
 - SSE 协议保持 `data: JSON` + `data: [DONE]` 兼容
-- 每轮可输出 `emotion`、`memory_candidate`、`relationship_delta` 和多段 `content` 事件
+- 每轮可输出 `emotion`、`memory_candidate` 和多段 `assistant_message` 事件
 
 ### 🧰 工具调用
 - `get_weather`：查询天气，高德接口不可用时不会编造结果
-- `save_memory_tool`：分析用户消息，将值得长期保存的信息写入记忆库
+- `save_memory_tool`：保存用户明确要求记住、或以后确实需要继续使用的信息
 - `search_memory_tool`：按用户隔离检索历史记忆
-- `get_current_datetime`：返回指定时区的当前日期、时间和星期
-- `get_relationship_status`：基于当前消息估算关系状态和亲密度
-- `get_emotional_support_advice`：根据用户情绪给出安抚策略和回复方向
+
+时间属于每轮自动注入的上下文；情绪和互动状态属于内部判断；主动消息与记忆整理分别由后台调度器和维护模块执行，不绑定到普通聊天模型。
 
 ### 🧠 记忆与历史
 - 使用 PostgreSQL Checkpointer 持久化 LangGraph 对话状态
@@ -64,11 +64,10 @@
 | DELETE | `/api/history/{userId}/messages/{messageId}` | 删除单条聊天历史 |
 | GET | `/api/memory/list` | 分页获取指定用户记忆 |
 | GET | `/api/memory/getMemory` | 检索指定用户记忆 |
-| GET | `/api/memory/retention` | 获取免费记忆保留状态 |
+| GET | `/api/memory/retention` | 获取个人永久记忆与中期记忆策略 |
 | DELETE | `/api/memory/list` | 清空指定用户记忆 |
 | DELETE | `/api/memory/{memoryId}` | 删除指定记忆 |
-| POST | `/api/aura/*` | 写入会话、消息、记忆、关系和反馈等 Aura 数据 |
-| GET / POST / PATCH / DELETE | `/api/admin/*` | 管理端资源、记忆合并和自我更新接口 |
+| GET / POST / PATCH / DELETE | `/api/admin/*` | 记忆合并和自我更新接口 |
 
 ---
 
@@ -91,12 +90,12 @@
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
 │         LangGraph Agent       │ │     Aura / Memory Store │
-│  prompt · tools · structured  │ │  history · metadata     │
+│ prompt · judges · chat tools  │ │ retrieval · maintenance │
 └───────────────┬──────────────┘ └──────────┬─────────────┘
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│      Ollama / Qwen Models     │ │ PostgreSQL + pgvector   │
-│    chat · embedding · judge    │ │ checkpoints · vectors   │
+│    DeepSeek + Ollama Embed     │ │ PostgreSQL + pgvector   │
+│       chat · judge · vector    │ │ checkpoints · vectors   │
 └──────────────────────────────┘ └────────────────────────┘
 ```
 
@@ -110,20 +109,29 @@ ai-service/
 ├── pyproject.toml                  # uv / Python 依赖配置
 ├── uv.lock                         # 锁定依赖版本
 ├── tools/
-│   └── check_mojibake.py           # 中文乱码扫描脚本
+│   ├── check_mojibake.py           # 中文乱码扫描脚本
+│   └── check_db_schema.py          # ORM 与 PostgreSQL 结构一致性检查
+├── docs/
+│   └── database-schema.md          # 当前保留表与删除表说明
+├── sql/
+│   ├── README.md                   # 当前基线与历史 SQL 使用说明
+│   ├── ...                         # 仅用于追溯的历史增量迁移
+│   └── 20260722_single_user_schema_cleanup.sql # 当前单用户结构清理迁移
 └── app/
     ├── core/
-    │   ├── agent/                  # LangGraph、提示词、工具和结构化协议
-    │   ├── aura_store.py           # Aura 业务数据存取
+    │   ├── agent/                  # LangGraph 主聊天编排
+    │   │   ├── judges/             # 情绪、记忆、回合语境判断
+    │   │   └── tools/              # 主聊天可调用的天气与记忆工具
+    │   ├── memory/                 # 记忆存储、检索与后台维护
+    │   ├── proactive/              # 主动消息计划与文案生成
     │   ├── attachment_store.py     # 附件存取
     │   ├── config.py               # 环境配置
     │   ├── emotion.py              # 情绪状态推导
     │   └── proactive_scheduler.py  # 主动消息调度
     ├── db/                         # SQLAlchemy 会话、模型和 schema guard
     ├── middleware/                 # 请求响应日志中间件
-    ├── routers/                    # user / msg / history / memory / aura / admin
-    ├── schemas/                    # Pydantic 请求和响应模型
-    └── utils/                      # 历史记录等工具函数
+    ├── routers/                    # admin / msg / history / memory / attachments / location / user
+    └── schemas/                    # Pydantic 请求和响应模型
 ```
 
 ---
@@ -135,7 +143,8 @@ ai-service/
 - uv
 - PostgreSQL，并启用 pgvector
 - Redis 7+
-- Ollama，并准备 `qwen3:8b`、`qwen3:0.6b`、`nomic-embed-text:latest`
+- DeepSeek API Key，用于主对话、情绪判断和记忆判断
+- Ollama，并准备 `nomic-embed-text:latest` 用于本地记忆向量
 - 高德地图 API Key，用于天气与位置工具
 
 ### 配置环境变量
@@ -147,8 +156,17 @@ DB_PORT=5432
 DB_NAME=Aura
 DB_USER=postgres
 DB_PASSWORD=your_password
+JWT_SECRET_KEY=至少32字符的随机密钥
+DEEPSEEK_API_KEY=your_deepseek_key
 amap_key=your_amap_key
 ```
+
+### 初始化数据库
+
+新数据库和旧数据库都以 `sql/20260722_single_user_schema_cleanup.sql` 为当前基线。执行该文件后启动应用，
+LangGraph 会自动创建或升级四张 `checkpoint_*` 表。早期 SQL 只用于追溯，不要作为新库的建库入口。
+
+完整说明见 `sql/README.md`。
 
 ### 安装依赖
 ```bash
@@ -181,17 +199,17 @@ data: {"event":"emotion","type":"emotion","emotion":{...}}
 
 data: {"event":"memory_candidate","type":"memory_candidate","memory_candidate":{...}}
 
-data: {"event":"relationship_delta","type":"relationship_delta","relationship_delta":{...}}
-
-data: {"event":"content","type":"content","content":"我在呢"}
+data: {"event":"assistant_message","type":"assistant_message","content":"我在呢","delayMs":500,...}
 
 data: [DONE]
 ```
 
 ### 本地检查
-```bash
-python tools/check_mojibake.py
-python -m compileall -q app main.py tools
+```powershell
+.\.venv\Scripts\python.exe tools\check_mojibake.py
+.\.venv\Scripts\python.exe tools\check_db_schema.py
+.\.venv\Scripts\python.exe -m compileall -q app main.py tools
+.\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
 ---
@@ -203,8 +221,10 @@ python -m compileall -q app main.py tools
 - [x] LangGraph 对话状态机、工具节点和结构化 SSE 事件协议
 - [x] PostgreSQL Checkpointer 对话状态持久化
 - [x] PGVector 长期记忆保存、检索、分页、清空和删除
-- [x] 天气、时间、关系状态、情绪安抚、保存记忆、搜索记忆工具
-- [x] 附件、位置、Aura 数据写入、管理端资源和自我更新接口
+- [x] 天气、保存记忆、搜索记忆三个主聊天工具
+- [x] 时间上下文自动注入、主动消息独立调度、记忆后台维护
+- [x] 情绪语境与互动目标判断，不使用关键词关系积分
+- [x] 附件、位置、记忆维护和自我更新接口
 - [x] SSE 并发上限、队列背压和 `[DONE]` 兼容输出
 
 ### 🔜 规划中

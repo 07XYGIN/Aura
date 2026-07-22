@@ -23,20 +23,13 @@ from .protocol import (
     emotion_event,
     memory_reference_event,
     memory_candidate_event,
-    relationship_delta_event,
 )
 from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
 from .structured_reply import parse_structured_reply, try_parse_structured_reply
 from .self_changelog import load_self_changelog_context_sync, mark_self_changelog_reacted_sync
-from .turn_judge import format_turn_judgement_context, judge_turn, normalize_turn_judgement
-from .tools.datetime_tools import get_current_datetime
-from .tools.emotional_support import get_emotional_support_advice
-from .tools.memory import merge_similar_memories_tool, save_memory_tool
-from .tools.term_memory import format_memory_context, save_memory
-from .tools.proactive import draft_proactive_message, plan_daily_greetings
-from .tools.relationship import get_relationship_status
-from .tools.search_memory import search_memory_tool
-from .tools.weather import get_weather
+from .judges.turn import format_turn_judgement_context, judge_turn, normalize_turn_judgement
+from .tools.registry import CHAT_TOOLS
+from app.core.memory.service import save_memory
 
 SHORT_TERM_MESSAGE_WINDOW = 24
 AURA_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -62,17 +55,7 @@ class AuraState(TypedDict, total=False):
     last_reply_batch: dict[str, Any]
 
 
-tools = [
-    search_memory_tool,
-    save_memory_tool,
-    merge_similar_memories_tool,
-    get_current_datetime,
-    get_relationship_status,
-    get_emotional_support_advice,
-    get_weather,
-    plan_daily_greetings,
-    draft_proactive_message,
-]
+tools = CHAT_TOOLS
 
 llm_with_tools = llm.bind_tools(tools)
 
@@ -81,12 +64,12 @@ tool_node = ToolNode(tools)
 
 @traceable(name="aura_prepare_context")
 def prepare_context(state: AuraState) -> AuraState:
-    user_id = state.get("user_id") or ""
-    query = latest_human_text(state.get("messages", []))
-    memory_context = format_memory_context(user_id=user_id, query=query, k=5) if user_id else ""
     attachment_context = format_attachment_context(state.get("attachments", []))
     return {
-        "memory_context": memory_context,
+        "memory_context": (
+            "本轮没有预加载历史记忆。"
+            "只有当前回复确实需要过去信息时，才调用 search_memory_tool。"
+        ),
         "attachment_context": attachment_context,
     }
 
@@ -109,11 +92,11 @@ def call_model(state: AuraState) -> AuraState:
     tool_calls = getattr(response, "tool_calls", None) or []
     if tool_calls:
         logging.info(
-            "Aura model requested tools=%s",
+            "Aura 请求调用工具 tools=%s",
             [tool_call.get("name") for tool_call in tool_calls],
         )
     else:
-        logging.info("Aura model responded without tool call")
+        logging.info("Aura 未调用工具，直接生成回复")
 
     if tool_calls:
         return {"messages": [response]}
@@ -123,7 +106,7 @@ def call_model(state: AuraState) -> AuraState:
     if parsed_reply is not None:
         reply_messages, reply_batch = build_reply_messages_from_texts(parsed_reply, response, state)
     else:
-        logging.warning("Aura first response was not valid structured JSON, falling back to reformatting call")
+        logging.warning("Aura 首次回复不是有效的结构化 JSON，尝试重新整理格式")
         structured_response = build_structured_reply_response(response, messages, state)
         reply_messages, reply_batch = build_reply_messages(structured_response, state)
     return {
@@ -187,7 +170,7 @@ def aura_agent(
     city_adcode: str | None = None,
 ) -> Generator[Any, None, None]:
     if aura is None:
-        raise RuntimeError("Aura graph has not been initialized.")
+        raise RuntimeError("Aura 对话图尚未初始化")
 
     request_started_at = datetime.now(UTC)
     turn_id = client_message_id or f"turn-{uuid4()}"
@@ -216,7 +199,7 @@ def aura_agent(
     emotion_state = turn_judgement["emotion"]
     attachments = load_attachments(user_id, attachment_ids)
     logging.info(
-        "Aura agent start user_id=%s message_length=%s attachments=%s",
+        "Aura 对话开始 user_id=%s message_length=%s attachments=%s",
         user_id,
         len(human_prompt),
         len(attachments),
@@ -253,7 +236,6 @@ def aura_agent(
 
     yield emotion_event(emotion_state)
     yield memory_candidate_event(memory_candidate)
-    yield relationship_delta_event(turn_judgement["relationship_delta"])
 
     memory_reference_reported = False
     memory_save_tool_called = False
@@ -310,7 +292,7 @@ def aura_agent(
             yield content_event(content)
         mark_self_changelog_reacted_sync(self_changelog_context.entry_id)
 
-    logging.info("Aura agent end user_id=%s", user_id)
+    logging.info("Aura 对话结束 user_id=%s", user_id)
 
 
 def build_reply_messages(response: Any, state: AuraState) -> tuple[list[AIMessage], dict[str, Any]]:
@@ -389,7 +371,7 @@ def build_structured_reply_response(draft_response: Any, messages: list, state: 
         if message_content_to_text(getattr(response, "content", "")).strip():
             return response
     except Exception:
-        logging.exception("Aura structured reply formatting failed; falling back to draft response")
+        logging.exception("Aura 结构化回复整理失败，回退到原始草稿")
 
     return draft_response
 
@@ -580,14 +562,14 @@ def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
             confidence=candidate.get("confidence") if isinstance(candidate.get("confidence"), (float, int)) else None,
             signals=candidate.get("signals") if isinstance(candidate.get("signals"), list) else None,
         )
-        logging.info("Saved %s memory candidate user_id=%s title=%s", memory_scope, user_id, title)
+        logging.info("记忆候选保存完成 scope=%s user_id=%s title=%s", memory_scope, user_id, title)
     except Exception:
-        logging.exception("Failed to save memory candidate user_id=%s", user_id)
+        logging.exception("记忆候选保存失败 user_id=%s", user_id)
 
 
 def get_history(user_id: str) -> list:
     if aura is None:
-        raise RuntimeError("Aura graph has not been initialized.")
+        raise RuntimeError("Aura 对话图尚未初始化")
 
     config: RunnableConfig = {
         "configurable": {
@@ -661,7 +643,7 @@ def append_proactive_history_message(
     trigger_type: str = "silence",
 ) -> bool:
     if aura is None:
-        logging.warning("Skip proactive history append because Aura graph has not been initialized")
+        logging.warning("Aura 对话图尚未初始化，跳过主动消息历史写入")
         return False
 
     normalized_user_id = str(user_id or "").strip()
@@ -698,14 +680,14 @@ def append_proactive_history_message(
             },
         )
     except Exception:
-        logging.exception("Failed to append proactive message to Aura history user_id=%s", normalized_user_id)
+        logging.exception("主动消息写入 Aura 历史失败 user_id=%s", normalized_user_id)
         return False
     return True
 
 
 def delete_history_message(user_id: str, message_id: str) -> bool:
     if aura is None:
-        raise RuntimeError("Aura graph has not been initialized.")
+        raise RuntimeError("Aura 对话图尚未初始化")
 
     normalized_message_id = message_id.strip()
     if not normalized_message_id:
@@ -735,7 +717,7 @@ def delete_history_message(user_id: str, message_id: str) -> bool:
 
 def clear_history(user_id: str) -> int:
     if aura is None:
-        raise RuntimeError("Aura graph has not been initialized.")
+        raise RuntimeError("Aura 对话图尚未初始化")
 
     config: RunnableConfig = {
         "configurable": {
@@ -778,7 +760,7 @@ def build_valid_message_blocks(messages: list) -> list[list]:
     while index < len(messages):
         message = messages[index]
         if is_tool_message(message):
-            logging.warning("Dropping orphan tool message from Aura short-term context")
+            logging.warning("短期上下文中发现孤立工具消息，已丢弃")
             index += 1
             continue
 
@@ -787,7 +769,7 @@ def build_valid_message_blocks(messages: list) -> list[list]:
             if block:
                 blocks.append(block)
             else:
-                logging.warning("Dropping incomplete tool-call block from Aura short-term context")
+                logging.warning("短期上下文中发现不完整工具调用块，已丢弃")
             index = next_index
             continue
 

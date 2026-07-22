@@ -26,7 +26,7 @@ def redis_available() -> bool:
     try:
         return bool(get_redis_client().ping())
     except RedisError:
-        logging.warning("Redis is unavailable; falling back to local flow", exc_info=True)
+        logging.warning("Redis 当前不可用，回退到本地流程", exc_info=True)
         return False
 
 
@@ -34,7 +34,7 @@ def safe_redis_call(operation: str, default: Any, func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except RedisError:
-        logging.warning("Redis operation failed operation=%s", operation, exc_info=True)
+        logging.warning("Redis 操作失败 operation=%s", operation, exc_info=True)
         return default
 
 

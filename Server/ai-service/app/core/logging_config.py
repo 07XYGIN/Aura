@@ -25,6 +25,7 @@ SENSITIVE_KEYS = {
 }
 MAX_VALUE_LENGTH = int(os.getenv("AURA_LOG_VALUE_MAX_LENGTH", "1000"))
 MAX_RESULT_ROWS = int(os.getenv("AURA_SQL_RESULT_MAX_ROWS", "50"))
+SQL_VERBOSE = os.getenv("AURA_SQL_VERBOSE", "false").strip().lower() == "true"
 
 
 def configure_logging() -> None:
@@ -46,38 +47,44 @@ def install_sql_logging(engine: Any) -> None:
     @event.listens_for(sync_engine, "before_cursor_execute")
     def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
         context._aura_query_start_time = time.perf_counter()
-        sql_logger.info("==> Preparing: %s", normalize_sql(statement))
-        sql_logger.info("==> Parameters: %s", to_log_text(sanitize_sql_parameters(statement, parameters)))
+        sql_logger.info("准备执行 SQL: %s", normalize_sql(statement))
+        if SQL_VERBOSE:
+            sql_logger.info("SQL 参数: %s", to_log_text(sanitize_sql_parameters(statement, parameters)))
 
     @event.listens_for(sync_engine, "after_cursor_execute")
     def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
         started_at = getattr(context, "_aura_query_start_time", None)
         elapsed_ms = (time.perf_counter() - started_at) * 1000 if started_at else 0
         rowcount = cursor.rowcount
-        sql_logger.info("<== Completed: rowcount=%s elapsed=%.2fms", rowcount, elapsed_ms)
+        sql_logger.info("SQL 执行完成 affected_rows=%s elapsed_ms=%.2f", rowcount, elapsed_ms)
 
     @event.listens_for(sync_engine, "handle_error")
     def handle_error(exception_context):
-        sql_logger.exception(
-            "<== SQL Error: statement=%s params=%s",
-            normalize_sql(str(exception_context.statement or "")),
-            to_log_text(exception_context.parameters),
-        )
+        if SQL_VERBOSE:
+            sql_logger.exception(
+                "SQL 执行失败 statement=%s params=%s",
+                normalize_sql(str(exception_context.statement or "")),
+                to_log_text(exception_context.parameters),
+            )
+        else:
+            sql_logger.exception("SQL 执行失败 statement=%s", normalize_sql(str(exception_context.statement or "")))
 
     setattr(sync_engine, "_aura_sql_logging_installed", True)
 
 
 def log_sql_result(result: Any, elapsed_ms: float) -> Any:
+    if not SQL_VERBOSE:
+        return result
     try:
         frozen = result.freeze()
     except NotImplementedError:
-        sql_logger.info("<== Result: rows unavailable elapsed=%.2fms", elapsed_ms)
+        sql_logger.info("SQL 结果不可预览 elapsed_ms=%.2f", elapsed_ms)
         return result
 
     rows = list(frozen.data)
     preview = rows[:MAX_RESULT_ROWS]
     sql_logger.info(
-        "<== Total: %s row(s), preview=%s elapsed=%.2fms",
+        "SQL 查询完成 total_rows=%s preview=%s elapsed_ms=%.2f",
         len(rows),
         to_log_text(preview),
         elapsed_ms,
