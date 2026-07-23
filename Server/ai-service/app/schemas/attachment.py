@@ -13,9 +13,12 @@ class AttachmentUploadItem(BaseModel):
 
 
 class AttachmentUploadRequest(BaseModel):
-    """一次附件上传请求，包含所属用户和附件列表。"""
+    """一次附件上传请求。
+
+    ``userId`` 仅为旧客户端兼容字段；服务端所有权始终来自 Bearer JWT。
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    user_id: str = Field(alias="userId")
+    user_id: str | None = Field(default=None, alias="userId")
     files: list[AttachmentUploadItem]

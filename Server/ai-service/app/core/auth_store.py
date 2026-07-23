@@ -13,7 +13,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import Column, Integer, MetaData, SmallInteger, String, Table, delete, func, insert, select, update
+from sqlalchemy import Column, Integer, MetaData, SmallInteger, String, Table, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -88,14 +88,17 @@ def validate_password_length(password: str) -> None:
         raise HTTPException(status_code=400, detail="密码长度不能超过 72 字节")
 
 
-async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+async def get_current_user_id(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> str:
     """校验 Bearer JWT 并返回其中的用户 ID。
 
     Args:
         token: FastAPI OAuth2 依赖从请求头提取的访问令牌。
 
     Returns:
-        JWT ``sub`` 字段中的用户 ID。
+        JWT ``sub`` 字段中的用户 ID；数据库中不存在的账号不会通过校验。
 
     Raises:
         HTTPException: 令牌已吊销、过期、签名无效或缺少合法 ``sub``。
@@ -114,10 +117,21 @@ async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> 
         user_id = payload.get("sub")
         if not isinstance(user_id, str) or not user_id:
             raise credentials_exception
+        parsed_user_id = UUID(user_id)
     except InvalidTokenError as exc:
         raise credentials_exception from exc
+    except (TypeError, ValueError) as exc:
+        raise credentials_exception from exc
 
-    return user_id
+    # JWT 在账号删除后仍可能尚未自然过期。每次认证都核对 users 表，确保删除
+    # 账号会立即终止旧令牌，而不是让它继续创建无所有者的 checkpoint 或附件。
+    result = await session.execute(
+        select(users_table.c.id).where(users_table.c.id == parsed_user_id).limit(1)
+    )
+    if result.scalar_one_or_none() is None:
+        raise credentials_exception
+
+    return str(parsed_user_id)
 
 
 def revoke_token(token: str) -> None:
@@ -165,9 +179,20 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
     if request.sex not in (0, 1):
         raise HTTPException(status_code=400, detail="性别字段只能是 0 或 1")
 
-    password_digest = hash_password(password)
-
     try:
+        # PostgreSQL 事务级 advisory lock 把“检查是否已有账号”和“创建账号”串行化。
+        # 仅查询 count 无法阻止两个并发注册同时看到空表。
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext('aura_single_user_registration'))")
+        )
+        existing_count_result = await session.execute(
+            select(func.count()).select_from(users_table)
+        )
+        if int(existing_count_result.scalar_one()) > 0:
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="Aura 已绑定唯一用户，不能再注册新账号")
+
+        password_digest = hash_password(password)
         result = await session.execute(
             insert(users_table)
             .values(
@@ -257,8 +282,13 @@ async def delete_user(session: AsyncSession, user_id: str, username: str) -> Non
     if user["username"] != username:
         raise HTTPException(status_code=403, detail="不能删除其他用户")
 
-    await session.execute(delete(users_table).where(users_table.c.id == UUID(user_id)))
-    await session.commit()
+    # 延迟导入避免认证模块和隐私清理模块在应用启动时形成循环依赖。
+    from app.core.privacy import PrivacyPurgeError, purge_user_data
+
+    try:
+        await purge_user_data(session, user_id)
+    except PrivacyPurgeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 async def find_user_by_username(session: AsyncSession, username: str) -> Mapping[str, Any] | None:

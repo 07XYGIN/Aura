@@ -4,10 +4,12 @@ import base64
 import json
 import os
 import re
+import shutil
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.schemas.attachment import AttachmentUploadItem
 
@@ -28,6 +30,15 @@ class AttachmentValidationError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class PreparedAttachment:
+    """已经完成全部内存校验、尚未写入磁盘的附件。"""
+
+    raw: bytes
+    record: dict[str, Any]
+    extension: str
+
+
 def save_attachments(user_id: str, files: list[AttachmentUploadItem]) -> list[dict[str, Any]]:
     """校验单条消息的附件数量并逐个保存。
 
@@ -43,8 +54,27 @@ def save_attachments(user_id: str, files: list[AttachmentUploadItem]) -> list[di
     """
     if len(files) > MAX_ATTACHMENTS_PER_MESSAGE:
         raise AttachmentValidationError(f"每条消息最多上传 {MAX_ATTACHMENTS_PER_MESSAGE} 张图片")
+    normalized_user_id = normalize_user_id(user_id)
 
-    return [save_attachment(user_id, file) for file in files]
+    # 先把整批文件解码并验证完成，避免第二张文件不合法时第一张已经留在磁盘。
+    prepared = [prepare_attachment(normalized_user_id, file) for file in files]
+    if not prepared:
+        return []
+
+    user_dir = user_upload_dir(normalized_user_id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    created_paths: list[Path] = []
+    try:
+        for item in prepared:
+            file_path, meta_path = persist_prepared_attachment(user_dir, item)
+            created_paths.extend((file_path, meta_path))
+    except OSError:
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+        remove_empty_directory(user_dir)
+        raise
+
+    return [public_attachment(item.record) for item in prepared]
 
 
 def save_attachment(user_id: str, file: AttachmentUploadItem) -> dict[str, Any]:
@@ -63,6 +93,19 @@ def save_attachment(user_id: str, file: AttachmentUploadItem) -> dict[str, Any]:
     Side Effects:
         在用户上传目录写入图片文件和同 ID 的 JSON 元数据文件。
     """
+    return save_attachments(user_id, [file])[0]
+
+
+def prepare_attachment(user_id: str, file: AttachmentUploadItem) -> PreparedAttachment:
+    """在不写磁盘的前提下完成 MIME、大小、签名和文件名校验。
+
+    Returns:
+        包含原始字节、公开/私有元数据和扩展名的不可变准备对象。
+
+    Raises:
+        AttachmentValidationError: 声明类型与真实文件头不一致或其他输入无效。
+    """
+
     content_type = file.content_type.lower().strip()
     if content_type not in ALLOWED_IMAGE_TYPES:
         raise AttachmentValidationError("仅支持 jpg、png、webp、gif 图片")
@@ -72,17 +115,14 @@ def save_attachment(user_id: str, file: AttachmentUploadItem) -> dict[str, Any]:
         raise AttachmentValidationError("单张图片不能超过 10MB")
     if file.size and abs(file.size - len(raw)) > 1024:
         raise AttachmentValidationError("图片大小校验失败，请重新上传")
+    if not matches_image_signature(raw, content_type):
+        raise AttachmentValidationError("图片内容与声明的文件类型不一致")
 
     attachment_id = str(uuid4())
     safe_name = sanitize_file_name(file.file_name)
     extension = ALLOWED_IMAGE_TYPES[content_type]
-    user_dir = user_upload_dir(user_id)
-    user_dir.mkdir(parents=True, exist_ok=True)
-
     stored_name = f"{attachment_id}{extension}"
-    file_path = user_dir / stored_name
-    meta_path = user_dir / f"{attachment_id}.json"
-    file_path.write_bytes(raw)
+    file_path = user_upload_dir(user_id) / stored_name
 
     record = {
         "id": attachment_id,
@@ -94,8 +134,40 @@ def save_attachment(user_id: str, file: AttachmentUploadItem) -> dict[str, Any]:
         "createdAt": datetime.now(UTC).isoformat(),
         "summary": build_attachment_summary(safe_name, content_type, len(raw)),
     }
-    meta_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    return public_attachment(record)
+    return PreparedAttachment(raw=raw, record=record, extension=extension)
+
+
+def persist_prepared_attachment(
+    user_dir: Path,
+    prepared: PreparedAttachment,
+) -> tuple[Path, Path]:
+    """使用同目录临时文件和原子替换写入图片及 JSON 元数据。
+
+    单个附件无法跨两个文件获得真正的文件系统事务，因此本函数在任一步失败时
+    删除临时文件和已经落位的最终文件；外层再负责回滚本批更早的附件。
+    """
+
+    attachment_id = str(prepared.record["id"])
+    file_path = user_dir / f"{attachment_id}{prepared.extension}"
+    meta_path = user_dir / f"{attachment_id}.json"
+    nonce = uuid4().hex
+    file_temp = user_dir / f".{attachment_id}.{nonce}.image.tmp"
+    meta_temp = user_dir / f".{attachment_id}.{nonce}.meta.tmp"
+    try:
+        file_temp.write_bytes(prepared.raw)
+        meta_temp.write_text(
+            json.dumps(prepared.record, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(file_temp, file_path)
+        os.replace(meta_temp, meta_path)
+    except OSError:
+        file_temp.unlink(missing_ok=True)
+        meta_temp.unlink(missing_ok=True)
+        file_path.unlink(missing_ok=True)
+        meta_path.unlink(missing_ok=True)
+        raise
+    return file_path, meta_path
 
 
 def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dict[str, Any]]:
@@ -107,7 +179,11 @@ def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dic
         return []
 
     records: list[dict[str, Any]] = []
-    user_dir = user_upload_dir(user_id)
+    try:
+        normalized_user_id = normalize_user_id(user_id)
+    except AttachmentValidationError:
+        return []
+    user_dir = user_upload_dir(normalized_user_id)
     for attachment_id in attachment_ids[:MAX_ATTACHMENTS_PER_MESSAGE]:
         if not is_uuid_like(attachment_id):
             continue
@@ -118,7 +194,12 @@ def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dic
             record = json.loads(meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
-        if record.get("userId") == user_id:
+        stored_path = Path(str(record.get("path") or "")).resolve()
+        if (
+            record.get("userId") == normalized_user_id
+            and stored_path.parent == user_dir.resolve()
+            and stored_path.is_file()
+        ):
             records.append(public_attachment(record))
     return records
 
@@ -163,6 +244,20 @@ def decode_base64_payload(value: str) -> bytes:
         raise AttachmentValidationError("图片数据无法解析") from exc
 
 
+def matches_image_signature(raw: bytes, content_type: str) -> bool:
+    """按受支持图片格式的魔数校验真实内容，不只信任客户端 MIME。"""
+
+    if content_type == "image/jpeg":
+        return raw.startswith(b"\xff\xd8\xff")
+    if content_type == "image/png":
+        return raw.startswith(b"\x89PNG\r\n\x1a\n")
+    if content_type == "image/gif":
+        return raw.startswith((b"GIF87a", b"GIF89a"))
+    if content_type == "image/webp":
+        return len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"
+    return False
+
+
 def build_attachment_summary(file_name: str, content_type: str, size: int) -> str:
     """生成不包含虚构视觉信息的附件元数据摘要。"""
     return (
@@ -179,9 +274,48 @@ def sanitize_file_name(file_name: str) -> str:
 
 
 def user_upload_dir(user_id: str) -> Path:
-    """根据安全化后的用户 ID 返回其独立上传目录。"""
-    safe_user_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", user_id)[:80]
-    return UPLOAD_ROOT / safe_user_id
+    """根据规范 UUID 返回位于上传根目录下一层的用户目录。"""
+
+    return UPLOAD_ROOT / normalize_user_id(user_id)
+
+
+def normalize_user_id(user_id: str) -> str:
+    """把 JWT 用户 ID 规范为 UUID 字符串，拒绝可形成路径别名的输入。"""
+
+    try:
+        return str(UUID(str(user_id)))
+    except (TypeError, ValueError) as exc:
+        raise AttachmentValidationError("用户 ID 无效，无法保存附件") from exc
+
+
+def delete_user_attachments(user_id: str) -> int:
+    """删除用户完整附件目录并返回其中的文件数量。
+
+    删除前会解析真实绝对路径并确认它仍是 ``UPLOAD_ROOT`` 的直接子目录；符号
+    链接或任何越界路径都会拒绝处理，避免递归删除触及上传根目录以外的位置。
+    """
+
+    user_dir = user_upload_dir(user_id)
+    if not user_dir.exists():
+        return 0
+
+    root = UPLOAD_ROOT.resolve()
+    resolved_user_dir = user_dir.resolve()
+    if resolved_user_dir.parent != root or resolved_user_dir == root:
+        raise OSError("附件目录越过允许的上传根目录")
+
+    file_count = sum(1 for path in resolved_user_dir.rglob("*") if path.is_file())
+    shutil.rmtree(resolved_user_dir)
+    return file_count
+
+
+def remove_empty_directory(path: Path) -> None:
+    """在批量写入回滚后删除空目录；目录非空或已不存在时保持不变。"""
+
+    try:
+        path.rmdir()
+    except (FileNotFoundError, OSError):
+        return
 
 
 def format_bytes(value: Any) -> str:
