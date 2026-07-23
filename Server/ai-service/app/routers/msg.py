@@ -15,6 +15,7 @@ from app.core.agent.protocol import (
     bash_game_state_event,
     content_event,
     error_event,
+    focus_state_event,
     pet_state_event,
     sse_data,
 )
@@ -23,6 +24,8 @@ from app.core.auth_store import get_current_user_id
 from app.core.continuity.capsules import trigger_keyword_messages
 from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
 from app.core.games.bash.service import BashGameServiceError
+from app.core.focus.chat import FocusChatResponse, try_handle_focus_chat_message
+from app.core.focus.service import FocusServiceError
 from app.core.pet.chat import PetChatResponse, try_handle_pet_chat_message
 from app.core.pet.service import PetServiceError
 from app.core.silence_state import schedule_user_message_activity_record
@@ -397,6 +400,64 @@ async def trigger_keyword_after_external_history(
         )
 
 
+async def focus_event_generator(
+    response: FocusChatResponse,
+    *,
+    message: str,
+    user_id: str,
+    client_message_id: str | None,
+) -> AsyncIterator[str]:
+    """把专注事务转换成 SSE，并写入与普通聊天共用的历史。"""
+
+    snapshot = response.snapshot
+    if snapshot is not None:
+        yield sse_data(focus_state_event(snapshot))
+    idempotent_replay = bool(snapshot and snapshot.get("idempotentReplay"))
+    reply_batch = None
+    if not idempotent_replay:
+        try:
+            reply_batch = await asyncio.to_thread(
+                append_external_history_turn,
+                user_id,
+                message,
+                response.messages,
+                source="focus",
+                turn_id=client_message_id,
+                client_message_id=client_message_id,
+                source_metadata={
+                    "focus_action": response.action,
+                    "focus_session_id": (
+                        (snapshot.get("focus") or {}).get("id") if snapshot else None
+                    ),
+                },
+            )
+        except Exception:
+            logging.exception("专注消息写入统一聊天历史失败，降级为 content 事件")
+    if reply_batch:
+        await trigger_keyword_after_external_history(
+            user_id,
+            message,
+            client_message_id,
+            source="focus",
+        )
+        for item in reply_batch.get("messages", []):
+            yield sse_data(
+                assistant_message_event(
+                    content=item["content"],
+                    message_id=item["message_id"],
+                    batch_id=item["batch_id"],
+                    batch_index=item["batch_index"],
+                    batch_total=item["batch_total"],
+                    delay_ms=item["delay_ms"],
+                    sent_at=item["sent_at"],
+                )
+            )
+    else:
+        for content in response.messages:
+            yield sse_data(content_event(content))
+    yield "data: [DONE]\n\n"
+
+
 @router.post("/send/sse/")
 async def send_message(
     msg: MessageRequest,
@@ -421,6 +482,40 @@ async def send_message(
             msg.user_id,
             current_user_id,
         )
+    focus_response: FocusChatResponse | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            focus_response = await try_handle_focus_chat_message(
+                session,
+                message=msg.message,
+                user_id=user_id,
+                client_message_id=msg.client_message_id,
+            )
+    except FocusServiceError as exc:
+        focus_response = FocusChatResponse(
+            action="rejected",
+            snapshot=None,
+            messages=[str(exc)],
+        )
+    except Exception:
+        logging.exception("一起专注聊天分流失败，回退到普通 Aura 对话")
+
+    if focus_response is not None:
+        schedule_user_message_activity_record(user_id)
+        return StreamingResponse(
+            focus_event_generator(
+                focus_response,
+                message=msg.message,
+                user_id=user_id,
+                client_message_id=msg.client_message_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     game_response: BashChatResponse | None = None
     try:
         async with AsyncSessionLocal() as session:

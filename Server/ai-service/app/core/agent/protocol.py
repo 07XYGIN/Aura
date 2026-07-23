@@ -124,6 +124,17 @@ def pet_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def focus_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """构造一起专注状态 SSE 事件，旧客户端可以安全忽略。"""
+
+    return {
+        "event": "focus_state",
+        "type": "focus_state",
+        "action": snapshot.get("action"),
+        "focusState": snapshot,
+    }
+
+
 def sse_data(event: dict[str, Any]) -> str:
     """把事件字典编码为一帧 UTF-8 SSE ``data`` 文本。"""
 

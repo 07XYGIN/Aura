@@ -243,6 +243,107 @@ class ConditionalMessageEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class FocusSession(Base, TimestampMixin):
+    """保存一次一起专注的计时状态、结束问询和用户汇报。"""
+
+    __tablename__ = "focus_session"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'check_in_queued', 'awaiting_report', "
+            "'completed', 'cancelled', 'expired')",
+            name="chk_focus_session_status",
+        ),
+        CheckConstraint(
+            "duration_minutes BETWEEN 1 AND 240",
+            name="chk_focus_session_duration",
+        ),
+        CheckConstraint(
+            "remaining_seconds IS NULL OR remaining_seconds BETWEEN 0 AND 14400",
+            name="chk_focus_session_remaining",
+        ),
+        CheckConstraint("version >= 1", name="chk_focus_session_version"),
+        UniqueConstraint("user_id", "start_request_id", name="uq_focus_session_user_request"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    activity: Mapped[str] = mapped_column(String(240), nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active", server_default="active")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    remaining_seconds: Mapped[int | None] = mapped_column(Integer)
+    check_in_queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    check_in_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_summary: Mapped[str | None] = mapped_column(Text)
+    blocker: Mapped[str | None] = mapped_column(Text)
+    start_request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    outbox_message_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "proactive_message.id",
+            ondelete="SET NULL",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        unique=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class FocusSessionEvent(Base):
+    """记录专注会话每次状态变化，提供动作幂等和完整审计。"""
+
+    __tablename__ = "focus_session_event"
+    __table_args__ = (
+        CheckConstraint("sequence_no >= 1", name="chk_focus_session_event_sequence"),
+        CheckConstraint(
+            "actor IN ('user', 'aura', 'system')",
+            name="chk_focus_session_event_actor",
+        ),
+        CheckConstraint(
+            "event_type IN ('started', 'paused', 'resumed', 'check_in_queued', "
+            "'check_in_sent', 'completed', 'cancelled', 'expired')",
+            name="chk_focus_session_event_type",
+        ),
+        UniqueConstraint("session_id", "sequence_no", name="uq_focus_session_event_sequence"),
+        UniqueConstraint("session_id", "client_action_id", name="uq_focus_session_event_action"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("focus_session.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    client_action_id: Mapped[str | None] = mapped_column(String(128))
+    note: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class RelationshipThread(Base, TimestampMixin):
     """保存一条需要跨对话延续的关系线程及其当前权威状态。
 
@@ -944,6 +1045,27 @@ Index(
     "idx_conditional_message_event_user_time",
     ConditionalMessageEvent.user_id,
     ConditionalMessageEvent.occurred_at.desc(),
+)
+Index(
+    "uq_focus_session_running_user",
+    FocusSession.user_id,
+    unique=True,
+    postgresql_where=text("((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'check_in_queued'::character varying])::text[]))"),
+)
+Index(
+    "idx_focus_session_user_created",
+    FocusSession.user_id,
+    FocusSession.created_at.desc(),
+)
+Index(
+    "idx_focus_session_due",
+    FocusSession.status,
+    FocusSession.ends_at,
+)
+Index(
+    "idx_focus_session_event_session_time",
+    FocusSessionEvent.session_id,
+    FocusSessionEvent.occurred_at,
 )
 Index(
     "idx_relationship_thread_user_status_follow_up",
