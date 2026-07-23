@@ -8,6 +8,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",
     "bcrypt>=5.0.0",
+    "booktype>=1.5",
     "fastapi>=0.127.0",
     "langchain-core>=1.2.5",
     "langchain-ollama>=1.0.1",

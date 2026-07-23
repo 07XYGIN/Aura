@@ -31,5 +31,5 @@ GLM = {
 ERGOUZI_GROK_4_5 = {
     "api_key_env": "ERGOUZI_API_KEY",
     "base_url": "https://ergouzi.life/v1",
-        "model": "grok-4.5",
+    "model": "grok-4.5",
 }
