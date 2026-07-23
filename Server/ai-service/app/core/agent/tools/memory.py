@@ -1,3 +1,5 @@
+"""暴露给主聊天模型的显式记忆保存 Tool。"""
+
 from __future__ import annotations
 
 import logging
@@ -63,16 +65,22 @@ def save_memory_tool(
 
 
 def clean_text(value: Any, max_length: int) -> str:
+    """清洗模型提供的字符串参数并限制长度。"""
+
     return value.strip()[:max_length] if isinstance(value, str) else ""
 
 
 def clean_signal_list(value: list[str] | None) -> list[str]:
+    """规范化、去重并限制记忆信号列表。"""
+
     if not isinstance(value, list):
         return []
     return [item.strip()[:40] for item in value if isinstance(item, str) and item.strip()][:8]
 
 
 def clamp_confidence(value: Any) -> float:
+    """把置信度限制在 0 到 1；无效值返回默认置信度。"""
+
     try:
         number = float(value)
     except (TypeError, ValueError):

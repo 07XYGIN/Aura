@@ -12,6 +12,11 @@ router = APIRouter(
 
 @router.post("", response_model=SuccessResponse, summary="Upload chat attachments")
 async def upload_attachments(request: AttachmentUploadRequest):
+    """保存聊天图片附件并返回可公开的元数据。
+
+    Raises:
+        HTTPException: 任一附件未通过类型、大小或 Base64 校验。
+    """
     try:
         items = save_attachments(request.user_id, request.files)
     except AttachmentValidationError as error:

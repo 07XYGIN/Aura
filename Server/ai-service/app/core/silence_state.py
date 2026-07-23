@@ -16,23 +16,28 @@ _redis_disabled_until = 0.0
 
 
 def last_user_message_key(user_id: str) -> str:
+    """构造用户最后发言时间的 Redis 键。"""
     return f"{LAST_USER_MESSAGE_PREFIX}{user_id}"
 
 
 def proactive_triggered_key(user_id: str) -> str:
+    """构造用户本轮沉默问候已触发标记的 Redis 键。"""
     return f"{PROACTIVE_TRIGGERED_PREFIX}{user_id}"
 
 
 def _redis_temporarily_disabled() -> bool:
+    """判断沉默状态模块是否仍处于 Redis 熔断窗口。"""
     return time.monotonic() < _redis_disabled_until
 
 
 def _disable_redis_temporarily() -> None:
+    """Redis 写入失败后开启短暂熔断，避免每条消息重复等待连接超时。"""
     global _redis_disabled_until
     _redis_disabled_until = time.monotonic() + REDIS_RETRY_AFTER_FAILURE_SECONDS
 
 
 def _redis_client_or_none() -> Redis | None:
+    """在非熔断状态下获取 Redis 客户端，初始化失败时返回 ``None``。"""
     if _redis_temporarily_disabled():
         return None
     try:
@@ -43,6 +48,18 @@ def _redis_client_or_none() -> Redis | None:
 
 
 def record_user_message_activity(user_id: str, timestamp: float | None = None) -> bool:
+    """记录用户最后发言时间，并清除上一轮沉默问候标记。
+
+    Args:
+        user_id: 要更新活跃状态的用户 ID。
+        timestamp: 可选 Unix 时间戳；未提供时使用当前时间。
+
+    Returns:
+        最后发言时间成功写入 Redis 时返回 ``True``，否则返回 ``False``。
+
+    Side Effects:
+        写入最后发言时间、删除主动问候标记；写入失败时暂时熔断 Redis。
+    """
     normalized_user_id = str(user_id or "").strip()
     if not normalized_user_id:
         return False
@@ -75,6 +92,10 @@ def record_user_message_activity(user_id: str, timestamp: float | None = None) -
 
 
 def schedule_user_message_activity_record(user_id: str, timestamp: float | None = None) -> None:
+    """调度用户活跃时间记录，事件循环存在时在线程池中异步执行。
+
+    没有运行中的事件循环时会同步写入；Redis 熔断期间直接跳过。
+    """
     if _redis_temporarily_disabled():
         return
 
@@ -89,6 +110,7 @@ def schedule_user_message_activity_record(user_id: str, timestamp: float | None 
 
 
 def _log_background_record_error(future) -> None:
+    """消费后台记录任务的结果，避免未处理异常并写入告警日志。"""
     try:
         future.result()
     except Exception:
@@ -96,6 +118,7 @@ def _log_background_record_error(future) -> None:
 
 
 def list_tracked_silence_user_ids() -> list[str]:
+    """扫描 Redis 中有最后发言记录的用户 ID 列表。"""
     redis_client = _redis_client_or_none()
     if redis_client is None:
         return []
@@ -115,6 +138,7 @@ def list_tracked_silence_user_ids() -> list[str]:
 
 
 def get_last_user_message_timestamp(user_id: str) -> float | None:
+    """读取用户最后发言的 Unix 时间戳；缺失或格式无效时返回 ``None``。"""
     redis_client = _redis_client_or_none()
     if redis_client is None:
         return None
@@ -134,6 +158,7 @@ def get_last_user_message_timestamp(user_id: str) -> float | None:
 
 
 def silence_proactive_already_triggered(user_id: str) -> bool:
+    """判断用户自上次发言后是否已经触发过沉默问候。"""
     redis_client = _redis_client_or_none()
     if redis_client is None:
         return False
@@ -149,6 +174,7 @@ def silence_proactive_already_triggered(user_id: str) -> bool:
 
 
 def mark_silence_proactive_triggered(user_id: str) -> bool:
+    """将用户标记为本轮沉默问候已触发，并返回 Redis 写入结果。"""
     redis_client = _redis_client_or_none()
     if redis_client is None:
         return False

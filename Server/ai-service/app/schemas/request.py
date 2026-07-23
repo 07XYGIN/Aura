@@ -2,6 +2,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageRequest(BaseModel):
+    """发送一轮聊天消息所需的文本、用户、附件和位置上下文。"""
+
     model_config = ConfigDict(populate_by_name=True)
 
     message: str

@@ -1,3 +1,5 @@
+"""只能由后台或管理端调用的记忆合并维护入口。"""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -19,7 +21,23 @@ def merge_memories(
     scan_limit: int | None = None,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """后台或管理端执行记忆整理；不允许普通聊天模型自行扫描和修改记忆库。"""
+    """扫描并应用少量记忆合并。
+
+    Args:
+        user_id: 被整理记忆所属的唯一用户。
+        mode: ``deduplicate`` 按相似度聚类，``topic`` 按明确主题整理。
+        topic: topic 模式必填的语义查询。
+        threshold: 相似度下限；函数会按模式限制安全范围。
+        limit: 本次最多实际合并的候选组数量。
+        scan_limit: 候选扫描范围。
+        reason: 写入合并 metadata 的可选原因。
+
+    Returns:
+        合并结果、成功数量和跳过数量。
+
+    Raises:
+        ValueError: 缺少用户 ID，或 topic 模式未提供主题。
+    """
     normalized_user_id = str(user_id or "").strip()
     if not normalized_user_id:
         raise ValueError("缺少用户 ID，无法整理记忆")
@@ -91,10 +109,14 @@ def merge_memories(
 
 
 def clean_text(value: Any, max_length: int) -> str:
+    """清洗并截断后台接口传入的可选文本。"""
+
     return value.strip()[:max_length] if isinstance(value, str) else ""
 
 
 def clamp_float(value: Any, default: float, minimum: float, maximum: float) -> float:
+    """把浮点配置限制在调用方指定范围。"""
+
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -103,6 +125,8 @@ def clamp_float(value: Any, default: float, minimum: float, maximum: float) -> f
 
 
 def clamp_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    """把整数配置限制在调用方指定范围。"""
+
     try:
         number = int(value)
     except (TypeError, ValueError):

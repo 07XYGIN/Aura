@@ -27,6 +27,11 @@ async def list_memory_merge_candidate_rows(
     limit: int = Query(default=20, ge=1, le=50),
     scanLimit: int = Query(default=300, ge=2, le=1000),
 ):
+    """查找当前用户可能重复、适合人工合并的长期记忆组。
+
+    ``threshold`` 控制最低相似度，``scanLimit`` 控制候选扫描范围，``limit``
+    控制最终返回组数。
+    """
     return SuccessResponse(
         data=list_memory_merge_candidates(
             user_id=current_user_id,
@@ -42,6 +47,11 @@ async def confirm_memory_merge(
     request: MemoryMergeConfirmRequest,
     current_user_id: Annotated[str, Depends(get_current_user_id)],
 ):
+    """按管理端确认结果合并当前用户的多条记忆。
+
+    Raises:
+        HTTPException: 来源记忆不足、无效或不属于当前用户。
+    """
     try:
         result = apply_memory_merge(
             user_id=current_user_id,
@@ -61,6 +71,11 @@ async def create_self_update(
     _current_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    """创建一条 Aura 自身更新记录并提交数据库。
+
+    Raises:
+        HTTPException: 清洗后缺少必填字段，或日期与标题发生唯一性冲突。
+    """
     await ensure_self_changelog_admin_fields_async()
     occurred_at = normalize_datetime(request.occurred_at)
     entry = SelfChangelogEntry(
@@ -89,6 +104,11 @@ async def list_self_updates(
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, ge=1, le=100),
 ):
+    """按回应状态筛选并排序返回 Aura 自身更新记录。
+
+    Returns:
+        包含记录列表、匹配总数和本次条数上限的统一响应。
+    """
     await ensure_self_changelog_admin_fields_async()
     filters = [SelfChangelogEntry.reacted.is_(reacted)] if reacted is not None else []
     count_result = await session.execute(select(func.count(SelfChangelogEntry.id)).where(*filters))
@@ -116,6 +136,10 @@ async def update_self_update(
     _current_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    """只更新请求中显式提供的自更新记录字段。
+
+    ``reacted`` 变为真时同时记录回应时间，改回假时清空回应时间。
+    """
     await ensure_self_changelog_admin_fields_async()
     entry = await get_self_update_or_404(session, entry_id)
     fields = request.model_fields_set
@@ -150,6 +174,11 @@ async def delete_self_update(
     _current_user_id: Annotated[str, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_db_session),
 ):
+    """按 UUID 删除一条 Aura 自身更新记录并提交事务。
+
+    Raises:
+        HTTPException: ID 格式无效或记录不存在。
+    """
     await ensure_self_changelog_admin_fields_async()
     result = await session.execute(delete(SelfChangelogEntry).where(SelfChangelogEntry.id == parse_uuid(entry_id)))
     if result.rowcount == 0:
@@ -159,6 +188,7 @@ async def delete_self_update(
 
 
 async def get_self_update_or_404(session: AsyncSession, entry_id: str) -> SelfChangelogEntry:
+    """按 UUID 获取自更新 ORM 记录，未找到时抛出 HTTP 404。"""
     entry = await session.get(SelfChangelogEntry, parse_uuid(entry_id))
     if entry is None:
         raise HTTPException(status_code=404, detail="没有找到这条自我更新")
@@ -166,6 +196,7 @@ async def get_self_update_or_404(session: AsyncSession, entry_id: str) -> SelfCh
 
 
 def parse_uuid(value: str) -> UUID:
+    """解析 UUID 字符串，格式无效时转换为 HTTP 400。"""
     try:
         return UUID(value)
     except ValueError as exc:
@@ -173,36 +204,43 @@ def parse_uuid(value: str) -> UUID:
 
 
 def normalize_datetime(value: datetime | None) -> datetime:
+    """补齐可选时间：空值取当前 UTC，无时区值按 UTC 解释。"""
     if value is None:
         return datetime.now(UTC)
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 def clean_required_text(value: str | None, field_name: str, max_length: int) -> str:
+    """清理必填文本并截断到字段上限，空值时抛出 HTTP 400。"""
     if not isinstance(value, str) or not value.strip():
         raise HTTPException(status_code=400, detail=f"缺少必填字段：{field_name}")
     return value.strip()[:max_length]
 
 
 def clean_optional_text(value: str | None) -> str | None:
+    """清理可选文本，将空字符串统一为 ``None``。"""
     if value is None:
         return None
     return value.strip() or None
 
 
 def clean_category(value: str) -> str:
+    """将更新分类规范为小写非空文本，并限制为 64 个字符。"""
     return (value or "infra").strip().lower()[:64] or "infra"
 
 
 def parse_metadata(value: Any) -> dict[str, Any]:
+    """只接受字典形式的元数据，其他类型降级为空字典。"""
     return value if isinstance(value, dict) else {}
 
 
 def datetime_iso(value: datetime | None) -> str | None:
+    """将可选日期时间转换为 ISO 8601 字符串。"""
     return value.isoformat() if value else None
 
 
 def self_update_dict(entry: SelfChangelogEntry) -> dict[str, Any]:
+    """将自更新 ORM 实体转换为 API 可序列化字典。"""
     return {
         "id": str(entry.id),
         "occurred_at": datetime_iso(entry.occurred_at),

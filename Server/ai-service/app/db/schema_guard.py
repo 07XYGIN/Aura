@@ -24,6 +24,10 @@ SELF_CHANGELOG_ADMIN_DDL = (
 
 
 def ensure_self_changelog_admin_fields() -> None:
+    """同步补齐自更新记录表的管理端字段与索引。
+
+    进程内只执行一次，并用线程锁避免并发重复迁移；表尚不存在时仅告警。
+    """
     global _self_changelog_schema_ready
     if _self_changelog_schema_ready:
         return
@@ -43,6 +47,10 @@ def ensure_self_changelog_admin_fields() -> None:
 
 
 async def ensure_self_changelog_admin_fields_async() -> None:
+    """异步补齐自更新记录表的管理端字段与索引。
+
+    该函数主要供异步调用方使用，完成后设置进程内就绪标记。
+    """
     global _self_changelog_schema_ready
     if _self_changelog_schema_ready:
         return

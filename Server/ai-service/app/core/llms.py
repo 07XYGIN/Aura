@@ -22,6 +22,7 @@ emotion_judge_llm：判断情绪上下文
 
 
 def float_env(name: str, default: float, minimum: float, maximum: float) -> float:
+    """读取浮点环境变量，并将结果限制在给定闭区间内。"""
     try:
         value = float(os.getenv(name, str(default)))
     except ValueError:
@@ -43,6 +44,22 @@ def create_llm(
     json_mode: bool = False,
     thinking_enabled: bool = False,
 ) -> ChatOpenAI:
+    """根据统一模型配置创建 LangChain ``ChatOpenAI`` 客户端。
+
+    Args:
+        model_config: 包含模型名、Base URL 和 API Key 环境变量名的配置。
+        temperature: 可选采样温度；不传时交由服务商使用默认值。
+        top_p: 可选 nucleus sampling 阈值。
+        streaming: 是否启用流式输出。
+        json_mode: 是否为支持的模型请求 JSON Object 输出模式。
+        thinking_enabled: 是否为支持的模型开启思考模式。
+
+    Returns:
+        已配置但尚未发起请求的 LangChain 模型客户端。
+
+    Notes:
+        不同供应商支持的扩展参数不同，本函数只对已知兼容模型注入对应参数。
+    """
     kwargs: dict[str, object] = {
         "model": model_config["model"],
         "api_key": os.getenv(model_config["api_key_env"], ""),

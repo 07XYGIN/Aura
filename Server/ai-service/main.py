@@ -23,6 +23,11 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """管理应用生命周期中的 LangGraph 检查点和主动消息调度器。
+
+    启动时初始化 PostgreSQL 检查点表并构建全局 Agent 图；关闭时先停止后台
+    调度任务，再释放检查点连接。
+    """
     logging.info("程序启动成功")
 
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
@@ -39,6 +44,11 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """创建并配置 FastAPI 应用。
+
+    Returns:
+        已注册日志/CORS 中间件、业务路由和统一异常处理器的应用实例。
+    """
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(RequestResponseLoggingMiddleware)
     app.add_middleware(

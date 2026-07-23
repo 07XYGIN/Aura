@@ -24,10 +24,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
+    """项目所有 SQLAlchemy 声明式模型的基类。"""
+
     pass
 
 
 class TimestampMixin:
+    """为业务表提供由数据库维护的创建时间和更新时间字段。"""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -42,6 +46,8 @@ class TimestampMixin:
 
 
 class Users(Base, TimestampMixin):
+    """登录用户账号与基础资料表。"""
+
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("sex IS NULL OR sex IN (0, 1)", name="chk_users_sex"),
@@ -62,6 +68,8 @@ class Users(Base, TimestampMixin):
 
 
 class SelfChangelogEntry(Base, TimestampMixin):
+    """Aura 自身功能变更记录，用于在对话中告知用户近期更新。"""
+
     __tablename__ = "self_changelog_entry"
     __table_args__ = (
         UniqueConstraint("change_date", "title", name="uq_self_changelog_entry_change_date_title"),
@@ -85,6 +93,8 @@ class SelfChangelogEntry(Base, TimestampMixin):
 
 
 class ProactiveMessage(Base, TimestampMixin):
+    """计划发送的主动消息及其调度、发送状态。"""
+
     __tablename__ = "proactive_message"
 
     id: Mapped[UUID] = mapped_column(
@@ -108,6 +118,8 @@ class ProactiveMessage(Base, TimestampMixin):
 
 
 class LangchainPgCollection(Base):
+    """LangChain PGVector 使用的向量集合元数据表。"""
+
     __tablename__ = "langchain_pg_collection"
 
     uuid: Mapped[UUID] = mapped_column(
@@ -121,6 +133,8 @@ class LangchainPgCollection(Base):
 
 
 class LangchainPgEmbedding(Base):
+    """LangChain PGVector 的记忆文档、向量和业务元数据表。"""
+
     __tablename__ = "langchain_pg_embedding"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)

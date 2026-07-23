@@ -27,7 +27,10 @@ install_sql_logging(sync_engine)
 
 
 class LoggingAsyncSession(AsyncSession):
+    """在详细日志模式下记录查询结果与耗时的异步会话。"""
+
     async def execute(self, *args, **kwargs):
+        """执行 SQLAlchemy 语句，并将结果交给统一 SQL 日志处理器。"""
         started_at = time.perf_counter()
         result = await super().execute(*args, **kwargs)
         elapsed_ms = (time.perf_counter() - started_at) * 1000
@@ -35,7 +38,10 @@ class LoggingAsyncSession(AsyncSession):
 
 
 class LoggingSession(Session):
+    """在详细日志模式下记录查询结果与耗时的同步会话。"""
+
     def execute(self, *args, **kwargs):
+        """执行 SQLAlchemy 语句，并将结果交给统一 SQL 日志处理器。"""
         started_at = time.perf_counter()
         result = super().execute(*args, **kwargs)
         elapsed_ms = (time.perf_counter() - started_at) * 1000
@@ -56,5 +62,6 @@ SyncSessionLocal = sessionmaker(
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """为一次 FastAPI 请求提供自动关闭的异步数据库会话。"""
     async with AsyncSessionLocal() as session:
         yield session

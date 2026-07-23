@@ -1,3 +1,5 @@
+"""高德天气查询 Tool 及其 HTTP 调用实现。"""
+
 from __future__ import annotations
 
 import logging
@@ -21,6 +23,12 @@ def get_weather(city_adcode: str | None = None) -> dict[str, str]:
 
 
 def fetch_weather(city_adcode: str | None = None) -> dict[str, str]:
+    """按六位城市 adcode 查询实时天气。
+
+    Returns:
+        高德 API 的天气字典；缺少密钥、参数无效或请求失败时返回带 ``info`` 的失败结构。
+    """
+
     if not city_adcode:
         return {
             "status": "0",

@@ -1,3 +1,5 @@
+"""Aura 分层向量记忆的保存、检索、整理、遗忘和晋升逻辑。"""
+
 import logging
 import os
 import math
@@ -20,6 +22,8 @@ MemoryScope = Literal["long", "mid", "all"]
 
 
 def read_float_env(name: str, default: float) -> float:
+    """读取 0 到 1 的浮点环境变量；无效值使用默认值。"""
+
     try:
         value = float(os.getenv(name, str(default)))
     except ValueError:
@@ -28,6 +32,8 @@ def read_float_env(name: str, default: float) -> float:
 
 
 def read_int_env(name: str, default: int) -> int:
+    """读取非负整数环境变量；无效值使用默认值。"""
+
     try:
         value = int(os.getenv(name, str(default)))
     except ValueError:
@@ -73,6 +79,8 @@ embeddings = OllamaEmbeddings(
 
 
 def get_memory_vector_store(collection_name: str = LONG_TERM_COLLECTION_NAME) -> PGVector:
+    """创建指定 collection 的 PGVector 访问对象。"""
+
     return PGVector(
         embeddings=embeddings,
         collection_name=collection_name,
@@ -92,6 +100,23 @@ def save_memory(
     extra_metadata: dict[str, Any] | None = None,
     skip_dedup: bool = False,
 ) -> str | None:
+    """保存一条长期或中期记忆。
+
+    Args:
+        user_id: 记忆所属用户。
+        content: 需要被未来检索的事实性正文。
+        title: 用于列表展示的短标题。
+        create_time: 业务创建时间文本。
+        memory_scope: ``long`` 永久保存，``mid`` 按遗忘策略管理。
+        confidence: 可选的 judge 置信度。
+        signals: 触发写入的可解释信号。
+        extra_metadata: 需要和标准 metadata 合并的附加字段。
+        skip_dedup: 是否跳过长期记忆相似度和 LLM 去重。
+
+    Returns:
+        保存成功返回 memory key；内容为空或判定为重复时返回 ``None``。
+    """
+
     content = (content or "").strip()
     if not content:
         return None
@@ -128,6 +153,8 @@ def build_memory_metadata(
     create_time: str,
     memory_scope: Literal["long", "mid"],
 ) -> dict[str, Any]:
+    """构造向量文档公共 metadata，并补充不同层级的生命周期字段。"""
+
     metadata: dict[str, Any] = {
         "user_id": user_id,
         "title": title,
@@ -146,6 +173,8 @@ def build_memory_metadata(
 
 
 def save_long_memory(user_id: str, content: str, metadata: dict[str, Any]) -> str | None:
+    """对长期记忆执行相似检索和去重判断后写入 PGVector。"""
+
     store = get_memory_vector_store(LONG_TERM_COLLECTION_NAME)
     similar = find_similar_long_memory(user_id=user_id, content=content, store=store)
     if similar is None:
@@ -196,6 +225,8 @@ def find_similar_long_memory(
     content: str,
     store: PGVector | None = None,
 ) -> tuple[Document, float] | None:
+    """查找最接近的新长期记忆候选，并返回文档与相关度。"""
+
     store = store or get_memory_vector_store(LONG_TERM_COLLECTION_NAME)
     candidate_count = max(LONG_MEMORY_DEDUP_CANDIDATES, 1)
     try:
@@ -228,6 +259,8 @@ def list_memory_merge_candidates(
     limit: int = 20,
     scan_limit: int = LONG_MEMORY_MERGE_SCAN_LIMIT,
 ) -> dict[str, Any]:
+    """扫描长期记忆的向量相似簇，返回供管理端确认的合并候选。"""
+
     threshold = max(0.0, min(1.0, threshold))
     limit = min(max(limit, 1), 50)
     memories = fetch_mergeable_long_memory_entries(user_id=user_id, limit=scan_limit)
@@ -273,6 +306,8 @@ def list_topic_memory_merge_candidates(
     scan_limit: int = 20,
     max_memories: int = 5,
 ) -> dict[str, Any]:
+    """按明确主题检索长期记忆，并生成主题内的合并建议。"""
+
     topic = (topic_query or "").strip()[:120]
     threshold = max(0.0, min(1.0, threshold))
     limit = min(max(limit, 1), 3)
@@ -364,6 +399,12 @@ def apply_memory_merge(
     reason: str | None = None,
     source: str = "memory_merge_admin",
 ) -> dict[str, Any]:
+    """写入合并后的长期记忆，并把被合并条目标记为 superseded。
+
+    Raises:
+        ValueError: 记忆数量不足、条目不属于用户或新记忆保存失败。
+    """
+
     keys = [key.strip() for key in memory_keys if isinstance(key, str) and key.strip()]
     unique_keys = list(dict.fromkeys(keys))
     if len(unique_keys) < 2:
@@ -415,6 +456,8 @@ def apply_memory_merge(
 
 
 def fetch_mergeable_long_memory_entries(user_id: str, limit: int = LONG_MEMORY_MERGE_SCAN_LIMIT) -> list[dict[str, Any]]:
+    """读取指定用户仍处于 active 状态的长期记忆及其向量。"""
+
     limit = min(max(limit, 2), 1000)
     with SyncSessionLocal() as session:
         result = session.execute(
@@ -433,6 +476,8 @@ def fetch_mergeable_long_memory_entries(user_id: str, limit: int = LONG_MEMORY_M
 
 
 def fetch_long_memory_entries_by_keys(user_id: str, memory_keys: list[str]) -> list[dict[str, Any]]:
+    """按 memory key 精确读取用户长期记忆条目。"""
+
     key_set = set(memory_keys)
     with SyncSessionLocal() as session:
         result = session.execute(
@@ -454,6 +499,8 @@ def select_long_memory_embeddings(
     user_id: str | None = None,
     memory_keys: list[str] | None = None,
 ):
+    """构造长期 collection 的 SQLAlchemy embedding 查询。"""
+
     from sqlalchemy import select
 
     query = (
@@ -471,6 +518,8 @@ def select_long_memory_embeddings(
 
 
 def memory_entry_from_embedding(row: LangchainPgEmbedding | None) -> dict[str, Any] | None:
+    """把 ORM embedding 行转换为合并算法使用的记忆字典。"""
+
     if row is None:
         return None
     metadata = dict(row.cmetadata or {})
@@ -492,6 +541,8 @@ def memory_entry_from_embedding(row: LangchainPgEmbedding | None) -> dict[str, A
 
 
 def memory_entry_from_document(doc: Document, relevance_score: float | None = None) -> dict[str, Any] | None:
+    """把 LangChain Document 转换为统一记忆条目。"""
+
     metadata = dict(doc.metadata or {})
     content = (doc.page_content or "").strip()
     memory_key = metadata.get("memory_key")
@@ -512,6 +563,8 @@ def memory_entry_from_document(doc: Document, relevance_score: float | None = No
 
 
 def normalize_embedding(value: Any) -> list[float]:
+    """把 pgvector、numpy 或序列值转换为浮点列表。"""
+
     if value is None or isinstance(value, (str, bytes, dict)):
         return []
     if hasattr(value, "tolist"):
@@ -534,16 +587,22 @@ def normalize_embedding(value: Any) -> list[float]:
 
 
 def build_similarity_clusters(memories: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
+    """用余弦相似度和并查集把相关记忆聚合成候选簇。"""
+
     parent = list(range(len(memories)))
     pair_scores: dict[tuple[int, int], float] = {}
 
     def find(index: int) -> int:
+        """查找并压缩并查集节点的根索引。"""
+
         while parent[index] != index:
             parent[index] = parent[parent[index]]
             index = parent[index]
         return index
 
     def union(left: int, right: int) -> None:
+        """合并两个相似记忆所在的并查集。"""
+
         left_root = find(left)
         right_root = find(right)
         if left_root != right_root:
@@ -595,6 +654,8 @@ def build_similarity_clusters(memories: list[dict[str, Any]], threshold: float) 
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
+    """计算等长向量的余弦相似度；空向量或零模长返回 0。"""
+
     if not left or not right or len(left) != len(right):
         return 0.0
     dot = sum(a * b for a, b in zip(left, right))
@@ -606,6 +667,8 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def search_memory(user_id: str, query: str, k: int = 5, memory_scope: MemoryScope = "all") -> list[Document]:
+    """按指定层级检索记忆，并返回合并排序后的文档列表。"""
+
     layered = search_layered_memories(user_id=user_id, query=query, k=k)
     if memory_scope == "long":
         return layered["long"][:k]
@@ -615,6 +678,8 @@ def search_memory(user_id: str, query: str, k: int = 5, memory_scope: MemoryScop
 
 
 def search_layered_memories(user_id: str, query: str, k: int = 5) -> dict[str, list[Document]]:
+    """分别检索长期和中期 collection，保留层级边界。"""
+
     long_docs = search_memory_collection(
         user_id=user_id,
         query=query,
@@ -644,6 +709,8 @@ def search_memory_collection(
     collection_name: str,
     memory_scope: Literal["long", "mid"],
 ) -> list[Document]:
+    """检索单个 collection，并执行状态过滤、排序和召回触碰。"""
+
     if is_memory_catalog_lookup(query):
         return list_memory_documents(user_id, collection_name, memory_scope, k)
 
@@ -678,6 +745,8 @@ def list_memory_documents(
     memory_scope: Literal["long", "mid"],
     k: int,
 ) -> list[Document]:
+    """不做语义检索，按用户列出指定 collection 的可用记忆。"""
+
     docs: list[Document] = []
     for row in fetch_memory_rows(user_id, collection_name):
         metadata = dict(row["cmetadata"] or {})
@@ -693,6 +762,8 @@ def list_memory_documents(
 
 
 def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
+    """检索相关记忆并格式化为主模型可引用的上下文文本。"""
+
     layered = search_layered_memories(user_id=user_id, query=query, k=k)
     sections: list[str] = []
     if layered["long"]:
@@ -705,6 +776,8 @@ def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
 
 
 def format_docs(docs: list[Document]) -> str:
+    """把 Document 列表格式化为带序号的纯文本。"""
+
     lines: list[str] = []
     for doc in docs:
         title = doc.metadata.get("title") or "未命名记忆"
@@ -720,6 +793,8 @@ def list_memories_by_user(
     memory_scope: MemoryScope = "long",
     include_inactive: bool = False,
 ) -> dict[str, Any]:
+    """分页列出用户记忆，支持层级和 inactive 状态过滤。"""
+
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     offset = (page - 1) * page_size
@@ -772,6 +847,8 @@ def list_memories_by_user(
 
 
 def fetch_memory_rows(user_id: str, collection_name: str) -> list[dict[str, Any]]:
+    """通过原生 SQL 读取 collection 内指定用户的记忆正文和 metadata。"""
+
     with psycopg.connect(SYNC_DATABASE_URL, row_factory=dict_row) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -792,6 +869,8 @@ def fetch_memory_rows(user_id: str, collection_name: str) -> list[dict[str, Any]
 
 
 def get_memory_retention_status(user_id: str) -> dict[str, Any]:
+    """返回个人永久记忆和中期记忆策略的 API 描述。"""
+
     return {
         "plan": "personal",
         "planLabel": "个人永久记忆",
@@ -816,6 +895,8 @@ def get_memory_retention_status(user_id: str) -> dict[str, Any]:
 
 
 def delete_memory_by_id(user_id: str, memory_id: str) -> bool:
+    """按 memory key 删除属于用户的一条记忆。"""
+
     normalized_memory_id = memory_id.strip()
     if not normalized_memory_id:
         return False
@@ -846,6 +927,8 @@ def delete_memory_by_id(user_id: str, memory_id: str) -> bool:
 
 
 def clear_memories_by_user(user_id: str, memory_scope: MemoryScope = "all") -> int:
+    """删除用户指定层级的全部向量记忆，并返回删除数量。"""
+
     collections = (
         [collection_name_for_scope(memory_scope)]
         if memory_scope in {"long", "mid"}
@@ -875,6 +958,8 @@ def clear_memories_by_user(user_id: str, memory_scope: MemoryScope = "all") -> i
 
 
 def is_memory_retrievable(metadata: dict[str, Any], memory_scope: Literal["long", "mid"]) -> bool:
+    """根据状态、遗忘时间和晋升标记判断记忆是否仍可被召回。"""
+
     if metadata.get("status") == "superseded":
         return False
 
@@ -903,6 +988,8 @@ def rank_memory_results(
     now: datetime | None = None,
     bypass_long_cooldown: bool = False,
 ) -> list[Document]:
+    """结合相关度、层级、冷却期和查询意图排序检索结果。"""
+
     now = now or datetime.now()
     ranked: list[tuple[Document, float]] = []
     for doc, score in results:
@@ -933,16 +1020,22 @@ def rank_memory_results(
 
 
 def is_explicit_memory_lookup(query: str) -> bool:
+    """判断用户是否明确要求回忆某件过去信息。"""
+
     normalized = (query or "").strip().lower()
     return any(keyword in normalized for keyword in EXPLICIT_MEMORY_LOOKUP_KEYWORDS)
 
 
 def is_memory_catalog_lookup(query: str) -> bool:
+    """判断用户是否在请求完整或大范围记忆目录。"""
+
     normalized = (query or "").strip().lower()
     return any(keyword in normalized for keyword in MEMORY_CATALOG_LOOKUP_KEYWORDS)
 
 
 def is_long_memory_in_cooldown(metadata: dict[str, Any], now: datetime | None = None) -> bool:
+    """判断长期记忆是否处于近期已召回的冷却窗口。"""
+
     last_recalled_at = parse_memory_create_time(metadata.get("last_recalled_at"))
     if last_recalled_at is None:
         return False
@@ -952,6 +1045,8 @@ def is_long_memory_in_cooldown(metadata: dict[str, Any], now: datetime | None = 
 
 
 def touch_recalled_memories(user_id: str, docs: list[Document], collection_name: str) -> None:
+    """提取召回文档的 memory key，并更新其召回时间和次数。"""
+
     memory_keys = [
         doc.metadata.get("memory_key")
         for doc in docs
@@ -964,6 +1059,8 @@ def touch_recalled_memories(user_id: str, docs: list[Document], collection_name:
 
 
 def touch_memory_keys(user_id: str, memory_keys: list[str], collection_name: str) -> None:
+    """通过原生 SQL 批量更新记忆的召回时间和次数。"""
+
     if not memory_keys:
         return
 
@@ -1014,10 +1111,14 @@ def touch_memory_keys(user_id: str, memory_keys: list[str], collection_name: str
 
 
 def touch_mid_term_memories(user_id: str, docs: list[Document]) -> None:
+    """更新被召回中期记忆的生命周期字段。"""
+
     touch_recalled_memories(user_id, docs, MEDIUM_TERM_COLLECTION_NAME)
 
 
 def mark_memory_superseded(user_id: str, memory_key: str, superseded_by: str, reason: str) -> None:
+    """把旧长期记忆标记为已被新记忆替代。"""
+
     now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
     try:
         with psycopg.connect(SYNC_DATABASE_URL) as conn:
@@ -1053,6 +1154,8 @@ def mark_memory_superseded(user_id: str, memory_key: str, superseded_by: str, re
 
 
 def promote_mid_term_memories(user_id: str, memory_keys: list[str]) -> None:
+    """把满足条件的中期记忆写入长期层，并标记原条目已晋升。"""
+
     if not memory_keys or MID_MEMORY_PROMOTION_RECALL_THRESHOLD <= 0:
         return
 
@@ -1084,6 +1187,8 @@ def promote_mid_term_memories(user_id: str, memory_keys: list[str]) -> None:
 
 
 def fetch_promotable_mid_memory_rows(user_id: str, memory_keys: list[str]) -> list[dict[str, Any]]:
+    """读取仍可晋升且属于用户的中期记忆。"""
+
     try:
         with psycopg.connect(SYNC_DATABASE_URL, row_factory=dict_row) as conn:
             with conn.cursor() as cursor:
@@ -1117,6 +1222,8 @@ def fetch_promotable_mid_memory_rows(user_id: str, memory_keys: list[str]) -> li
 
 
 def mark_mid_memory_promoted(user_id: str, memory_key: str, promoted_memory_key: str) -> None:
+    """记录中期记忆对应的长期 key，并停止再次召回。"""
+
     now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
     try:
         with psycopg.connect(SYNC_DATABASE_URL) as conn:
@@ -1150,6 +1257,8 @@ def mark_mid_memory_promoted(user_id: str, memory_key: str, promoted_memory_key:
 
 
 def parse_memory_create_time(value: Any) -> datetime | None:
+    """解析 metadata 中常见的 ISO 或分钟级创建时间。"""
+
     if not isinstance(value, str) or not value.strip():
         return None
 
@@ -1167,6 +1276,8 @@ def parse_memory_create_time(value: Any) -> datetime | None:
 
 
 def memory_sort_key(metadata: dict[str, Any]) -> datetime:
+    """返回记忆排序时间；缺失时间使用最早 UTC 时间。"""
+
     return (
         parse_memory_create_time(metadata.get("last_recalled_at"))
         or parse_memory_create_time(metadata.get("create_time"))
@@ -1175,4 +1286,6 @@ def memory_sort_key(metadata: dict[str, Any]) -> datetime:
 
 
 def collection_name_for_scope(memory_scope: MemoryScope | Literal["long", "mid"]) -> str:
+    """把记忆层级映射到对应的 PGVector collection 名称。"""
+
     return MEDIUM_TERM_COLLECTION_NAME if memory_scope == "mid" else LONG_TERM_COLLECTION_NAME

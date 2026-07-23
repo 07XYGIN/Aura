@@ -10,7 +10,14 @@ from app.core.logging_config import http_logger
 
 
 class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
+    """记录 HTTP 请求元数据、响应状态、正文大小和处理耗时。"""
+
     async def dispatch(self, request: Request, call_next):
+        """记录一次请求并重建响应，SSE 流式响应不会被消费或缓存。
+
+        请求正文会先完整读取，再通过新的 ``receive`` 回放给下游；普通响应正文
+        同样会被收集后重建，因此该中间件不适合记录大型上传或下载。
+        """
         started_at = time.perf_counter()
         request_body = await request.body()
         http_logger.info(
@@ -22,6 +29,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         )
 
         async def receive():
+            """向下游应用回放已经被日志中间件读取的请求正文。"""
             return {"type": "http.request", "body": request_body, "more_body": False}
 
         request = Request(request.scope, receive)

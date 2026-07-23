@@ -36,6 +36,7 @@ DELETE_ACTIONS = {
 
 
 def normalize_type(value: str) -> str:
+    """统一 PostgreSQL 类型别名和空白，便于模型与数据库直接比较。"""
     normalized = " ".join(value.lower().split())
     aliases = {
         "varchar": "character varying",
@@ -53,6 +54,7 @@ def normalize_type(value: str) -> str:
 
 
 def normalize_default(value: Any) -> str | None:
+    """去除默认值表达式的外层括号、类型转换和字符串引号。"""
     if value is None:
         return None
     normalized = " ".join(str(value).strip().split()).lower()
@@ -66,6 +68,7 @@ def normalize_default(value: Any) -> str | None:
 
 
 def normalize_index_ddl(value: str) -> str:
+    """统一索引 DDL 的大小写、schema、默认 btree 和空白格式。"""
     normalized = value.lower().replace('"', "")
     normalized = re.sub(r"\bpublic\.", "", normalized)
     normalized = re.sub(r"\s+using\s+btree\s+(?=\()", " ", normalized)
@@ -73,6 +76,11 @@ def normalize_index_ddl(value: str) -> str:
 
 
 def model_constraints(table) -> dict[str, set[Any]]:
+    """提取一张 SQLAlchemy 模型表声明的主键、唯一、检查和外键约束。
+
+    Returns:
+        按约束类型分组的可比较集合。
+    """
     result: dict[str, set[Any]] = {
         "primary": set(),
         "unique": set(),
@@ -104,6 +112,15 @@ def model_constraints(table) -> dict[str, set[Any]]:
 
 
 def database_constraints(conn, model_tables: set[str]) -> dict[str, dict[str, set[Any]]]:
+    """从 PostgreSQL 系统目录读取指定模型表的约束。
+
+    Args:
+        conn: psycopg 数据库连接。
+        model_tables: 需要检查的业务表名集合。
+
+    Returns:
+        以表名和约束类型分组的数据库实际约束。
+    """
     result = {
         table_name: {"primary": set(), "unique": set(), "check": set(), "foreign": set()}
         for table_name in model_tables
@@ -161,6 +178,7 @@ def database_constraints(conn, model_tables: set[str]) -> dict[str, dict[str, se
 
 
 def database_indexes(conn, model_tables: set[str]) -> dict[str, dict[str, str]]:
+    """读取不属于约束的普通索引，并返回规范化后的 DDL。"""
     result = {table_name: {} for table_name in model_tables}
     rows = conn.execute(
         """
@@ -182,6 +200,13 @@ def database_indexes(conn, model_tables: set[str]) -> dict[str, dict[str, str]]:
 
 
 def main() -> int:
+    """比较在线 PostgreSQL 与 SQLAlchemy 模型的完整结构。
+
+    检查业务表、LangGraph 框架表、字段、类型、可空性、默认值、约束和索引。
+
+    Returns:
+        完全一致返回 0；发现任一差异并打印明细后返回 1。
+    """
     with psycopg.connect(SYNC_DATABASE_URL, row_factory=dict_row) as conn:
         database_tables = {
             row["table_name"]

@@ -1,3 +1,5 @@
+"""Aura 主对话图、回复编排和 LangGraph 历史读写。"""
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Generator, TypedDict
@@ -40,6 +42,8 @@ DELAY_PER_CHAR_MS = 50
 
 
 class AuraState(TypedDict, total=False):
+    """在 LangGraph 节点之间传递的对话状态。"""
+
     messages: Annotated[list, add_messages]
     emotion: dict
     user_id: str
@@ -64,6 +68,8 @@ tool_node = ToolNode(tools)
 
 @traceable(name="aura_prepare_context")
 def prepare_context(state: AuraState) -> AuraState:
+    """把附件转换成提示词上下文，并初始化按需记忆检索说明。"""
+
     attachment_context = format_attachment_context(state.get("attachments", []))
     return {
         "memory_context": (
@@ -76,6 +82,8 @@ def prepare_context(state: AuraState) -> AuraState:
 
 @traceable(name="aura_turn_judge_node")
 def turn_judge(state: AuraState) -> AuraState:
+    """规范化预计算的回合判断，向后续节点提供情绪和回复模式。"""
+
     query = latest_human_text(state.get("messages", []))
     turn_judgement = normalize_turn_judgement(state.get("turn_judgement"), query)
     return {
@@ -86,6 +94,8 @@ def turn_judge(state: AuraState) -> AuraState:
 
 @traceable(name="aura_final_response_generation")
 def call_model(state: AuraState) -> AuraState:
+    """调用带工具的主模型，并把最终文本转换成可分批发送的 AIMessage。"""
+
     system_prompt = build_runtime_system_prompt(state)
     messages = [SystemMessage(content=system_prompt)] + trim_short_term_messages(state["messages"])
     response = llm_with_tools.invoke(messages)
@@ -116,6 +126,8 @@ def call_model(state: AuraState) -> AuraState:
 
 
 def build_runtime_system_prompt(state: AuraState) -> str:
+    """组合静态人设、动态时间/情绪/记忆上下文和最终输出格式要求。"""
+
     return "\n\n".join(
         part for part in (
             SYSTEM_PROMPT.strip(),
@@ -134,6 +146,8 @@ def build_runtime_system_prompt(state: AuraState) -> str:
 
 
 def should_continue(state: AuraState) -> str:
+    """根据最后一条 AI 消息是否包含工具调用，决定进入 tools 节点或结束。"""
+
     messages = state.get("messages") or []
     if not messages:
         return END
@@ -145,6 +159,15 @@ def should_continue(state: AuraState) -> str:
 
 
 def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
+    """构建并编译 Aura LangGraph。
+
+    Args:
+        checkpointer: 用于持久化每个用户线程状态的 LangGraph checkpointer。
+
+    Returns:
+        已连接上下文准备、回合判断、聊天和工具节点的可执行图。
+    """
+
     workflow = StateGraph(AuraState)
     workflow.add_node("prepare_context", prepare_context)
     workflow.add_node("turn_judge", turn_judge)
@@ -169,6 +192,23 @@ def aura_agent(
     attachment_ids: list[str] | None = None,
     city_adcode: str | None = None,
 ) -> Generator[Any, None, None]:
+    """执行一轮 Aura 对话并按顺序产出 SSE 业务事件。
+
+    Args:
+        human_prompt: 用户本轮发送的文本；只有附件时可以为空。
+        user_id: 同时作为 LangGraph ``thread_id`` 使用的唯一用户标识。
+        emotion_state: 上游可选的情绪回退结果。
+        client_message_id: 客户端消息 ID；用于幂等和关联回复批次。
+        attachment_ids: 本轮需要加载的附件 ID。
+        city_adcode: 可选的六位高德城市编码，仅供天气工具使用。
+
+    Yields:
+        情绪、记忆候选、记忆引用和最终 Aura 消息等 SSE 事件字典。
+
+    Raises:
+        RuntimeError: 对话图尚未在应用生命周期中初始化。
+    """
+
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
@@ -296,6 +336,8 @@ def aura_agent(
 
 
 def build_reply_messages(response: Any, state: AuraState) -> tuple[list[AIMessage], dict[str, Any]]:
+    """解析模型回复，并生成 LangGraph 消息及前端发送批次。"""
+
     raw_content = message_content_to_text(getattr(response, "content", ""))
     reply_texts = parse_structured_reply(raw_content)
     return build_reply_messages_from_texts(reply_texts, response, state)
@@ -306,6 +348,12 @@ def build_reply_messages_from_texts(
     response: Any,
     state: AuraState,
 ) -> tuple[list[AIMessage], dict[str, Any]]:
+    """为每个回复气泡生成 ID、模拟延迟、发送时间和批次元数据。
+
+    Returns:
+        ``(AIMessage 列表, reply_batch 字典)``；批次同时写入临时发送状态。
+    """
+
     turn_id = state.get("turn_id") or f"turn-{uuid4()}"
     batch_id = str(uuid4())
     started_at = parse_iso_datetime(state.get("request_started_at")) or datetime.now(UTC)
@@ -359,6 +407,8 @@ def build_reply_messages_from_texts(
 
 
 def build_structured_reply_response(draft_response: Any, messages: list, state: AuraState) -> Any:
+    """当主模型未返回合法 JSON 时，用低温模型整理格式；失败则保留原草稿。"""
+
     draft_content = message_content_to_text(getattr(draft_response, "content", ""))
 
     if not draft_content.strip():
@@ -377,6 +427,8 @@ def build_structured_reply_response(draft_response: Any, messages: list, state: 
 
 
 def build_structured_formatter_prompt(draft_content: str) -> str:
+    """生成只允许整理消息边界、不得改写事实的格式化提示词。"""
+
     return "\n\n".join(
         part for part in (
             STRUCTURED_REPLY_PROMPT.strip(),
@@ -395,11 +447,15 @@ def build_structured_formatter_prompt(draft_content: str) -> str:
 
 
 def estimate_message_delay_ms(content: str) -> int:
+    """按文本长度估算单个气泡延迟，并限制在 0.5 到 2.5 秒。"""
+
     delay_ms = BASE_REPLY_DELAY_MS + len(content.strip()) * DELAY_PER_CHAR_MS
     return max(MIN_REPLY_DELAY_MS, min(MAX_REPLY_DELAY_MS, delay_ms))
 
 
 def message_content_to_text(content: Any) -> str:
+    """把 LangChain 的字符串或多段内容统一转换为纯文本。"""
+
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -416,6 +472,8 @@ def message_content_to_text(content: Any) -> str:
 
 
 def get_latest_reply_batch(config: RunnableConfig, turn_id: str) -> dict[str, Any] | None:
+    """读取当前图状态中属于指定回合的最新回复批次。"""
+
     if aura is None:
         return None
     state = aura.get_state(config)
@@ -427,6 +485,8 @@ def get_latest_reply_batch(config: RunnableConfig, turn_id: str) -> dict[str, An
 
 
 def build_time_context(messages: list, current_time: datetime) -> dict[str, Any]:
+    """根据当前时间和最近消息时间生成对话间隔上下文。"""
+
     latest_sent_at = latest_message_sent_at(messages)
     local_time = current_time.astimezone(AURA_TIMEZONE)
     context: dict[str, Any] = {
@@ -453,6 +513,8 @@ def build_time_context(messages: list, current_time: datetime) -> dict[str, Any]
 
 
 def latest_message_sent_at(messages: list) -> datetime | None:
+    """从后向前查找最近一条带 ``sent_at`` 元数据的消息时间。"""
+
     for msg in reversed(messages):
         additional_kwargs = getattr(msg, "additional_kwargs", {}) or {}
         sent_at = parse_iso_datetime(additional_kwargs.get("sent_at"))
@@ -462,6 +524,8 @@ def latest_message_sent_at(messages: list) -> datetime | None:
 
 
 def parse_iso_datetime(value: Any) -> datetime | None:
+    """解析 ISO 时间字符串并统一转换为 UTC；无效输入返回 ``None``。"""
+
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -474,6 +538,8 @@ def parse_iso_datetime(value: Any) -> datetime | None:
 
 
 def format_time_context(context: dict[str, Any] | None) -> str:
+    """把时间上下文转换成模型可直接使用的中文提示段。"""
+
     if not context:
         return ""
 
@@ -502,6 +568,8 @@ def format_time_context(context: dict[str, Any] | None) -> str:
 
 
 def format_self_changelog_context(context: dict[str, Any] | None) -> str:
+    """从自我更新上下文中提取非空提示文本。"""
+
     if not context:
         return ""
     text = context.get("text")
@@ -509,11 +577,15 @@ def format_self_changelog_context(context: dict[str, Any] | None) -> str:
 
 
 def format_chinese_datetime(value: datetime) -> str:
+    """把 datetime 格式化为包含中文星期的本地时间文本。"""
+
     weekdays = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
     return f"{value.year}年{value.month}月{value.day}日 {weekdays[value.weekday()]} {value:%H:%M}"
 
 
 def format_elapsed(seconds: int) -> str:
+    """把秒数转换为易读的分钟、小时或天数。"""
+
     if seconds < 60:
         return "不到 1 分钟"
     minutes = seconds // 60
@@ -529,6 +601,8 @@ def format_elapsed(seconds: int) -> str:
 
 
 def elapsed_level(seconds: int) -> str:
+    """把对话间隔划分为 ``short``、``medium`` 或 ``long``。"""
+
     if seconds < 60 * 60:
         return "short"
     if seconds < 24 * 60 * 60:
@@ -537,6 +611,11 @@ def elapsed_level(seconds: int) -> str:
 
 
 def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
+    """保存 judge 认可但本轮未通过 Tool 保存的记忆候选。
+
+    只处理 long/mid 记忆；失败仅记录日志，不中断聊天回复。
+    """
+
     if not candidate.get("save"):
         return
 
@@ -568,6 +647,18 @@ def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
 
 
 def get_history(user_id: str) -> list:
+    """从 LangGraph 状态导出供 API 使用的去重聊天历史。
+
+    Args:
+        user_id: 要读取的 LangGraph 线程 ID。
+
+    Returns:
+        由用户和 Aura 公共消息字典组成的时间顺序列表。
+
+    Raises:
+        RuntimeError: 对话图尚未初始化。
+    """
+
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
@@ -642,6 +733,12 @@ def append_proactive_history_message(
     sent_at: datetime,
     trigger_type: str = "silence",
 ) -> bool:
+    """把已发送的主动消息追加到用户的 LangGraph 对话历史。
+
+    Returns:
+        写入成功返回 ``True``；参数无效、图未初始化或持久化失败返回 ``False``。
+    """
+
     if aura is None:
         logging.warning("Aura 对话图尚未初始化，跳过主动消息历史写入")
         return False
@@ -686,6 +783,8 @@ def append_proactive_history_message(
 
 
 def delete_history_message(user_id: str, message_id: str) -> bool:
+    """向 LangGraph 写入单条 RemoveMessage；目标不存在时返回 ``False``。"""
+
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
@@ -716,6 +815,8 @@ def delete_history_message(user_id: str, message_id: str) -> bool:
 
 
 def clear_history(user_id: str) -> int:
+    """逻辑清空用户当前消息状态，并返回清理前的消息数量。"""
+
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
@@ -743,6 +844,8 @@ def clear_history(user_id: str) -> int:
 
 
 def trim_short_term_messages(messages: list) -> list:
+    """保留最近的完整消息块，且不截断 assistant/tool 调用组合。"""
+
     blocks = build_valid_message_blocks(messages)
     selected: list = []
     selected_count = 0
@@ -755,6 +858,8 @@ def trim_short_term_messages(messages: list) -> list:
 
 
 def build_valid_message_blocks(messages: list) -> list[list]:
+    """把历史拆成普通消息或完整工具调用块，并丢弃孤立工具消息。"""
+
     blocks: list[list] = []
     index = 0
     while index < len(messages):
@@ -779,6 +884,8 @@ def build_valid_message_blocks(messages: list) -> list[list]:
 
 
 def build_complete_tool_block(messages: list, index: int) -> tuple[list | None, int]:
+    """从 AI 工具调用开始收集对应 ToolMessage，并返回块及下一索引。"""
+
     assistant_message = messages[index]
     expected_ids = set(tool_call_ids(assistant_message))
     block = [assistant_message]
@@ -799,15 +906,21 @@ def build_complete_tool_block(messages: list, index: int) -> tuple[list | None, 
 
 
 def is_tool_message(message: Any) -> bool:
+    """判断消息是否为 LangChain ToolMessage。"""
+
     return getattr(message, "type", None) == "tool"
 
 
 def has_tool_calls(message: Any) -> bool:
+    """判断 AI 消息正文或 additional_kwargs 中是否声明了工具调用。"""
+
     additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
     return bool(getattr(message, "tool_calls", None) or additional_kwargs.get("tool_calls"))
 
 
 def tool_call_ids(message: Any) -> list[str]:
+    """提取 AI 消息内所有非空工具调用 ID。"""
+
     additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
     raw_tool_calls = getattr(message, "tool_calls", None) or additional_kwargs.get("tool_calls") or []
     ids: list[str] = []
@@ -820,6 +933,8 @@ def tool_call_ids(message: Any) -> list[str]:
 
 
 def tool_message_id(message: Any) -> str | None:
+    """从 ToolMessage 属性或附加元数据中读取关联的工具调用 ID。"""
+
     tool_call_id = getattr(message, "tool_call_id", None)
     if isinstance(tool_call_id, str) and tool_call_id:
         return tool_call_id
@@ -829,6 +944,8 @@ def tool_message_id(message: Any) -> str | None:
 
 
 def latest_human_text(messages: list) -> str:
+    """返回最近一条用户消息文本；不存在时返回空字符串。"""
+
     for msg in reversed(messages):
         if getattr(msg, "type", None) == "human":
             content = getattr(msg, "content", "")
@@ -837,6 +954,8 @@ def latest_human_text(messages: list) -> str:
 
 
 def normalize_city_adcode(value: str | None) -> str | None:
+    """校验并规范化六位数字城市 adcode。"""
+
     if not isinstance(value, str):
         return None
 
@@ -845,6 +964,8 @@ def normalize_city_adcode(value: str | None) -> str | None:
 
 
 def format_location_context(city_adcode: str | None) -> str:
+    """生成天气工具可用的位置提示，并禁止模型猜测城市。"""
+
     normalized = normalize_city_adcode(city_adcode)
     if normalized:
         return (
@@ -860,6 +981,8 @@ def format_location_context(city_adcode: str | None) -> str:
 
 
 def public_history_attachments(value: Any) -> list[str]:
+    """从内部附件元数据中提取可对外返回的文件名列表。"""
+
     if not isinstance(value, list):
         return []
     names: list[str] = []

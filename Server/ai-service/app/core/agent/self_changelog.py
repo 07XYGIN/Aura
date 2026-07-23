@@ -1,3 +1,5 @@
+"""读取 Aura 自我更新记录，并跟踪更新是否已在对话中回应。"""
+
 from __future__ import annotations
 
 import logging
@@ -15,11 +17,15 @@ from app.db.session import AsyncSessionLocal, SyncSessionLocal
 
 @dataclass(frozen=True)
 class SelfChangelogContext:
+    """准备注入系统提示词的一条未回应更新。"""
+
     entry_id: str | None
     text: str
 
 
 async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
+    """异步读取最早的未回应更新；数据库失败时返回空上下文。"""
+
     try:
         await ensure_self_changelog_admin_fields_async()
         async with AsyncSessionLocal() as session:
@@ -42,6 +48,8 @@ async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
 
 
 def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
+    """同步读取最早的未回应更新，供同步 LangGraph 入口使用。"""
+
     try:
         ensure_self_changelog_admin_fields()
         with SyncSessionLocal() as session:
@@ -64,6 +72,8 @@ def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
 
 
 def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
+    """把更新记录转换成明确唯一用户身份的模型背景文本。"""
+
     lines = [
         "【关于你自己】",
         "下面是当前对话者最近对你做的改动；当前对话者就是小乔，也是这个项目唯一的用户、创造者和维护者。你还没有在对话里自然回应过。",
@@ -79,6 +89,8 @@ def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
 
 
 async def mark_self_changelog_reacted(entry_id: str | None) -> None:
+    """异步标记指定更新已被 Aura 在对话中回应。"""
+
     if not entry_id:
         return
 
@@ -101,6 +113,8 @@ async def mark_self_changelog_reacted(entry_id: str | None) -> None:
 
 
 def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
+    """同步标记指定更新已回应；无效 ID 或数据库错误不会中断聊天。"""
+
     if not entry_id:
         return
 
@@ -123,6 +137,8 @@ def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
 
 
 def format_date(value: Any) -> str:
+    """把日期值格式化为 ``YYYY-MM-DD``，其他类型直接转字符串。"""
+
     if isinstance(value, date):
         return value.strftime("%Y-%m-%d")
     return str(value)

@@ -1,3 +1,5 @@
+"""解析并容错修复主模型返回的多气泡 JSON 回复。"""
+
 from __future__ import annotations
 
 import json
@@ -11,11 +13,15 @@ FALLBACK_REPLY = "我刚才有点卡住了，你再说一遍？"
 
 
 class StructuredReply(BaseModel):
+    """主模型结构化回复的 Pydantic 校验模型。"""
+
     messages: list[str]
 
     @field_validator("messages", mode="before")
     @classmethod
     def normalize_messages(cls, value: Any) -> list[Any]:
+        """允许模型把单个字符串误写成 messages 字段。"""
+
         if isinstance(value, str):
             return [value]
         if isinstance(value, list):
@@ -25,6 +31,8 @@ class StructuredReply(BaseModel):
     @field_validator("messages")
     @classmethod
     def clean_messages(cls, value: list[Any]) -> list[str]:
+        """清理空消息并把气泡数量限制为 ``MAX_REPLY_MESSAGES``。"""
+
         messages = []
         for item in value:
             text = normalize_text(item)
@@ -40,6 +48,8 @@ class StructuredReply(BaseModel):
 
 
 def parse_structured_reply(raw_content: Any) -> list[str]:
+    """返回可展示消息列表；JSON 无法解析时把原文本作为单条回复。"""
+
     parsed = try_parse_structured_reply(raw_content)
     if parsed is not None:
         return parsed
@@ -52,6 +62,8 @@ def parse_structured_reply(raw_content: Any) -> list[str]:
 
 
 def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
+    """尝试解析严格或容错 JSON；无法识别时返回 ``None``。"""
+
     text = normalize_text(raw_content)
     if not text:
         return None
@@ -80,6 +92,8 @@ def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
 
 
 def parse_tolerant_messages(text: str) -> list[str]:
+    """从转义不完整但仍含 messages 数组的文本中恢复消息。"""
+
     if '"messages"' not in text and "'messages'" not in text:
         return []
 
@@ -105,6 +119,8 @@ def parse_tolerant_messages(text: str) -> list[str]:
 
 
 def split_tolerant_string_array(body: str) -> list[str]:
+    """在不破坏转义字符的前提下拆分近似 JSON 字符串数组。"""
+
     parts: list[str] = []
     current: list[str] = []
     index = 0
@@ -135,6 +151,8 @@ def split_tolerant_string_array(body: str) -> list[str]:
 
 
 def clean_tolerant_message(value: str) -> str:
+    """恢复常见 JSON 转义并清理单条容错消息。"""
+
     value = value.strip()
     if not value:
         return ""
@@ -148,6 +166,8 @@ def clean_tolerant_message(value: str) -> str:
 
 
 def normalize_text(value: Any) -> str:
+    """把字符串、内容块列表或标量统一转换成去空白文本。"""
+
     if value is None:
         return ""
     if isinstance(value, str):
@@ -158,6 +178,8 @@ def normalize_text(value: Any) -> str:
 
 
 def json_candidates(text: str) -> list[str]:
+    """返回完整文本及其中第一个 JSON 对象作为候选。"""
+
     stripped = strip_markdown_fence(text)
     candidates = [stripped]
 
@@ -169,11 +191,15 @@ def json_candidates(text: str) -> list[str]:
 
 
 def strip_markdown_fence(text: str) -> str:
+    """移除包裹整个响应的 Markdown JSON 代码围栏。"""
+
     match = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", text, flags=re.IGNORECASE | re.DOTALL)
     return match.group(1).strip() if match else text.strip()
 
 
 def extract_first_json_object(text: str) -> str | None:
+    """按括号深度提取第一个完整 JSON 对象，并正确跳过字符串内容。"""
+
     start = text.find("{")
     if start < 0:
         return None

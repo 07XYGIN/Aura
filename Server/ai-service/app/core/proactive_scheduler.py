@@ -56,18 +56,21 @@ _scheduler_task: asyncio.Task | None = None
 
 
 def proactive_score(value: datetime) -> float:
+    """将日期时间标准化为 Redis 有序集合使用的 Unix 分数。"""
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.timestamp()
 
 
 def normalize_utc(value: datetime) -> datetime:
+    """将日期时间转换为 UTC；无时区值按 UTC 解释。"""
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
 
 
 def is_stale_daily_greeting(proactive: ProactiveMessage, now: datetime) -> bool:
+    """判断早晚问候是否已超过调度间隔和允许的延迟宽限。"""
     if proactive.trigger_type not in DAILY_GREETING_TRIGGER_TYPES:
         return False
     allowed_lag = timedelta(
@@ -78,6 +81,7 @@ def is_stale_daily_greeting(proactive: ProactiveMessage, now: datetime) -> bool:
 
 
 def is_deep_night(now: datetime, timezone: ZoneInfo = SILENCE_TIMEZONE) -> bool:
+    """判断给定时刻在目标时区是否处于禁止沉默触达的深夜时段。"""
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
     local_now = now.astimezone(timezone)
@@ -91,6 +95,15 @@ def collect_due_silence_user_ids(
     now: datetime | None = None,
     threshold_seconds: int = SILENCE_THRESHOLD_SECONDS,
 ) -> list[str]:
+    """筛选已沉默超过阈值且本轮尚未问候的用户。
+
+    Args:
+        now: 计算沉默时长的当前时间，默认使用当前 UTC 时间。
+        threshold_seconds: 触发主动问候所需的最短沉默秒数。
+
+    Returns:
+        应触发沉默问候的用户 ID；深夜或 Redis 无状态时为空列表。
+    """
     logging.info('定时任务 执行 collect_due_silence_user_ids')
     now = now or datetime.now(UTC)
     if is_deep_night(now):
@@ -111,6 +124,7 @@ def collect_due_silence_user_ids(
 
 
 def enqueue_proactive_message(message_id: str | UUID, scheduled_at: datetime) -> bool:
+    """把一条主动消息按计划时间写入 Redis 有序队列。"""
     score = proactive_score(scheduled_at)
     return bool(
         safe_redis_call(
@@ -124,6 +138,11 @@ def enqueue_proactive_message(message_id: str | UUID, scheduled_at: datetime) ->
 
 
 def enqueue_proactive_messages(messages: Iterable[ProactiveMessage]) -> int:
+    """批量将有计划时间的待发送消息写入 Redis 有序队列。
+
+    Returns:
+        Redis 报告的新增或更新成员数量；无有效消息或 Redis 失败时返回 0。
+    """
     mapping = {
         str(message.id): proactive_score(message.scheduled_at)
         for message in messages
@@ -144,6 +163,10 @@ def enqueue_proactive_messages(messages: Iterable[ProactiveMessage]) -> int:
 
 
 def pop_due_proactive_message_ids(now: datetime | None = None, limit: int = PROACTIVE_DUE_LIMIT) -> list[str]:
+    """从 Redis 取出并移除一批到期主动消息 ID。
+
+    此操作由查询和删除两步组成，不保证多个调度实例之间的原子消费。
+    """
     now = now or datetime.now(UTC)
     score = proactive_score(now)
     redis_client = get_redis_client()
@@ -170,6 +193,16 @@ async def enqueue_pending_proactive_messages(
     now: datetime | None = None,
     limit: int = PROACTIVE_ENQUEUE_LIMIT,
 ) -> int:
+    """查询未来观察窗口内的待发送记录并同步到 Redis 队列。
+
+    Args:
+        session: 用于查询主动消息的数据库会话。
+        now: 观察窗口起点，默认当前 UTC 时间。
+        limit: 单次最多加入队列的数据库记录数。
+
+    Returns:
+        Redis 报告的入队数量。
+    """
     now = now or datetime.now(UTC)
     lookahead_at = now + timedelta(hours=AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS)
     result = await session.execute(
@@ -189,6 +222,10 @@ async def build_recent_conversation_context(
     user_id: UUID,
     limit: int = SILENCE_CONTEXT_MESSAGE_LIMIT,
 ) -> str:
+    """读取最近聊天历史并压缩为沉默问候的短上下文。
+
+    ``session`` 目前为接口兼容参数；历史实际来自 Agent 的检查点存储。
+    """
     rows = await asyncio.to_thread(get_history, str(user_id))
     parts: list[str] = []
     for item in rows[-limit:]:
@@ -203,6 +240,11 @@ async def build_recent_conversation_context(
 
 
 def resolve_daily_greeting_timezone(timezone: str | None) -> tuple[ZoneInfo, str]:
+    """解析 IANA 时区名称，无效时回退到服务默认时区。
+
+    Returns:
+        ``(ZoneInfo, 最终采用的时区名称)``。
+    """
     timezone_name = (timezone or DEFAULT_DAILY_GREETING_TIMEZONE).strip() or DEFAULT_DAILY_GREETING_TIMEZONE
     try:
         return ZoneInfo(timezone_name), timezone_name
@@ -212,6 +254,7 @@ def resolve_daily_greeting_timezone(timezone: str | None) -> tuple[ZoneInfo, str
 
 
 def local_day_bounds_utc(target_date: date, timezone: ZoneInfo) -> tuple[datetime, datetime]:
+    """返回目标本地日期对应的 UTC 半开区间 ``[开始, 次日开始)``。"""
     start_local = datetime.combine(target_date, time.min, tzinfo=timezone)
     end_local = start_local + timedelta(days=1)
     return start_local.astimezone(UTC), end_local.astimezone(UTC)
@@ -223,6 +266,17 @@ def upcoming_daily_greeting_plans_for_user(
     now: datetime,
     lookahead_hours: int = AURA_PROACTIVE_SCHEDULER_LOOKAHEAD_HOURS,
 ) -> list[dict]:
+    """生成观察窗口内尚未到时的早晚问候计划。
+
+    Args:
+        user_id: 用于生成稳定计划时间的用户 ID。
+        timezone: 用户时区名称，无效时使用默认时区。
+        now: 计划计算基准时间。
+        lookahead_hours: 从 ``now`` 向后扫描的小时数。
+
+    Returns:
+        按 UTC 计划时间升序排列的问候计划字典。
+    """
     zone, timezone_name = resolve_daily_greeting_timezone(timezone)
     normalized_now = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     lookahead_at = normalized_now + timedelta(hours=lookahead_hours)
@@ -271,6 +325,10 @@ async def load_daily_greeting_targets(
     session: AsyncSession,
     limit: int = DAILY_GREETING_USER_LIMIT,
 ) -> list[dict]:
+    """加载需要规划每日问候的用户及其默认时区、城市配置。
+
+    当前项目为单用户使用，但保留批量返回结构以兼容调度流程。
+    """
     result = await session.execute(
         select(Users.id)
         .order_by(Users.created_at.asc())
@@ -295,6 +353,7 @@ async def daily_greeting_already_planned(
     greeting_date: date,
     timezone: str | None,
 ) -> bool:
+    """检查用户在指定本地日期是否已有同类型问候记录。"""
     zone, _timezone_name = resolve_daily_greeting_timezone(timezone)
     day_start, day_end = local_day_bounds_utc(greeting_date, zone)
     result = await session.execute(
@@ -314,6 +373,14 @@ async def ensure_daily_greeting_messages(
     session: AsyncSession,
     now: datetime | None = None,
 ) -> int:
+    """为观察窗口内缺失的早晚问候创建数据库记录并加入 Redis。
+
+    Returns:
+        Redis 报告的入队数量；没有新计划时返回 0。
+
+    Side Effects:
+        新增 ``proactive_messages`` 记录、刷新主键并提交事务。
+    """
     now = now or datetime.now(UTC)
     targets = await load_daily_greeting_targets(session)
     messages: list[ProactiveMessage] = []
@@ -373,6 +440,19 @@ async def trigger_silence_proactive_messages(
     user_ids: list[str],
     now: datetime | None = None,
 ) -> int:
+    """为到期沉默用户生成问候，并立即写入聊天历史。
+
+    Args:
+        session: 用于创建和更新主动消息记录的数据库会话。
+        user_ids: 已通过沉默阈值筛选的用户 ID。
+        now: 消息发送时间，默认当前 UTC 时间。
+
+    Returns:
+        实际发送的主动消息数量。
+
+    Side Effects:
+        调用模型生成文案、写数据库和聊天历史，并更新 Redis 触发标记。
+    """
     if not user_ids:
         return 0
 
@@ -430,6 +510,10 @@ async def trigger_silence_proactive_messages(
 
 
 async def load_daily_greeting_context(_session: AsyncSession, _user_id: UUID) -> dict:
+    """返回每日问候所需的时区和天气城市配置。
+
+    当前为单用户全局配置，保留会话和用户参数以便以后改为用户级资料。
+    """
     return {
         "timezone": AURA_TIMEZONE,
         "city_adcode": AURA_CITY_ADCODE,
@@ -440,6 +524,13 @@ async def prepare_proactive_message_content(
     session: AsyncSession,
     proactive: ProactiveMessage,
 ) -> str:
+    """准备主动消息最终文案，并更新每日问候的生成元数据。
+
+    普通主动消息沿用已有内容；早晚问候会按需查询天气并调用模型生成。
+
+    Returns:
+        可发送的非空文案；模型决定不发送或生成空内容时返回空字符串。
+    """
     if proactive.trigger_type not in DAILY_GREETING_TRIGGER_TYPES:
         return str(proactive.content or "").strip()
 
@@ -480,6 +571,14 @@ async def send_proactive_message_records(
     messages: Iterable[ProactiveMessage],
     now: datetime | None = None,
 ) -> int:
+    """处理主动消息记录，将有效内容追加到聊天历史并更新发送状态。
+
+    过期的每日问候或无可用文案的记录标记为 ``skipped``，其余标记为
+    ``sent``；有状态变化时统一提交数据库事务。
+
+    Returns:
+        成功写入聊天历史的消息数量。
+    """
     now = now or datetime.now(UTC)
     sent_count = 0
     changed_count = 0
@@ -526,6 +625,10 @@ async def process_due_proactive_messages(
     message_ids: list[str],
     now: datetime | None = None,
 ) -> int:
+    """校验到期消息 ID、查询仍待发送的记录并执行发送。
+
+    无效 UUID、已经处理或计划时间未到的记录会被忽略。
+    """
     if not message_ids:
         return 0
 
@@ -555,6 +658,14 @@ async def process_due_proactive_messages(
 
 
 async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
+    """执行一个完整主动消息调度周期。
+
+    顺序处理沉默问候、每日问候补计划、待发送记录入队和到期消息发送。
+    Redis 不可用时跳过本周期。
+
+    Returns:
+        本周期实际发送的主动消息总数。
+    """
     if not redis_available():
         return 0
 
@@ -570,6 +681,10 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
 
 
 async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:
+    """按配置间隔持续运行主动消息调度，直到收到停止事件。
+
+    单次周期异常只记录日志，不会终止后续调度。
+    """
     logging.info(
         "主动消息调度器启动 interval_seconds=%s",
         AURA_PROACTIVE_SCHEDULER_INTERVAL_SECONDS,
@@ -589,6 +704,11 @@ async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:
 
 
 def start_proactive_scheduler() -> asyncio.Event | None:
+    """在当前事件循环启动唯一的主动消息后台任务。
+
+    Returns:
+        用于请求停止的事件；功能关闭或任务已运行时返回 ``None``。
+    """
     global _scheduler_task
 
     if not AURA_PROACTIVE_SCHEDULER_ENABLED:
@@ -605,6 +725,7 @@ def start_proactive_scheduler() -> asyncio.Event | None:
 
 
 async def stop_proactive_scheduler(stop_event: asyncio.Event | None) -> None:
+    """通知主动消息后台任务停止，并等待任务退出后清理全局引用。"""
     global _scheduler_task
 
     if stop_event is not None:

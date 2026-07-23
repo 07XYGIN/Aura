@@ -1,3 +1,5 @@
+"""主动问候计划、文案模板和 LLM 草稿生成。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -108,10 +110,14 @@ SAFE_FALLBACK_COPY = {
 
 
 def _compact_context(context: str, limit: int = 48) -> str:
+    """压缩空白并截断最近对话摘要，避免主动文案过度引用。"""
+
     return " ".join(context.split())[:limit].strip()
 
 
 def _stable_copy(trigger_type: str, candidates: list[str], user_context: str = "") -> str:
+    """根据触发类型和上下文稳定选择模板，避免同输入随机漂移。"""
+
     if not candidates:
         return ""
     seed = f"{trigger_type}:{_compact_context(user_context, 80)}".encode("utf-8")
@@ -127,6 +133,8 @@ def _stable_time_for_window(
     start: time,
     end: time,
 ) -> datetime:
+    """在给定本地时间窗口内为用户和日期生成稳定发送时间。"""
+
     start_at = datetime.combine(target_date, start, tzinfo=timezone)
     end_at = datetime.combine(target_date, end, tzinfo=timezone)
     if end_at <= start_at:
@@ -144,6 +152,12 @@ def build_daily_greeting_plan(
     now: datetime | None = None,
     target_date: date | None = None,
 ) -> dict:
+    """生成指定日期的早晚问候计划。
+
+    Returns:
+        包含时区、日期、两个触发类型、发送时间和文案要求的字典。
+    """
+
     zone = ZoneInfo(timezone)
     local_now = (now or datetime.now(zone)).astimezone(zone)
     greeting_date = target_date or local_now.date()
@@ -191,6 +205,8 @@ def build_proactive_message_draft(
     user_context: str = "",
     weather_context: dict | None = None,
 ) -> dict:
+    """根据触发类型、对话摘要和可靠天气生成安全模板草稿。"""
+
     trigger = (trigger_type or "daily_care").strip()
     context = _compact_context(user_context)
     weather_text = format_weather_context(weather_context)
@@ -227,6 +243,8 @@ def build_proactive_message_draft(
 
 
 def format_weather_context(weather_context: dict | None) -> str:
+    """把成功的天气结果压缩成一句可用于主动问候的事实文本。"""
+
     if not weather_context or str(weather_context.get("status", "")) != "1":
         return ""
     city = str(weather_context.get("city") or "").strip()
@@ -245,6 +263,8 @@ def draft_proactive_message_with_llm(
     user_context: str = "",
     weather_context: dict | None = None,
 ) -> dict:
+    """调用模型润色主动消息；调用失败或内容为空时回退到安全模板。"""
+
     fallback = build_proactive_message_draft(trigger_type, user_context, weather_context)
     prompt = build_proactive_llm_prompt(trigger_type, user_context, weather_context)
     try:
@@ -281,11 +301,15 @@ content 必须是中文 1-2 句，像虚拟女友随口惦记，不催促、不�
 
 
 def copy_examples_for_trigger(trigger_type: str) -> list[str]:
+    """返回指定触发类型的语气参考文案。"""
+
     trigger = (trigger_type or "daily_care").strip()
     return PROACTIVE_COPY_EXAMPLES.get(trigger, DAILY_RANDOM_COPY_EXAMPLES)
 
 
 def format_copy_examples(trigger_type: str) -> str:
+    """把参考文案格式化为 LLM 提示段。"""
+
     examples = copy_examples_for_trigger(trigger_type)
     if not examples:
         return "参考文案：无。"
@@ -297,6 +321,8 @@ def build_proactive_llm_prompt(
     user_context: str = "",
     weather_context: dict | None = None,
 ) -> str:
+    """组合触发要求、可靠天气、最近上下文和参考文案。"""
+
     trigger = (trigger_type or "daily_care").strip()
     if trigger == MORNING_TRIGGER_TYPE:
         reply_spec = DAILY_GREETING_WINDOWS[MORNING_TRIGGER_TYPE]["reply_spec"]
@@ -325,6 +351,8 @@ def build_proactive_llm_prompt(
 
 
 def parse_llm_draft_response(content: str) -> dict:
+    """解析 LLM 主动消息 JSON；非 JSON 内容按纯文案兼容。"""
+
     cleaned = content.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
@@ -338,6 +366,8 @@ def parse_llm_draft_response(content: str) -> dict:
 
 
 def compact_message(content: str, max_length: int = 120) -> str:
+    """把多行主动消息压缩成不超过指定长度的一段文本。"""
+
     lines = [" ".join(line.split()) for line in content.splitlines()]
     text = " ".join(line for line in lines if line).strip()
     return text[:max_length].strip()

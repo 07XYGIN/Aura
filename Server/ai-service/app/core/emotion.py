@@ -7,6 +7,8 @@ from langsmith import traceable
 
 @dataclass(frozen=True)
 class EmotionState:
+    """一次情绪判断及其对 Aura 回复方式的内部指导。"""
+
     user_emotion: str
     aura_mood: str
     support_needed: bool
@@ -15,6 +17,7 @@ class EmotionState:
     is_current_experience: bool = True
 
     def to_dict(self) -> dict:
+        """将不可变情绪状态转换为可序列化字典。"""
         return asdict(self)
 
 
@@ -74,6 +77,11 @@ DEFAULT_EMOTION = EmotionState(
 
 @traceable(name="aura_keyword_emotion")
 def derive_emotion_state(message: str) -> EmotionState:
+    """用关键词规则为用户消息生成低成本的情绪状态。
+
+    多条规则命中时选择命中关键词最多的一条；没有命中或消息为空时返回
+    ``DEFAULT_EMOTION``。该结果可作为模型判断失败时的降级值。
+    """
     text = (message or "").strip()
     if not text:
         return DEFAULT_EMOTION
@@ -98,6 +106,7 @@ def derive_emotion_state(message: str) -> EmotionState:
     )
 
 def format_emotion_context(emotion_state: dict | EmotionState | None) -> str:
+    """将情绪状态格式化为只供主对话模型参考的提示词片段。"""
     if emotion_state is None:
         emotion_state = DEFAULT_EMOTION
     if isinstance(emotion_state, EmotionState):

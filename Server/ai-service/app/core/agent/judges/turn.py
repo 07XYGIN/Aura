@@ -1,3 +1,5 @@
+"""汇总情绪、记忆和安全判断，生成当前回合的回复模式。"""
+
 from __future__ import annotations
 
 import re
@@ -33,7 +35,10 @@ def judge_turn(
     emotion_state: dict[str, Any] | None = None,
     recent_messages: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """生成当前回合需要的少量内部判断，不做关系积分。"""
+    """生成当前回合的情绪、互动、记忆、安全和回复模式判断。
+
+    不计算关系积分；结果只作为主模型的内部上下文。
+    """
     text = (message or "").strip()
     fallback_emotion = emotion_state or derive_emotion_state(text).to_dict()
     emotion = judge_emotion_state(
@@ -59,6 +64,8 @@ def judge_turn(
 
 
 def build_interaction_context(emotion: dict[str, Any]) -> dict[str, Any]:
+    """从情绪判断中提取并校验互动模式、对象和置信度。"""
+
     mode = str(emotion.get("interaction_mode") or "natural")
     if mode not in {"natural", "affection", "repair"}:
         mode = "natural"
@@ -73,6 +80,8 @@ def build_interaction_context(emotion: dict[str, Any]) -> dict[str, Any]:
 
 
 def detect_risk_signal(message: str) -> dict[str, Any]:
+    """用保守关键词规则识别需要安全优先处理的自伤风险。"""
+
     text = (message or "").strip().lower()
     if not text:
         return {"level": "none", "risk_type": None, "matched_keywords": [], "requires_safety_gate": False}
@@ -103,6 +112,8 @@ def choose_response_mode(
     interaction: dict[str, Any],
     risk_signal: dict[str, Any],
 ) -> str:
+    """按风险、关系修复、情绪支持和亲密信号选择回复模式。"""
+
     if risk_signal.get("requires_safety_gate"):
         return "crisis_support"
     if interaction.get("mode") == "repair" and interaction.get("target") == "aura":
@@ -117,6 +128,8 @@ def choose_response_mode(
 
 
 def normalize_turn_judgement(value: dict[str, Any] | None, message: str) -> dict[str, Any]:
+    """补齐上游缺失或无效的回合判断字段。"""
+
     if not isinstance(value, dict):
         return judge_turn(message)
 
@@ -154,6 +167,8 @@ def normalize_turn_judgement(value: dict[str, Any] | None, message: str) -> dict
 
 
 def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
+    """把内部判断转换成主模型可读但不可对外复述的提示段。"""
+
     if not isinstance(turn_judgement, dict):
         return "暂无本轮判断。"
 
@@ -182,6 +197,8 @@ def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
 
 
 def format_recent_messages_for_judge(messages: list[Any] | None, limit: int = 6) -> str:
+    """截取最近消息并压缩成情绪 judge 使用的角色文本。"""
+
     if not messages:
         return ""
     lines: list[str] = []

@@ -34,6 +34,7 @@ __all__ = [
 
 
 def int_env(name: str, default: int, minimum: int) -> int:
+    """读取整数环境变量，缺失或无效时使用默认值，并保证不低于下限。"""
     value = os.getenv(name)
     if value is None:
         return default

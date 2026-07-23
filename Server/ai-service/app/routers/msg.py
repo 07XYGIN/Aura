@@ -25,6 +25,7 @@ _QUEUE_PUT_CHECK_INTERVAL_SECONDS = 0.1
 
 
 def _positive_int_env(name: str, default: int) -> int:
+    """读取正整数环境变量，无效时记录告警并使用默认值。"""
     value = os.getenv(name)
     if value is None:
         return default
@@ -46,6 +47,14 @@ _sse_executor = ThreadPoolExecutor(
 
 
 def _configure_sse_runtime_for_tests(max_concurrency: int, queue_size: int = 32) -> None:
+    """重建 SSE 并发槽、线程池和队列配置，供隔离测试使用。
+
+    Raises:
+        ValueError: 并发数或队列大小小于 1。
+
+    Side Effects:
+        关闭旧线程池并替换模块级 SSE 运行时对象。
+    """
     global _sse_executor, _sse_max_concurrency, _sse_queue_size, _sse_slots
 
     if max_concurrency < 1:
@@ -65,10 +74,12 @@ def _configure_sse_runtime_for_tests(max_concurrency: int, queue_size: int = 32)
 
 
 def _try_acquire_sse_slot() -> bool:
+    """非阻塞申请一个 SSE 对话并发槽。"""
     return _sse_slots.acquire(blocking=False)
 
 
 def _release_sse_slot() -> None:
+    """释放 SSE 并发槽；重复释放只记录错误，不向外抛出。"""
     try:
         _sse_slots.release()
     except ValueError:
@@ -82,6 +93,21 @@ async def event_generator(
     attachment_ids: list[str] | None = None,
     city_adcode: str | None = None,
 ) -> AsyncIterator[str]:
+    """在线程池运行同步 Agent，并桥接为异步 SSE 文本流。
+
+    Args:
+        message: 用户本轮文本。
+        user_id: 当前用户 ID，同时作为 LangGraph 线程标识。
+        client_message_id: 客户端消息 ID，用于幂等和历史关联。
+        attachment_ids: 本轮引用的已上传附件 ID。
+        city_adcode: 天气工具可使用的城市编码。
+
+    Yields:
+        已编码的 SSE ``data`` 帧，结束前发送 ``[DONE]``。
+
+    Side Effects:
+        在线程池调用 Agent、写入聊天相关状态，并在结束或断连后释放并发槽。
+    """
     started_at = time.perf_counter()
     emotion_state = derive_emotion_state(message).to_dict()
     loop = asyncio.get_running_loop()
@@ -98,6 +124,7 @@ async def event_generator(
     )
 
     def release_slot_once() -> None:
+        """在锁保护下确保本轮 SSE 并发槽最多释放一次。"""
         nonlocal released
         with release_lock:
             if released:
@@ -106,6 +133,7 @@ async def event_generator(
         _release_sse_slot()
 
     def put_from_thread(item: str | object) -> bool:
+        """从生产线程向异步队列背压写入事件，断流时停止等待。"""
         if stop_event.is_set():
             return False
 
@@ -127,6 +155,7 @@ async def event_generator(
                 return False
 
     def produce_events() -> None:
+        """同步消费 Agent 事件并推入异步队列，异常时发送统一错误事件。"""
         try:
             for event in aura_agent(
                 message,
@@ -170,6 +199,14 @@ async def event_generator(
 
 @router.post("/send/sse/")
 async def send_message(msg: MessageRequest):
+    """申请并发槽并为一轮用户消息创建 SSE 响应。
+
+    Raises:
+        HTTPException: 当前实时对话数量已达到配置上限。
+
+    Returns:
+        ``text/event-stream`` 流式响应；并同时异步记录用户活跃时间。
+    """
     if not _try_acquire_sse_slot():
         raise HTTPException(
             status_code=429,

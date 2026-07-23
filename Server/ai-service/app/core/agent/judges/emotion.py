@@ -1,3 +1,5 @@
+"""使用 LLM 和保守规则判断当前情绪语境及互动对象。"""
+
 from __future__ import annotations
 
 import json
@@ -59,6 +61,17 @@ def judge_emotion_state(
     recent_context: str | None = None,
     fallback_emotion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """判断最新消息的情绪、时态和互动模式。
+
+    Args:
+        message: 用户最新消息。
+        recent_context: 可选的短期对话摘要，用于判断情绪指向和时态。
+        fallback_emotion: 关键词规则预先得到的回退结果。
+
+    Returns:
+        标准化后的情绪字典；模型失败时返回经过语境抑制的规则结果。
+    """
+
     text = (message or "").strip()
     fallback = normalize_fallback_emotion(fallback_emotion, text)
     if not text:
@@ -84,6 +97,8 @@ def judge_emotion_state(
 
 
 def normalize_fallback_emotion(fallback_emotion: dict[str, Any] | None, text: str) -> dict[str, Any]:
+    """补齐关键词情绪结果缺少的置信度、来源和互动字段。"""
+
     emotion = dict(fallback_emotion) if isinstance(fallback_emotion, dict) and fallback_emotion else (
         derive_emotion_state(text).to_dict() if text else DEFAULT_EMOTION.to_dict()
     )
@@ -97,6 +112,8 @@ def normalize_fallback_emotion(fallback_emotion: dict[str, Any] | None, text: st
 
 
 def normalize_emotion_judgement(raw: dict[str, Any], fallback: dict[str, Any], text: str) -> dict[str, Any]:
+    """校验 LLM 情绪 JSON，并转换成主对话使用的统一结构。"""
+
     emotional_state = clean_string(raw.get("emotional_state"), "neutral").lower()
     if emotional_state not in EMOTION_PROFILES:
         emotional_state = "neutral"
@@ -134,6 +151,8 @@ def normalize_emotion_judgement(raw: dict[str, Any], fallback: dict[str, Any], t
 
 
 def suppress_retrospective_false_positive(fallback: dict[str, Any], text: str) -> dict[str, Any]:
+    """避免把回忆或习惯描述误判为用户正在经历的负面情绪。"""
+
     emotion = dict(fallback)
     normalized = text.lower()
     has_retrospective_hint = any(hint in normalized for hint in RETROSPECTIVE_HINTS)
@@ -151,6 +170,8 @@ def suppress_retrospective_false_positive(fallback: dict[str, Any], text: str) -
 
 
 def infer_interaction_mode(text: str) -> str:
+    """从明确措辞中保守推断自然、亲密或关系修复模式。"""
+
     normalized = (text or "").lower()
     if any(hint in normalized for hint in AFFECTION_HINTS):
         return "affection"
@@ -162,6 +183,8 @@ def infer_interaction_mode(text: str) -> str:
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
+    """从纯 JSON 或夹杂文本的模型输出中解析第一个对象。"""
+
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
@@ -175,6 +198,8 @@ def parse_json_object(text: str) -> dict[str, Any]:
 
 
 def message_content_to_text(content: Any) -> str:
+    """把 LangChain 消息的字符串或内容块转换成文本。"""
+
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -191,6 +216,8 @@ def message_content_to_text(content: Any) -> str:
 
 
 def as_bool(value: Any) -> bool:
+    """把常见字符串和标量值转换为布尔值。"""
+
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -199,6 +226,8 @@ def as_bool(value: Any) -> bool:
 
 
 def clamp_float(value: Any, default: float) -> float:
+    """把数值限制在 0 到 1；无法转换时返回默认值。"""
+
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -207,5 +236,7 @@ def clamp_float(value: Any, default: float) -> float:
 
 
 def clean_string(value: Any, default: str) -> str:
+    """返回去除首尾空白的字符串，空值使用默认文本。"""
+
     text = str(value).strip() if value is not None else ""
     return text or default

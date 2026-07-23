@@ -26,6 +26,7 @@ MOJIBAKE_MARKERS = (
 
 
 def iter_text_files() -> list[Path]:
+    """收集项目内需要扫描乱码标记的 Python 和 Markdown 文件。"""
     files: list[Path] = []
     for path in ROOT.rglob("*"):
         if any(part in SKIP_DIRS for part in path.parts):
@@ -38,6 +39,11 @@ def iter_text_files() -> list[Path]:
 
 
 def main() -> int:
+    """扫描常见乱码字符并打印文件、行号和转义后的内容。
+
+    Returns:
+        没有发现可疑字符返回 0，否则返回 1。
+    """
     findings: list[str] = []
     for path in iter_text_files():
         text = path.read_text(encoding="utf-8", errors="replace")

@@ -23,6 +23,15 @@ async def list_memory(
     scope: str = Query(default="long", pattern="^(long|mid|all)$"),
     includeInactive: bool = Query(default=False),
 ):
+    """分页查询用户的中期、长期或全部记忆。
+
+    Args:
+        userId: 记忆所属用户 ID。
+        page: 从 1 开始的页码。
+        pageSize: 每页数量，最大 100。
+        scope: 记忆范围，取 ``long``、``mid`` 或 ``all``。
+        includeInactive: 是否包含已失效但尚未物理删除的记忆。
+    """
     memory_page = list_memories_by_user(
         user_id=userId,
         page=page,
@@ -35,23 +44,31 @@ async def list_memory(
 
 @router.get("/getMemory", response_model=SuccessResponse, summary="Search memories by user")
 async def get_memory(userId: str, query: str, k: int = 1):
+    """按语义查询用户记忆并返回最相关的 ``k`` 条结果。"""
     memory_list = search_memory(user_id=userId, query=query, k=k)
     return SuccessResponse(data=memory_list)
 
 
 @router.get("/retention", response_model=SuccessResponse, summary="获取个人记忆保留状态")
 async def get_memory_retention(userId: str):
+    """返回用户记忆数量、保留策略和维护状态。"""
     return SuccessResponse(data=get_memory_retention_status(user_id=userId))
 
 
 @router.delete("/list", response_model=SuccessResponse, summary="Clear memories by user")
 async def clear_memory(userId: str, scope: str = Query(default="all", pattern="^(long|mid|all)$")):
+    """按范围清空用户记忆并返回删除数量。"""
     deleted_count = clear_memories_by_user(user_id=userId, memory_scope=scope)
     return SuccessResponse(data={"deletedCount": deleted_count})
 
 
 @router.delete("/{memoryId}", response_model=SuccessResponse, summary="Delete one memory by user")
 async def delete_memory(memoryId: str, userId: str):
+    """删除属于指定用户的一条记忆。
+
+    Raises:
+        HTTPException: 记忆不存在或不属于该用户。
+    """
     deleted = delete_memory_by_id(user_id=userId, memory_id=memoryId)
     if not deleted:
         raise HTTPException(status_code=404, detail="记忆不存在")

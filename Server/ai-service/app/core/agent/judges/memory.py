@@ -1,3 +1,5 @@
+"""判断记忆写入、去重和合并内容的 LLM 辅助逻辑。"""
+
 from __future__ import annotations
 
 import json
@@ -88,6 +90,12 @@ JSON schema:
 
 @traceable(name="aura_memory_judge")
 def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
+    """判断用户消息是否应保存为长期或中期记忆。
+
+    Returns:
+        包含保存决定、层级、标题、正文、置信度和信号的标准字典。
+    """
+
     text = (message or "").strip()
     if not text:
         return memory_candidate(False, "short", None, None, 0.0, "empty_message", [])
@@ -117,6 +125,8 @@ def judge_memory_dedup(
     existing_content: str,
     existing_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """比较新旧长期记忆，决定重复、更新或互不相关。"""
+
     payload = {
         "new_memory": (new_content or "").strip(),
         "existing_memory": (existing_content or "").strip(),
@@ -142,6 +152,8 @@ def judge_memory_dedup(
 
 @traceable(name="aura_memory_merge")
 def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | None = None) -> dict[str, str]:
+    """把多条相关记忆整理成一条不添加新事实的长期记忆。"""
+
     cleaned_memories = [
         {
             "title": clean_string(memory.get("title"), max_length=80, default="未命名记忆"),
@@ -177,6 +189,8 @@ def merge_memory_contents(memories: list[dict[str, Any]], topic_query: str | Non
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
+    """解析模型返回的 JSON 对象，并兼容代码围栏或前后说明。"""
+
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
@@ -191,6 +205,8 @@ def parse_json_object(text: str) -> dict[str, Any]:
 
 
 def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[str, Any]:
+    """校验记忆候选，并在内容为空时使用原消息作为安全回退。"""
+
     save = as_bool(raw.get("save"))
     memory_scope = clean_string(raw.get("memory_scope"), max_length=16, default="short").lower()
     if memory_scope not in {"long", "mid", "short"}:
@@ -215,6 +231,8 @@ def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[st
 
 
 def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
+    """把模型去重判断限制为受支持的决策值和置信度。"""
+
     decision = clean_string(raw.get("decision"), max_length=16, default="unrelated")
     decision = (decision or "unrelated").lower()
     if decision not in {"duplicate", "update", "unrelated"}:
@@ -226,6 +244,8 @@ def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_memory_merge_result(raw: dict[str, Any], memories: list[dict[str, Any]]) -> dict[str, str]:
+    """规范化模型合并结果；字段无效时回退到输入记忆。"""
+
     title = clean_string(raw.get("title"), max_length=80, default=None)
     content = clean_string(raw.get("content"), max_length=260, default=None)
     reason = clean_string(raw.get("reason"), max_length=160, default="模型记忆合并")
@@ -237,6 +257,8 @@ def normalize_memory_merge_result(raw: dict[str, Any], memories: list[dict[str, 
 
 
 def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
+    """模型合并失败时拼接输入内容，确保已有事实不会静默丢失。"""
+
     title = clean_string(memories[0].get("title"), max_length=80, default="合并记忆") or "合并记忆"
     seen: set[str] = set()
     parts: list[str] = []
@@ -250,6 +272,8 @@ def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def message_content_to_text(content: Any) -> str:
+    """把模型消息的字符串或内容块统一转换为文本。"""
+
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -274,6 +298,8 @@ def memory_candidate(
     reason: str,
     signals: list[str],
 ) -> dict[str, Any]:
+    """构造字段稳定的记忆候选字典。"""
+
     return {
         "save": save,
         "memory_scope": memory_scope,
@@ -286,6 +312,8 @@ def memory_candidate(
 
 
 def memory_dedup_decision(decision: str, confidence: float, reason: str) -> dict[str, Any]:
+    """构造记忆去重决策字典。"""
+
     return {
         "decision": decision,
         "confidence": round(confidence, 2),
@@ -294,6 +322,8 @@ def memory_dedup_decision(decision: str, confidence: float, reason: str) -> dict
 
 
 def memory_merge_result(title: str, content: str, reason: str) -> dict[str, str]:
+    """构造最终记忆合并结果。"""
+
     return {
         "title": title,
         "content": content,
@@ -302,6 +332,8 @@ def memory_merge_result(title: str, content: str, reason: str) -> dict[str, str]
 
 
 def as_bool(value: Any) -> bool:
+    """把模型常见布尔表示转换成 Python bool。"""
+
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -310,6 +342,8 @@ def as_bool(value: Any) -> bool:
 
 
 def clean_string(value: Any, max_length: int, default: str | None = None) -> str | None:
+    """清洗并截断可选字符串；空值返回指定默认值。"""
+
     if value is None:
         return default
     text = str(value).strip()
@@ -319,6 +353,8 @@ def clean_string(value: Any, max_length: int, default: str | None = None) -> str
 
 
 def clamp_float(value: Any, default: float) -> float:
+    """把置信度限制在 0 到 1；无效值返回默认值。"""
+
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -327,6 +363,8 @@ def clamp_float(value: Any, default: float) -> float:
 
 
 def clean_signals(value: Any) -> list[str]:
+    """清洗、去重并限制模型返回的记忆信号列表。"""
+
     if not isinstance(value, list):
         return []
 
