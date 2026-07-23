@@ -99,6 +99,30 @@ class MemoryJudgeTest(unittest.TestCase):
         self.assertEqual(merged["content"].count("喜欢和朋友聚餐吃火锅"), 1)
         self.assertIn("不太能吃辣", merged["content"])
 
+    def test_relationship_candidate_cannot_self_authorize_reminder(self):
+        candidate = normalize_memory_candidate(
+            {
+                "save": True,
+                "memory_scope": "mid",
+                "title": "面试",
+                "content": "明天要面试",
+                "relationship_threads": [
+                    {
+                        "operation": "create",
+                        "thread_type": "follow_up",
+                        "title": "面试结果",
+                        "summary": "明天面试结束后问结果",
+                        "follow_up_at": "2026-07-25T10:00:00+08:00",
+                        "proactive_allowed": True,
+                    }
+                ],
+            },
+            "我明天要面试",
+        )
+
+        self.assertEqual(len(candidate["relationship_threads"]), 1)
+        self.assertFalse(candidate["relationship_threads"][0]["proactive_allowed"])
+
 
 if __name__ == "__main__":
     unittest.main()

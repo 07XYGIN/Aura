@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 from app.core.agent.agent_graph import (
     append_proactive_history_message,
     build_runtime_system_prompt,
+    call_model,
     should_continue,
     tools,
     trim_short_term_messages,
@@ -165,6 +166,37 @@ class AgentGraphTest(unittest.TestCase):
         self.assertEqual(trimmed[-2].type, "tool")
         self.assertEqual(trimmed[-2].tool_call_id, "call-memory")
         self.assertEqual(trimmed[-1].type, "human")
+
+    def test_call_model_preserves_valid_relationship_action_sidecar(self):
+        response = AIMessage(
+            content=(
+                '{"messages":["你昨天那个接口后来通了吗？"],'
+                '"threadActions":[{"threadRef":"T1","action":"follow_up"}]}'
+            )
+        )
+        state = {
+            "messages": [HumanMessage(content="早")],
+            "turn_id": "turn-1",
+            "user_id": "user-1",
+            "request_started_at": datetime.now(UTC).isoformat(),
+        }
+
+        with (
+            patch(
+                "app.core.agent.agent_graph.llm_with_tools",
+                SimpleNamespace(invoke=unittest.mock.Mock(return_value=response)),
+            ),
+            patch("app.core.agent.agent_graph.store_reply_timing_state", return_value=True),
+        ):
+            result = call_model(state)
+
+        self.assertEqual(
+            result["relationship_actions"],
+            {
+                "turn_id": "turn-1",
+                "items": [{"thread_ref": "T1", "action": "follow_up"}],
+            },
+        )
 
 
 if __name__ == "__main__":

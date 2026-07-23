@@ -34,6 +34,7 @@ def judge_turn(
     message: str,
     emotion_state: dict[str, Any] | None = None,
     recent_messages: list[Any] | None = None,
+    relationship_context: str | None = None,
 ) -> dict[str, Any]:
     """生成当前回合的情绪、互动、记忆、安全和回复模式判断。
 
@@ -41,9 +42,10 @@ def judge_turn(
     """
     text = (message or "").strip()
     fallback_emotion = emotion_state or derive_emotion_state(text).to_dict()
+    recent_context = format_recent_messages_for_judge(recent_messages)
     emotion = judge_emotion_state(
         text,
-        recent_context=format_recent_messages_for_judge(recent_messages),
+        recent_context=recent_context,
         fallback_emotion=fallback_emotion,
     )
     risk_signal = detect_risk_signal(text)
@@ -51,7 +53,12 @@ def judge_turn(
     if risk_signal.get("requires_safety_gate"):
         candidate = memory_candidate(False, "short", None, None, 0.0, "危机内容不自动写入记忆", [])
     else:
-        candidate = judge_memory_candidate(text, emotion)
+        candidate = judge_memory_candidate(
+            text,
+            emotion,
+            recent_context=recent_context,
+            relationship_context=relationship_context,
+        )
     response_mode = choose_response_mode(emotion, interaction, risk_signal)
 
     return {

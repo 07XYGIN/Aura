@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.core.config import memory_judge_llm
+from app.core.continuity.extractor import (
+    deterministic_thread_hints,
+    normalize_thread_candidates,
+)
 
 MEMORY_JUDGE_SYSTEM_PROMPT = """
 ---
@@ -26,7 +31,20 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
   "content": string | null,
   "confidence": number,
   "reason": string,
-  "signals": string[]
+  "signals": string[],
+  "relationship_threads": [
+    {
+      "operation": "create" | "update" | "resolve" | "abandon",
+      "thread_type": "open_item" | "follow_up" | "conflict" | "promise" | "project_task",
+      "perspective": "user" | "aura" | "shared",
+      "world_layer": "reality" | "shared_history" | "imagined" | "wish" | "promise",
+      "title": string | null,
+      "summary": string | null,
+      "target_id": string | null,
+      "follow_up_at": string | null,
+      "proactive_allowed": boolean
+    }
+  ]
 }
 ```
 
@@ -45,6 +63,15 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
   - 好：`聊到写代码累了会起来走走，像是他平时调节状态的小习惯`
 - `content` 长度控制在 220 个字符以内。
 - `confidence` 必须在 0 到 1 之间。
+
+**关系线程规则：**
+- 关系线程不是普通向量记忆。只记录确实需要跨对话延续的开放事项、明确后续关心、双方冲突/纠偏、承诺或共同项目任务。
+- “明天要面试”“这个 Bug 周末再修”“下次继续聊这个”可以创建线程；普通寒暄、“明天见”、假设句和没有行动含义的闲聊不要创建。
+- 用户直接说“你理解错了”“这句话太客服”“别每次都安慰我”时，创建 `conflict`，保持 pending，不能假装已经修复。
+- 只有用户原文明确说“记得问我/提醒我/到时候问我/别忘了问我”时，才允许 `proactive_allowed=true`；普通未来事项只能在下次自然聊天时接上。
+- 更新、解决或放弃已有线程时，必须从 `active_relationship_threads` 选择完全对应的 `target_id`；拿不准就不要返回候选。
+- 现实用 `reality`，已经真实发生的共同互动用 `shared_history`，假想场景用 `imagined`，愿望用 `wish`，明确承诺用 `promise`，禁止混淆。
+- 最多返回 3 个真正必要的线程候选；没有则返回空数组。
 
 ---
 
@@ -89,7 +116,14 @@ JSON schema:
 
 
 @traceable(name="aura_memory_judge")
-def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def judge_memory_candidate(
+    message: str,
+    emotion_state: dict[str, Any] | None = None,
+    *,
+    recent_context: str | None = None,
+    relationship_context: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     """判断用户消息是否应保存为长期或中期记忆。
 
     Returns:
@@ -100,9 +134,13 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
     if not text:
         return memory_candidate(False, "short", None, None, 0.0, "empty_message", [])
 
+    reference_now = now or datetime.now(UTC)
     payload = {
         "user_message": text,
         "emotion_state": emotion_state or {},
+        "recent_context": recent_context or "",
+        "active_relationship_threads": relationship_context or "[]",
+        "current_time": reference_now.isoformat(),
     }
 
     try:
@@ -113,10 +151,22 @@ def judge_memory_candidate(message: str, emotion_state: dict[str, Any] | None = 
             ],
         )
         raw_candidate = parse_json_object(message_content_to_text(response.content))
-        return normalize_memory_candidate(raw_candidate, text)
+        candidate = normalize_memory_candidate(raw_candidate, text, now=reference_now)
+        if not candidate["relationship_threads"]:
+            candidate["relationship_threads"] = deterministic_thread_hints(text, now=reference_now)
+        return candidate
     except Exception:
         logging.exception("记忆候选判断失败")
-        return memory_candidate(False, "short", None, None, 0.0, "记忆候选判断失败", [])
+        return memory_candidate(
+            False,
+            "short",
+            None,
+            None,
+            0.0,
+            "记忆候选判断失败",
+            [],
+            deterministic_thread_hints(text, now=reference_now),
+        )
 
 
 @traceable(name="aura_memory_dedup_judge")
@@ -204,7 +254,12 @@ def parse_json_object(text: str) -> dict[str, Any]:
     return value
 
 
-def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[str, Any]:
+def normalize_memory_candidate(
+    raw: dict[str, Any],
+    source_text: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     """校验记忆候选，并在内容为空时使用原消息作为安全回退。"""
 
     save = as_bool(raw.get("save"))
@@ -227,7 +282,21 @@ def normalize_memory_candidate(raw: dict[str, Any], source_text: str) -> dict[st
     reason = clean_string(raw.get("reason"), max_length=80, default="模型记忆判断")
     signals = clean_signals(raw.get("signals"))
 
-    return memory_candidate(save, memory_scope, title, content, confidence, reason, signals)
+    relationship_threads = normalize_thread_candidates(
+        raw.get("relationship_threads"),
+        source_text,
+        now=now,
+    )
+    return memory_candidate(
+        save,
+        memory_scope,
+        title,
+        content,
+        confidence,
+        reason,
+        signals,
+        relationship_threads,
+    )
 
 
 def normalize_memory_dedup_decision(raw: dict[str, Any]) -> dict[str, Any]:
@@ -297,6 +366,7 @@ def memory_candidate(
     confidence: float,
     reason: str,
     signals: list[str],
+    relationship_threads: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """构造字段稳定的记忆候选字典。"""
 
@@ -308,6 +378,7 @@ def memory_candidate(
         "confidence": round(confidence, 2),
         "reason": reason,
         "signals": signals,
+        "relationship_threads": relationship_threads or [],
     }
 
 

@@ -117,6 +117,123 @@ class ProactiveMessage(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class RelationshipThread(Base, TimestampMixin):
+    """保存一条需要跨对话延续的关系线程及其当前权威状态。
+
+    线程用于承载未完成事项、后续关心、冲突修复、承诺和共同项目任务。
+    ``perspective`` 区分事实属于小乔、Aura 还是双方共同经历，
+    ``world_layer`` 则防止现实、共同历史、想象、愿望与承诺相互混淆。
+    业务更新必须递增 ``version``，并同时追加一条
+    :class:`RelationshipThreadEvent`，从而兼顾快速读取当前状态与完整追溯。
+    """
+
+    __tablename__ = "relationship_thread"
+    __table_args__ = (
+        CheckConstraint(
+            "thread_type IN ('open_item', 'follow_up', 'conflict', 'promise', 'project_task')",
+            name="chk_relationship_thread_type",
+        ),
+        CheckConstraint(
+            "perspective IN ('user', 'aura', 'shared')",
+            name="chk_relationship_thread_perspective",
+        ),
+        CheckConstraint(
+            "world_layer IN ('reality', 'shared_history', 'imagined', 'wish', 'promise')",
+            name="chk_relationship_thread_world_layer",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'followed_up', 'resolved', 'abandoned')",
+            name="chk_relationship_thread_status",
+        ),
+        CheckConstraint("version >= 1", name="chk_relationship_thread_version"),
+        UniqueConstraint("user_id", "source_key", name="uq_relationship_thread_user_source"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    thread_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    perspective: Mapped[str] = mapped_column(String(16), nullable=False)
+    world_layer: Mapped[str] = mapped_column(String(24), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending", server_default="pending")
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    source_turn_id: Mapped[str | None] = mapped_column(String(128))
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_followed_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class RelationshipThreadEvent(Base):
+    """记录关系线程每次状态变化的不可变审计事件。
+
+    ``sequence_no`` 在单条线程内严格递增，用于稳定重放；
+    ``state_before`` 与 ``state_after`` 保存变更前后的业务快照。
+    客户端发起的动作可以携带 ``client_action_id``，其线程内唯一约束
+    保证网络重试不会重复解决、放弃或跟进同一事项。
+    """
+
+    __tablename__ = "relationship_thread_event"
+    __table_args__ = (
+        CheckConstraint("sequence_no >= 1", name="chk_relationship_thread_event_sequence"),
+        CheckConstraint(
+            "actor IN ('user', 'aura', 'system')",
+            name="chk_relationship_thread_event_actor",
+        ),
+        CheckConstraint(
+            "event_type IN ('created', 'updated', 'followed_up', 'resolved', 'abandoned')",
+            name="chk_relationship_thread_event_type",
+        ),
+        UniqueConstraint(
+            "thread_id",
+            "sequence_no",
+            name="uq_relationship_thread_event_sequence",
+        ),
+        UniqueConstraint(
+            "thread_id",
+            "client_action_id",
+            name="uq_relationship_thread_event_client_action",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    thread_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("relationship_thread.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    state_before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    state_after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    client_action_id: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class BashGameSession(Base, TimestampMixin):
     """一局巴什博弈的当前权威状态和并发版本。"""
 
@@ -351,6 +468,17 @@ Index(
     ProactiveMessage.user_id,
     ProactiveMessage.status,
     ProactiveMessage.scheduled_at,
+)
+Index(
+    "idx_relationship_thread_user_status_follow_up",
+    RelationshipThread.user_id,
+    RelationshipThread.status,
+    RelationshipThread.follow_up_at,
+)
+Index(
+    "idx_relationship_thread_event_thread_occurred",
+    RelationshipThreadEvent.thread_id,
+    RelationshipThreadEvent.occurred_at.desc(),
 )
 Index(
     "uq_bash_game_active_user",

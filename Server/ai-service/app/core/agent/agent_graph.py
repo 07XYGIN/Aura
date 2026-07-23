@@ -17,6 +17,11 @@ from langsmith import traceable
 
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import llm, structured_reply_llm
+from app.core.continuity.context import load_relationship_context_sync
+from app.core.continuity.service import (
+    apply_reply_thread_actions_sync,
+    capture_relationship_candidates_sync,
+)
 from app.core.emotion import format_emotion_context
 from app.core.reply_timing_state import store_reply_timing_state
 from .protocol import (
@@ -27,7 +32,10 @@ from .protocol import (
     memory_candidate_event,
 )
 from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
-from .structured_reply import parse_structured_reply, try_parse_structured_reply
+from .structured_reply import (
+    parse_structured_reply,
+    try_parse_structured_reply_payload,
+)
 from .self_changelog import load_self_changelog_context_sync, mark_self_changelog_reacted_sync
 from .judges.turn import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.registry import CHAT_TOOLS
@@ -59,6 +67,8 @@ class AuraState(TypedDict, total=False):
     request_started_at: str
     last_reply_batch: dict[str, Any]
     pet_context: str
+    relationship_context: str
+    relationship_actions: dict[str, Any]
 
 
 tools = CHAT_TOOLS
@@ -111,19 +121,36 @@ def call_model(state: AuraState) -> AuraState:
         logging.info("Aura 未调用工具，直接生成回复")
 
     if tool_calls:
-        return {"messages": [response]}
+        return {
+            "messages": [response],
+            "relationship_actions": {
+                "turn_id": state.get("turn_id"),
+                "items": [],
+            },
+        }
 
     draft_content = message_content_to_text(getattr(response, "content", ""))
-    parsed_reply = try_parse_structured_reply(draft_content)
-    if parsed_reply is not None:
-        reply_messages, reply_batch = build_reply_messages_from_texts(parsed_reply, response, state)
+    parsed_payload = try_parse_structured_reply_payload(draft_content)
+    if parsed_payload is not None:
+        reply_messages, reply_batch = build_reply_messages_from_texts(parsed_payload.messages, response, state)
     else:
         logging.warning("Aura 首次回复不是有效的结构化 JSON，尝试重新整理格式")
         structured_response = build_structured_reply_response(response, messages, state)
         reply_messages, reply_batch = build_reply_messages(structured_response, state)
+        parsed_payload = try_parse_structured_reply_payload(
+            message_content_to_text(getattr(structured_response, "content", ""))
+        )
+    relationship_actions = [
+        action.model_dump()
+        for action in (parsed_payload.thread_actions if parsed_payload is not None else [])
+    ]
     return {
         "messages": reply_messages,
         "last_reply_batch": reply_batch,
+        "relationship_actions": {
+            "turn_id": state.get("turn_id"),
+            "items": relationship_actions,
+        },
     }
 
 
@@ -141,6 +168,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
+            state.get("relationship_context") or "",
             state.get("pet_context") or "",
             STRUCTURED_REPLY_PROMPT.strip(),
         )
@@ -238,8 +266,14 @@ def aura_agent(
     time_context = build_time_context(previous_messages, request_started_at)
     self_changelog_context = load_self_changelog_context_sync()
     pet_context = load_pet_context_sync(user_id)
+    relationship_context = load_relationship_context_sync(user_id)
 
-    turn_judgement = judge_turn(human_prompt, emotion_state, recent_messages=previous_messages)
+    turn_judgement = judge_turn(
+        human_prompt,
+        emotion_state,
+        recent_messages=previous_messages,
+        relationship_context=relationship_context["judge_context"],
+    )
     emotion_state = turn_judgement["emotion"]
     attachments = load_attachments(user_id, attachment_ids)
     logging.info(
@@ -275,6 +309,8 @@ def aura_agent(
         "turn_id": turn_id,
         "request_started_at": request_started_at.isoformat(),
         "pet_context": pet_context,
+        "relationship_context": relationship_context["prompt_context"],
+        "relationship_actions": {"turn_id": turn_id, "items": []},
     }
 
     memory_candidate = turn_judgement["memory_candidate"]
@@ -319,7 +355,30 @@ def aura_agent(
     if not memory_save_tool_called:
         save_memory_candidate_once(user_id, memory_candidate)
 
+    relationship_candidates = memory_candidate.get("relationship_threads")
+    if relationship_candidates and client_message_id:
+        capture_relationship_candidates_sync(
+            user_id,
+            relationship_candidates,
+            source_text=human_prompt,
+            source_message_id=client_message_id,
+            source_turn_id=turn_id,
+        )
+    elif relationship_candidates:
+        logging.warning(
+            "本轮识别到关系线程候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
+            user_id,
+        )
+
     reply_batch = get_latest_reply_batch(config, turn_id)
+    relationship_actions = get_latest_relationship_actions(config, turn_id)
+    if reply_batch and relationship_actions:
+        apply_reply_thread_actions_sync(
+            user_id,
+            relationship_actions,
+            relationship_context["items"],
+            turn_id=turn_id,
+        )
     if reply_batch:
         for message in reply_batch.get("messages", []):
             yield assistant_message_event(
@@ -487,6 +546,20 @@ def get_latest_reply_batch(config: RunnableConfig, turn_id: str) -> dict[str, An
     if isinstance(batch, dict) and batch.get("turn_id") == turn_id:
         return batch
     return None
+
+
+def get_latest_relationship_actions(config: RunnableConfig, turn_id: str) -> list[dict[str, Any]]:
+    """读取当前回合主回复返回的、已通过结构化白名单校验的线程动作。"""
+
+    if aura is None:
+        return []
+    state = aura.get_state(config)
+    values = state.values if state and state.values else {}
+    action_batch = values.get("relationship_actions")
+    if not isinstance(action_batch, dict) or action_batch.get("turn_id") != turn_id:
+        return []
+    items = action_batch.get("items")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
 
 
 def build_time_context(messages: list, current_time: datetime) -> dict[str, Any]:

@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 MAX_REPLY_MESSAGES = 4
 FALLBACK_REPLY = "我刚才有点卡住了，你再说一遍？"
 
 
+class StructuredThreadAction(BaseModel):
+    """主回复确实接续关系线程后返回的受限状态动作。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    thread_ref: str = Field(alias="threadRef", pattern=r"^T(?:[1-9]|1[0-2])$")
+    action: Literal["follow_up"]
+
+
 class StructuredReply(BaseModel):
     """主模型结构化回复的 Pydantic 校验模型。"""
 
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     messages: list[str]
+    thread_actions: list[StructuredThreadAction] = Field(default_factory=list, alias="threadActions")
 
     @field_validator("messages", mode="before")
     @classmethod
@@ -46,6 +58,26 @@ class StructuredReply(BaseModel):
 
         return messages
 
+    @field_validator("thread_actions", mode="before")
+    @classmethod
+    def clean_thread_actions(cls, value: Any) -> list[StructuredThreadAction]:
+        """逐条过滤非法引用和动作，不让附加字段破坏正常文本回复。"""
+
+        if not isinstance(value, list):
+            return []
+        actions: list[StructuredThreadAction] = []
+        seen: set[tuple[str, str]] = set()
+        for item in value[:12]:
+            try:
+                action = StructuredThreadAction.model_validate(item)
+            except ValidationError:
+                continue
+            key = (action.thread_ref, action.action)
+            if key not in seen:
+                actions.append(action)
+                seen.add(key)
+        return actions
+
 
 def parse_structured_reply(raw_content: Any) -> list[str]:
     """返回可展示消息列表；JSON 无法解析时把原文本作为单条回复。"""
@@ -64,6 +96,13 @@ def parse_structured_reply(raw_content: Any) -> list[str]:
 def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
     """尝试解析严格或容错 JSON；无法识别时返回 ``None``。"""
 
+    parsed = try_parse_structured_reply_payload(raw_content)
+    return parsed.messages if parsed is not None else None
+
+
+def try_parse_structured_reply_payload(raw_content: Any) -> StructuredReply | None:
+    """解析完整结构化回复，保留经过白名单校验的关系线程动作。"""
+
     text = normalize_text(raw_content)
     if not text:
         return None
@@ -74,17 +113,17 @@ def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
         except json.JSONDecodeError:
             tolerant_messages = parse_tolerant_messages(candidate)
             if tolerant_messages:
-                return tolerant_messages
+                return StructuredReply(messages=tolerant_messages)
             continue
 
         try:
             if isinstance(data, list):
-                return StructuredReply(messages=data).messages
+                return StructuredReply(messages=data)
             if isinstance(data, dict):
                 if "messages" not in data:
                     fallback_value = data.get("message") or data.get("content") or data.get("reply")
-                    data = {"messages": [fallback_value] if fallback_value else []}
-                return StructuredReply.model_validate(data).messages
+                    data = {**data, "messages": [fallback_value] if fallback_value else []}
+                return StructuredReply.model_validate(data)
         except ValidationError:
             continue
 

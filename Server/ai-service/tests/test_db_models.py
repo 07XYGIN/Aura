@@ -19,6 +19,8 @@ from app.db.models import (
     LangchainPgEmbedding,
     ProactiveMessage,
     PetEvent,
+    RelationshipThread,
+    RelationshipThreadEvent,
     Users,
 )
 
@@ -30,6 +32,8 @@ class DbModelsTest(unittest.TestCase):
                 "users",
                 "self_changelog_entry",
                 "proactive_message",
+                "relationship_thread",
+                "relationship_thread_event",
                 "bash_game_session",
                 "bash_game_move",
                 "companion_pet",
@@ -58,6 +62,8 @@ class DbModelsTest(unittest.TestCase):
                 "idx_self_changelog_unreacted",
                 "idx_self_changelog_occurred_at",
                 "idx_proactive_message_user_schedule",
+                "idx_relationship_thread_user_status_follow_up",
+                "idx_relationship_thread_event_thread_occurred",
                 "uq_bash_game_active_user",
                 "idx_bash_game_user_created",
                 "idx_bash_move_session_created",
@@ -82,6 +88,43 @@ class DbModelsTest(unittest.TestCase):
         self.assertEqual(game_user_fk[0].ondelete, "CASCADE")
         self.assertEqual(move_session_fk[0].target_fullname, "bash_game_session.id")
         self.assertEqual(move_session_fk[0].ondelete, "CASCADE")
+
+    def test_relationship_thread_models_preserve_ownership_and_event_history(self):
+        """关系线程应归属唯一用户，状态事件应随根线程级联删除。"""
+
+        thread_user_fk = list(RelationshipThread.__table__.c.user_id.foreign_keys)
+        event_thread_fk = list(RelationshipThreadEvent.__table__.c.thread_id.foreign_keys)
+        self.assertEqual(thread_user_fk[0].target_fullname, "users.id")
+        self.assertEqual(thread_user_fk[0].ondelete, "CASCADE")
+        self.assertEqual(event_thread_fk[0].target_fullname, "relationship_thread.id")
+        self.assertEqual(event_thread_fk[0].ondelete, "CASCADE")
+
+    def test_relationship_thread_constraints_cover_lifecycle_and_idempotency(self):
+        """关系线程应约束状态版本，并为来源和客户端动作提供幂等边界。"""
+
+        thread_constraints = {constraint.name for constraint in RelationshipThread.__table__.constraints}
+        event_constraints = {constraint.name for constraint in RelationshipThreadEvent.__table__.constraints}
+        self.assertTrue(
+            {
+                "chk_relationship_thread_type",
+                "chk_relationship_thread_perspective",
+                "chk_relationship_thread_world_layer",
+                "chk_relationship_thread_status",
+                "chk_relationship_thread_version",
+                "uq_relationship_thread_user_source",
+            }.issubset(thread_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_relationship_thread_event_sequence",
+                "chk_relationship_thread_event_actor",
+                "chk_relationship_thread_event_type",
+                "uq_relationship_thread_event_sequence",
+                "uq_relationship_thread_event_client_action",
+            }.issubset(event_constraints)
+        )
+        self.assertEqual(RelationshipThread.__table__.c.version.server_default.arg, "1")
+        self.assertEqual(RelationshipThread.__table__.c.status.server_default.arg, "pending")
 
     def test_pet_models_preserve_single_ownership_and_event_history(self):
         """共同宠物应归属用户，事件应随宠物级联删除。"""
