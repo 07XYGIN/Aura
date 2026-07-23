@@ -14,9 +14,11 @@ from app.db.models import (
     Base,
     BashGameMove,
     BashGameSession,
+    CompanionPet,
     LangchainPgCollection,
     LangchainPgEmbedding,
     ProactiveMessage,
+    PetEvent,
     Users,
 )
 
@@ -30,6 +32,8 @@ class DbModelsTest(unittest.TestCase):
                 "proactive_message",
                 "bash_game_session",
                 "bash_game_move",
+                "companion_pet",
+                "pet_event",
                 "langchain_pg_collection",
                 "langchain_pg_embedding",
             },
@@ -57,6 +61,7 @@ class DbModelsTest(unittest.TestCase):
                 "uq_bash_game_active_user",
                 "idx_bash_game_user_created",
                 "idx_bash_move_session_created",
+                "idx_pet_event_pet_occurred",
                 "ix_cmetadata_gin",
             },
             index_names,
@@ -77,6 +82,16 @@ class DbModelsTest(unittest.TestCase):
         self.assertEqual(game_user_fk[0].ondelete, "CASCADE")
         self.assertEqual(move_session_fk[0].target_fullname, "bash_game_session.id")
         self.assertEqual(move_session_fk[0].ondelete, "CASCADE")
+
+    def test_pet_models_preserve_single_ownership_and_event_history(self):
+        """共同宠物应归属用户，事件应随宠物级联删除。"""
+
+        pet_user_fk = list(CompanionPet.__table__.c.user_id.foreign_keys)
+        event_pet_fk = list(PetEvent.__table__.c.pet_id.foreign_keys)
+        self.assertEqual(pet_user_fk[0].target_fullname, "users.id")
+        self.assertEqual(pet_user_fk[0].ondelete, "CASCADE")
+        self.assertEqual(event_pet_fk[0].target_fullname, "companion_pet.id")
+        self.assertEqual(event_pet_fk[0].ondelete, "CASCADE")
 
 
 if __name__ == "__main__":

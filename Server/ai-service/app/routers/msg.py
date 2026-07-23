@@ -4,9 +4,9 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import AsyncIterator
+from typing import Annotated, AsyncIterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.core.agent.agent_graph import append_external_history_turn, aura_agent
@@ -15,11 +15,15 @@ from app.core.agent.protocol import (
     bash_game_state_event,
     content_event,
     error_event,
+    pet_state_event,
     sse_data,
 )
 from app.core.emotion import derive_emotion_state
+from app.core.auth_store import get_current_user_id
 from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
 from app.core.games.bash.service import BashGameServiceError
+from app.core.pet.chat import PetChatResponse, try_handle_pet_chat_message
+from app.core.pet.service import PetServiceError
 from app.core.silence_state import schedule_user_message_activity_record
 from app.db.session import AsyncSessionLocal
 from app.schemas.request import MessageRequest
@@ -277,8 +281,82 @@ async def bash_game_event_generator(
     yield "data: [DONE]\n\n"
 
 
+async def pet_event_generator(
+    response: PetChatResponse,
+    *,
+    message: str,
+    user_id: str,
+    client_message_id: str | None,
+) -> AsyncIterator[str]:
+    """把已完成的宠物事务转换为 SSE，并按幂等规则写入聊天历史。
+
+    Args:
+        response: 宠物聊天服务返回的已提交状态和文案。
+        message: 用户原始宠物命令。
+        user_id: 当前用户和 LangGraph 线程 ID。
+        client_message_id: 客户端回合 ID，用于事件和历史幂等关联。
+
+    Yields:
+        可选 ``pet_state``、Aura 文本事件以及最终 ``[DONE]``。
+
+    Side Effects:
+        非幂等重放时把本轮追加到 LangGraph 历史。历史写入失败只降级为
+        content 事件，不回滚已经提交的宠物状态。
+    """
+
+    snapshot = response.snapshot
+    if snapshot is not None:
+        yield sse_data(pet_state_event(snapshot))
+
+    source_metadata: dict[str, object] = {"pet_action": response.action}
+    if snapshot and snapshot.get("pet"):
+        pet = snapshot["pet"]
+        source_metadata.update(
+            {
+                "pet_id": pet.get("id"),
+                "pet_version": pet.get("version"),
+            }
+        )
+    idempotent_replay = bool(snapshot and snapshot.get("idempotentReplay"))
+    reply_batch = None
+    if not idempotent_replay:
+        try:
+            reply_batch = await asyncio.to_thread(
+                append_external_history_turn,
+                user_id,
+                message,
+                response.messages,
+                source="pet",
+                turn_id=client_message_id,
+                client_message_id=client_message_id,
+                source_metadata=source_metadata,
+            )
+        except Exception:
+            logging.exception("宠物消息写入统一聊天历史失败，降级为 content 事件")
+    if reply_batch:
+        for item in reply_batch.get("messages", []):
+            yield sse_data(
+                assistant_message_event(
+                    content=item["content"],
+                    message_id=item["message_id"],
+                    batch_id=item["batch_id"],
+                    batch_index=item["batch_index"],
+                    batch_total=item["batch_total"],
+                    delay_ms=item["delay_ms"],
+                    sent_at=item["sent_at"],
+                )
+            )
+    else:
+        for content in response.messages:
+            yield sse_data(content_event(content))
+    yield "data: [DONE]\n\n"
+
+
 @router.post("/send/sse/")
-async def send_message(msg: MessageRequest):
+async def send_message(
+    msg: MessageRequest,
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+):
     """申请并发槽并为一轮用户消息创建 SSE 响应。
 
     Raises:
@@ -286,14 +364,25 @@ async def send_message(msg: MessageRequest):
 
     Returns:
         ``text/event-stream`` 流式响应；并同时异步记录用户活跃时间。
+
+    Security:
+        请求体 ``userId`` 仅为旧客户端兼容字段，所有 Agent、游戏和宠物读写均
+        使用 JWT ``sub`` 作为权威用户 ID，不能通过修改请求体操作其他用户。
     """
+    user_id = current_user_id
+    if msg.user_id != current_user_id:
+        logging.warning(
+            "聊天请求体 userId 与 JWT 用户不一致，使用 JWT 身份 body_user_id=%s auth_user_id=%s",
+            msg.user_id,
+            current_user_id,
+        )
     game_response: BashChatResponse | None = None
     try:
         async with AsyncSessionLocal() as session:
             game_response = await try_handle_bash_chat_message(
                 session,
                 message=msg.message,
-                user_id=msg.user_id,
+                user_id=user_id,
                 client_message_id=msg.client_message_id,
             )
     except BashGameServiceError as exc:
@@ -306,12 +395,46 @@ async def send_message(msg: MessageRequest):
         logging.exception("巴什博弈聊天分流失败，回退到普通 Aura 对话")
 
     if game_response is not None:
-        schedule_user_message_activity_record(msg.user_id)
+        schedule_user_message_activity_record(user_id)
         return StreamingResponse(
             bash_game_event_generator(
                 game_response,
                 message=msg.message,
-                user_id=msg.user_id,
+                user_id=user_id,
+                client_message_id=msg.client_message_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    pet_response: PetChatResponse | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            pet_response = await try_handle_pet_chat_message(
+                session,
+                message=msg.message,
+                user_id=user_id,
+                client_message_id=msg.client_message_id,
+            )
+    except PetServiceError as exc:
+        pet_response = PetChatResponse(
+            action="rejected",
+            snapshot=None,
+            messages=[str(exc)],
+        )
+    except Exception:
+        logging.exception("共同宠物聊天分流失败，回退到普通 Aura 对话")
+
+    if pet_response is not None:
+        schedule_user_message_activity_record(user_id)
+        return StreamingResponse(
+            pet_event_generator(
+                pet_response,
+                message=msg.message,
+                user_id=user_id,
                 client_message_id=msg.client_message_id,
             ),
             media_type="text/event-stream",
@@ -327,11 +450,11 @@ async def send_message(msg: MessageRequest):
             detail=f"Aura 正在处理太多实时对话，请稍后再试。（当前上限 {_sse_max_concurrency}）",
         )
 
-    schedule_user_message_activity_record(msg.user_id)
+    schedule_user_message_activity_record(user_id)
     return StreamingResponse(
         event_generator(
             msg.message,
-            msg.user_id,
+            user_id,
             msg.client_message_id,
             msg.attachment_ids,
             msg.city_adcode,

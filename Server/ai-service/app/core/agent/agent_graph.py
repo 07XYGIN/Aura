@@ -32,6 +32,7 @@ from .self_changelog import load_self_changelog_context_sync, mark_self_changelo
 from .judges.turn import format_turn_judgement_context, judge_turn, normalize_turn_judgement
 from .tools.registry import CHAT_TOOLS
 from app.core.memory.service import save_memory
+from app.core.pet.context import load_pet_context_sync
 
 SHORT_TERM_MESSAGE_WINDOW = 24
 AURA_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -57,6 +58,7 @@ class AuraState(TypedDict, total=False):
     turn_id: str
     request_started_at: str
     last_reply_batch: dict[str, Any]
+    pet_context: str
 
 
 tools = CHAT_TOOLS
@@ -139,6 +141,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
+            state.get("pet_context") or "",
             STRUCTURED_REPLY_PROMPT.strip(),
         )
         if part
@@ -234,6 +237,7 @@ def aura_agent(
     previous_messages = previous_state.values.get("messages", []) if previous_state and previous_state.values else []
     time_context = build_time_context(previous_messages, request_started_at)
     self_changelog_context = load_self_changelog_context_sync()
+    pet_context = load_pet_context_sync(user_id)
 
     turn_judgement = judge_turn(human_prompt, emotion_state, recent_messages=previous_messages)
     emotion_state = turn_judgement["emotion"]
@@ -270,6 +274,7 @@ def aura_agent(
         },
         "turn_id": turn_id,
         "request_started_at": request_started_at.isoformat(),
+        "pet_context": pet_context,
     }
 
     memory_candidate = turn_judgement["memory_candidate"]

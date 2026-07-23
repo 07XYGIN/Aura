@@ -91,6 +91,21 @@ def bash_game_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def pet_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """构造共同宠物状态 SSE 事件。
+
+    ``snapshot`` 只来自已提交事务或只读状态快照；旧客户端可忽略未知事件，
+    新客户端可以使用 ``petState`` 渲染宠物和最近事件。
+    """
+
+    return {
+        "event": "pet_state",
+        "type": "pet_state",
+        "action": snapshot.get("action"),
+        "petState": snapshot,
+    }
+
+
 def sse_data(event: dict[str, Any]) -> str:
     """把事件字典编码为一帧 UTF-8 SSE ``data`` 文本。"""
 

@@ -218,6 +218,102 @@ class BashGameMove(Base):
     )
 
 
+class CompanionPet(Base, TimestampMixin):
+    """用户与 Aura 共同照顾的一只温和型陪伴宠物。"""
+
+    __tablename__ = "companion_pet"
+    __table_args__ = (
+        CheckConstraint("species IN ('cat', 'dog', 'rabbit')", name="chk_companion_pet_species"),
+        CheckConstraint(
+            "personality IN ('gentle', 'playful', 'curious', 'quiet')",
+            name="chk_companion_pet_personality",
+        ),
+        CheckConstraint(
+            "growth_stage IN ('baby', 'young', 'adult')",
+            name="chk_companion_pet_growth_stage",
+        ),
+        CheckConstraint("satiety BETWEEN 0 AND 100", name="chk_companion_pet_satiety"),
+        CheckConstraint("energy BETWEEN 0 AND 100", name="chk_companion_pet_energy"),
+        CheckConstraint("cleanliness BETWEEN 0 AND 100", name="chk_companion_pet_cleanliness"),
+        CheckConstraint(
+            "mood IN ('calm', 'content', 'playful', 'curious', 'sleepy')",
+            name="chk_companion_pet_mood",
+        ),
+        CheckConstraint(
+            "current_activity IN ('idle', 'eating', 'playing', 'grooming', 'bathing', 'cuddling', 'sleeping')",
+            name="chk_companion_pet_activity",
+        ),
+        CheckConstraint("version >= 1", name="chk_companion_pet_version"),
+        UniqueConstraint("user_id", name="uq_companion_pet_user"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(32), nullable=False)
+    species: Mapped[str] = mapped_column(String(16), nullable=False)
+    personality: Mapped[str] = mapped_column(String(16), nullable=False)
+    growth_stage: Mapped[str] = mapped_column(String(16), nullable=False, default="baby", server_default="baby")
+    satiety: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
+    energy: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
+    cleanliness: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
+    mood: Mapped[str] = mapped_column(String(24), nullable=False, default="calm", server_default="calm")
+    current_activity: Mapped[str] = mapped_column(String(24), nullable=False, default="idle", server_default="idle")
+    adopted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    mood_until_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activity_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class PetEvent(Base):
+    """一次宠物领养、照顾、改名或成长的不可变事实事件。"""
+
+    __tablename__ = "pet_event"
+    __table_args__ = (
+        CheckConstraint("actor IN ('user', 'aura', 'system')", name="chk_pet_event_actor"),
+        CheckConstraint(
+            "event_type IN ('adoption', 'action', 'rename', 'growth', 'system')",
+            name="chk_pet_event_type",
+        ),
+        UniqueConstraint("pet_id", "client_action_id", name="uq_pet_event_client_action"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    pet_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("companion_pet.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    state_after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    client_action_id: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class LangchainPgCollection(Base):
     """LangChain PGVector 使用的向量集合元数据表。"""
 
@@ -271,6 +367,11 @@ Index(
     "idx_bash_move_session_created",
     BashGameMove.session_id,
     BashGameMove.created_at,
+)
+Index(
+    "idx_pet_event_pet_occurred",
+    PetEvent.pet_id,
+    PetEvent.occurred_at.desc(),
 )
 Index(
     "ix_cmetadata_gin",

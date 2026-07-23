@@ -6,8 +6,9 @@
 
 1. 执行 `20260722_single_user_schema_cleanup.sql`，创建基础业务/记忆表。
 2. 执行 `20260723_bash_game.sql`，创建巴什博弈会话和行动表。
-3. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
-4. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
+3. 执行 `20260723_companion_pet.sql`，创建共同宠物和宠物事件表。
+4. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
+5. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
 
 ## 已有数据库
 

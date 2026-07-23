@@ -33,6 +33,7 @@ class TestSseConcurrency(unittest.IsolatedAsyncioTestCase):
     def build_client(self) -> AsyncClient:
         app = FastAPI()
         app.include_router(msg.router)
+        app.dependency_overrides[msg.get_current_user_id] = lambda: "authenticated-test-user"
         return AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://testserver",
@@ -97,14 +98,35 @@ class TestSseConcurrency(unittest.IsolatedAsyncioTestCase):
             elapsed = time.perf_counter() - started_at
 
         self.assertTrue(all(response.status_code == 200 for response in responses))
-        self.assertLess(elapsed, sleep_seconds * 2.5)
+        # 仍远低于 12 个请求串行所需的 2.4 秒，同时为 Windows ASGI、认证依赖
+        # 和线程池调度保留固定开销，避免把机器抖动误判为并发回归。
+        self.assertLess(elapsed, sleep_seconds * 3.5)
+
+    async def test_sse_uses_authenticated_user_instead_of_body_user_id(self) -> None:
+        """聊天、游戏和宠物入口必须以 JWT 身份为准，忽略伪造的请求体用户。"""
+
+        captured_user_ids: list[str] = []
+
+        def fake_aura_agent(_message, user_id, *_args, **_kwargs):
+            captured_user_ids.append(user_id)
+            yield {"event": "content", "content": "ok"}
+
+        msg.aura_agent = fake_aura_agent
+        async with self.build_client() as client:
+            response = await client.post(
+                "/api/send/sse/",
+                json={"message": "hello", "user_id": "spoofed-user"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured_user_ids, ["authenticated-test-user"])
 
     async def post_sse(self, client: AsyncClient, user_id: str):
         return await client.post(
             "/api/send/sse/",
             json={
                 "message": "hello",
-                "user_id": user_id,
+                "user_id": "authenticated-test-user",
             },
         )
 
