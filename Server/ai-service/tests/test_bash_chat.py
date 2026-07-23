@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.core.games.bash.chat import try_handle_bash_chat_message
+from app.core.games.bash.service import BashGameServiceError
 
 
 class BashChatTest(unittest.IsolatedAsyncioTestCase):
@@ -95,6 +96,22 @@ class BashChatTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.expected_version, 4)
         self.assertEqual(request.client_move_id, "turn-move")
         self.assertEqual(response.action, "moved")
+
+    async def test_game_write_command_requires_stable_client_message_id(self) -> None:
+        """缺少客户端回合 ID 时不得用随机键执行无法幂等重试的开局。"""
+
+        with patch(
+            "app.core.games.bash.chat.get_active_bash_game",
+            new=AsyncMock(return_value=None),
+        ):
+            with self.assertRaises(BashGameServiceError) as raised:
+                await try_handle_bash_chat_message(
+                    SimpleNamespace(),
+                    message="来一局巴什博弈",
+                    user_id=str(uuid4()),
+                    client_message_id=None,
+                )
+        self.assertIn("clientMessageId", str(raised.exception))
 
 
 if __name__ == "__main__":

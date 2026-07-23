@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.game import BashGameMoveRequest, BashGameStartRequest
@@ -86,11 +84,12 @@ async def try_handle_bash_chat_message(
         if active_game is not None:
             snapshot = await build_bash_game_snapshot(session, active_game, action="status")
             return BashChatResponse("status", snapshot, ["这局还没结束呢。" + build_status_message(snapshot["game"])])
+        action_id = require_bash_chat_action_id(client_message_id)
         snapshot = await start_bash_game(
             session,
             user_id,
             BashGameStartRequest(
-                startRequestId=client_message_id or f"chat-start-{uuid4()}",
+                startRequestId=action_id,
             ),
         )
         return BashChatResponse("started", snapshot, build_bash_game_messages(snapshot))
@@ -139,7 +138,20 @@ async def handle_move_intent(
         BashGameMoveRequest(
             takeCount=intent.take_count,
             expectedVersion=active_game.version,
-            clientMoveId=client_message_id or f"chat-move-{uuid4()}",
+            clientMoveId=require_bash_chat_action_id(client_message_id),
         ),
     )
     return BashChatResponse("moved", snapshot, build_bash_game_messages(snapshot))
+
+
+def require_bash_chat_action_id(client_message_id: str | None) -> str:
+    """要求游戏写命令携带可跨重试复现的客户端回合 ID。
+
+    Raises:
+        BashGameServiceError: ``clientMessageId`` 缺失或为空。
+    """
+
+    action_id = str(client_message_id or "").strip()
+    if not action_id:
+        raise BashGameServiceError("游戏写操作需要 clientMessageId，避免网络重试时重复落子")
+    return action_id
