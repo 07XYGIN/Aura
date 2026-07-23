@@ -18,6 +18,10 @@ from langsmith import traceable
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
+from app.core.continuity.capsules import (
+    capture_conditional_candidates_sync,
+    trigger_keyword_messages_sync,
+)
 from app.core.continuity.knowledge import (
     capture_relationship_knowledge_sync,
     mark_relationship_items_used_sync,
@@ -317,6 +321,31 @@ def aura_agent(
         recent_messages=previous_messages,
         relationship_context=relationship_context["judge_context"],
     )
+    conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
+    conditional_messages_created: list[dict[str, Any]] = []
+    if conditional_candidates and client_message_id:
+        conditional_messages_created = capture_conditional_candidates_sync(
+            user_id,
+            conditional_candidates,
+            source_message_id=client_message_id,
+            source_turn_id=turn_id,
+            now=request_started_at,
+        )
+    elif conditional_candidates:
+        logging.warning(
+            "本轮识别到条件消息候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
+            user_id,
+        )
+    turn_judgement["conditional_messages_created"] = [
+        {
+            "id": item["id"],
+            "messageType": item["messageType"],
+            "conditionType": item["conditionType"],
+            "title": item["title"],
+            "deliverAt": item["deliverAt"],
+        }
+        for item in conditional_messages_created
+    ]
     emotion_state = turn_judgement["emotion"]
     if not turn_judgement["risk_signal"].get("requires_safety_gate"):
         capture_emotional_afterglow_sync(
@@ -463,6 +492,13 @@ def aura_agent(
             source_turn_id=turn_id,
         )
     if reply_batch:
+        if client_message_id:
+            trigger_keyword_messages_sync(
+                user_id,
+                human_prompt,
+                event_id=f"chat:{client_message_id}",
+                now=request_started_at,
+            )
         schedule_second_thought_sync(
             user_id,
             human_prompt,

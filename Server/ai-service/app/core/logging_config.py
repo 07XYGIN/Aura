@@ -20,6 +20,10 @@ SENSITIVE_KEYS = {
     "access_token",
     "token",
     "password",
+    "passphrase",
+    "unlock_secret_hash",
+    "content",
+    "payload",
     "dataBase64",
     "data_base64",
 }
@@ -76,7 +80,12 @@ def install_sql_logging(engine: Any) -> None:
             sql_logger.exception(
                 "SQL 执行失败 statement=%s params=%s",
                 normalize_sql(str(exception_context.statement or "")),
-                to_log_text(exception_context.parameters),
+                to_log_text(
+                    sanitize_sql_parameters(
+                        str(exception_context.statement or ""),
+                        exception_context.parameters,
+                    )
+                ),
             )
         else:
             sql_logger.exception("SQL 执行失败 statement=%s", normalize_sql(str(exception_context.statement or "")))
@@ -111,8 +120,16 @@ def log_sql_result(result: Any, elapsed_ms: float) -> Any:
 
 def sanitize_sql_parameters(statement: str, parameters: Any) -> Any:
     """根据 INSERT 列顺序隐藏位置参数中的敏感字段值。"""
+    if isinstance(parameters, Mapping):
+        return {
+            key: "***" if str(key) in SENSITIVE_KEYS else value
+            for key, value in parameters.items()
+        }
     if not isinstance(parameters, (list, tuple)):
         return parameters
+
+    if parameters and all(isinstance(row, (list, tuple)) for row in parameters):
+        return [sanitize_sql_parameters(statement, row) for row in parameters]
 
     sensitive_indexes = sensitive_parameter_indexes(statement)
     if not sensitive_indexes:

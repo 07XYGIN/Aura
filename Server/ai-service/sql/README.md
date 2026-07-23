@@ -12,8 +12,9 @@
 6. 执行 `20260723_relationship_items.sql`，创建双视角关系物件、私人语言、Aura 立场、纠偏规则和关系章节表。
 7. 执行 `20260723_continuity_state.sql`，创建每日生活、情绪余温和共同想象场景表。
 8. 执行 `20260723_offline_mind.sql`，创建离线思绪种子和每日睡前整理表。
-9. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
-10. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
+9. 执行 `20260723_conditional_messages.sql`，创建时间胶囊、秘密保险箱和条件事件 inbox。
+10. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
+11. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
 
 ## 已有数据库
 

@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的十八张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
 
 ## 业务模型表
 
@@ -9,6 +9,8 @@
 | `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
 | `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
 | `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
+| `conditional_message` | 时间胶囊与秘密保险箱的密封正文、触发条件和交付状态 | `app/core/continuity/capsules.py` |
+| `conditional_message_event` | 关键词、项目、GitHub 和口令事件的幂等 inbox | `app/core/continuity/capsules.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
 | `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
@@ -116,6 +118,21 @@
 
 `sent`、`skipped`、`failed` 和 `cancelled` 是终态。投递失败但仍可重试时，业务层应增加
 `attempt_count`、记录 `last_error` 并重新置为 `pending`；达到上限后才进入 `failed`。
+
+## 条件消息
+
+`conditional_message` 统一承载时间胶囊与秘密保险箱。记录从 `sealed` 开始；时间到期、
+后续用户消息命中关键词、共同项目达到目标状态、GitHub 事件匹配或口令验证成功后，服务在
+同一事务中把记录推进为 `queued` 并创建唯一 `proactive_message`。只有聊天历史成功写入后才会
+标记 `delivered`；outbox 达到重试上限则标记 `failed`。
+
+密封阶段的列表和详情响应始终返回 `content=null`，口令只保存单向摘要。这里的“密封”是接口
+保密边界，并不等同于数据库静态加密。`conditional_message_event` 以
+`(user_id, event_type, event_id)` 唯一约束处理聊天重放、项目事件重试和 GitHub redelivery；
+旧事件重放不会打开事件发生后才创建的新胶囊。
+
+每条条件消息保存唯一 `outbox_message_id`。主动投递在同一次数据库提交中同步 outbox 和来源
+状态；调度周期还会对账已经进入 `sent`/`failed` 的 outbox，只补业务状态，不再次写聊天历史。
 
 ## 自动核对
 

@@ -19,6 +19,8 @@ from app.db.models import (
     BashGameMove,
     BashGameSession,
     CompanionPet,
+    ConditionalMessage,
+    ConditionalMessageEvent,
     EmotionalAfterglow,
     LangchainPgCollection,
     LangchainPgEmbedding,
@@ -40,6 +42,8 @@ class DbModelsTest(unittest.TestCase):
                 "users",
                 "self_changelog_entry",
                 "proactive_message",
+                "conditional_message",
+                "conditional_message_event",
                 "relationship_thread",
                 "relationship_thread_event",
                 "relationship_item",
@@ -78,6 +82,9 @@ class DbModelsTest(unittest.TestCase):
                 "idx_self_changelog_occurred_at",
                 "idx_proactive_message_user_schedule",
                 "idx_proactive_message_claim",
+                "idx_conditional_message_time_due",
+                "idx_conditional_message_user_status",
+                "idx_conditional_message_event_user_time",
                 "idx_relationship_thread_user_status_follow_up",
                 "idx_relationship_thread_event_thread_occurred",
                 "idx_relationship_item_user_type_status",
@@ -159,6 +166,62 @@ class DbModelsTest(unittest.TestCase):
             tuple(expression.name for expression in claim_index.expressions),
             ("status", "scheduled_at", "claimed_until"),
         )
+
+    def test_conditional_message_models_match_sealed_lifecycle_contract(self):
+        """条件业务状态、outbox 引用和事件 inbox 必须有数据库级边界。"""
+
+        table = ConditionalMessage.__table__
+        self.assertEqual(
+            {
+                "id", "user_id", "message_type", "condition_type", "title", "content",
+                "status", "deliver_at", "condition", "unlock_secret_hash", "dedupe_key",
+                "outbox_message_id", "source_message_id", "source_turn_id", "triggered_at",
+                "delivered_at", "cancelled_at", "expires_at", "version", "metadata",
+                "created_at", "updated_at",
+            },
+            set(table.c.keys()),
+        )
+        constraints = {constraint.name: constraint for constraint in table.constraints}
+        for name in (
+            "chk_conditional_message_type",
+            "chk_conditional_message_condition_type",
+            "chk_conditional_message_status",
+            "chk_conditional_message_time_requires_delivery",
+            "chk_conditional_message_version",
+            "uq_conditional_message_user_dedupe",
+        ):
+            self.assertIn(name, constraints)
+        condition_sql = str(constraints["chk_conditional_message_condition_type"].sqltext)
+        for condition_type in ("time", "keyword", "project_status", "github_event", "passphrase"):
+            self.assertIn(f"'{condition_type}'", condition_sql)
+        status_sql = str(constraints["chk_conditional_message_status"].sqltext)
+        for status in ("sealed", "queued", "delivered", "cancelled", "expired", "failed"):
+            self.assertIn(f"'{status}'", status_sql)
+        self.assertEqual(table.c.status.server_default.arg, "sealed")
+        self.assertEqual(table.c.version.server_default.arg, "1")
+        self.assertTrue(table.c.deliver_at.type.timezone)
+        self.assertTrue(table.c.expires_at.type.timezone)
+
+        user_fk = list(table.c.user_id.foreign_keys)[0]
+        outbox_fk = list(table.c.outbox_message_id.foreign_keys)[0]
+        self.assertEqual(user_fk.target_fullname, "users.id")
+        self.assertEqual(user_fk.ondelete, "CASCADE")
+        self.assertEqual(outbox_fk.target_fullname, "proactive_message.id")
+        self.assertEqual(outbox_fk.ondelete, "SET NULL")
+        self.assertTrue(outbox_fk.deferrable)
+        self.assertEqual(outbox_fk.initially, "DEFERRED")
+
+        event_table = ConditionalMessageEvent.__table__
+        event_constraints = {constraint.name for constraint in event_table.constraints}
+        self.assertTrue(
+            {
+                "chk_conditional_message_event_type",
+                "chk_conditional_message_event_matched_count",
+                "uq_conditional_message_event_user_event",
+            }.issubset(event_constraints)
+        )
+        event_user_fk = list(event_table.c.user_id.foreign_keys)[0]
+        self.assertEqual(event_user_fk.ondelete, "CASCADE")
 
     def test_bash_models_preserve_user_ownership_and_move_history(self):
         """游戏会话应归属用户，行动应随会话级联删除。"""

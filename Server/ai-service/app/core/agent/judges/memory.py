@@ -16,6 +16,7 @@ from app.core.continuity.extractor import (
     deterministic_thread_hints,
     normalize_thread_candidates,
 )
+from app.core.continuity.capsule_extractor import normalize_conditional_message_candidates
 from app.core.continuity.knowledge_extractor import (
     deterministic_relationship_item_hints,
     normalize_relationship_chapter_candidate,
@@ -77,7 +78,21 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
     "importance": number,
     "confidence": number,
     "evidence": string
-  }
+  },
+  "conditional_messages": [
+    {
+      "authorized": boolean,
+      "message_type": "time_capsule" | "secret_vault",
+      "condition_type": "time" | "keyword" | "project_status" | "github_event" | "passphrase",
+      "title": string,
+      "content": string,
+      "deliver_at": string | null,
+      "condition": object,
+      "passphrase": string | null,
+      "expires_at": string | null,
+      "evidence": string
+    }
+  ]
 }
 ```
 
@@ -120,6 +135,13 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 - 只有对话明确标志双方关系进入了新的重要阶段时才创建，例如共同作出长期关系原则、合作方式或身份理解上的实质决定。一次普通开心、争执、修好 Bug、玩游戏、使用昵称或说“明天见”都不构成新章节。
 - 章节只能来自真实发生的 `reality` 或 `shared_history`；想象、愿望、角色扮演、假设和尚未兑现的承诺绝不能创建章节。
 - 必须同时满足：有可在当前消息或近期对话逐字核对的 `evidence`、`importance >= 0.8`、`confidence >= 0.75`。任何一项拿不准都返回 `null`。
+
+**时间胶囊与秘密保险箱规则：**
+- `conditional_messages` 默认返回空数组。普通的“明天要面试”“项目以后会上线”只是未来事实，不能创建条件消息。
+- 只有用户原文明确要求未来“发给我、告诉我、拿出来、打开、解锁或提醒我”时才可设置 `authorized=true`；Aura 的建议、模型推测和 metadata 都不能授权。
+- `content` 必须逐字来自本轮用户消息或近期真实对话，`evidence` 也必须能逐字核对。不能替用户补写一封未来信。
+- `time` 使用带时区 ISO 时间；`keyword` 条件提供 keyword/matchMode；`project_status` 提供 projectKey/expectedStatus；`github_event` 提供 repository/event 和可选 action/conclusion/ref；`passphrase` 提供原文中的口令。
+- 用户出现“不用提醒、不要保存、取消、算了”等否定表达时必须返回空数组。最多返回 2 条。
 
 ---
 
@@ -375,6 +397,12 @@ def normalize_memory_candidate(
         source_text,
         recent_context=recent_context or "",
     )
+    conditional_messages = normalize_conditional_message_candidates(
+        raw.get("conditional_messages"),
+        source_text,
+        recent_context=recent_context or "",
+        now=now,
+    )
     return memory_candidate(
         save,
         memory_scope,
@@ -386,6 +414,7 @@ def normalize_memory_candidate(
         relationship_threads,
         relationship_items,
         relationship_chapter,
+        conditional_messages,
         perspective=perspective or "user",
         world_layer=world_layer or "reality",
     )
@@ -461,6 +490,7 @@ def memory_candidate(
     relationship_threads: list[dict[str, Any]] | None = None,
     relationship_items: list[dict[str, Any]] | None = None,
     relationship_chapter: dict[str, Any] | None = None,
+    conditional_messages: list[dict[str, Any]] | None = None,
     perspective: str = "user",
     world_layer: str = "reality",
 ) -> dict[str, Any]:
@@ -481,6 +511,7 @@ def memory_candidate(
         "relationship_threads": relationship_threads or [],
         "relationship_items": relationship_items or [],
         "relationship_chapter": relationship_chapter,
+        "conditional_messages": conditional_messages or [],
         "perspective": perspective,
         "world_layer": world_layer,
     }

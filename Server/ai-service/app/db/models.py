@@ -136,6 +136,113 @@ class ProactiveMessage(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class ConditionalMessage(Base, TimestampMixin):
+    """保存需要在未来条件成立后才交给小乔的密封消息。
+
+    业务表只负责记录消息正文、触发条件和状态；真正投递仍由
+    :class:`ProactiveMessage` 可靠 outbox 完成。``sealed`` 表示条件尚未成立，
+    ``queued`` 表示已经生成唯一 outbox，``delivered`` 只会在聊天历史写入成功
+    后设置。这样调度进程重启或重复收到 GitHub 事件都不会重复打开同一条消息。
+    """
+
+    __tablename__ = "conditional_message"
+    __table_args__ = (
+        CheckConstraint(
+            "message_type IN ('time_capsule', 'secret_vault')",
+            name="chk_conditional_message_type",
+        ),
+        CheckConstraint(
+            "condition_type IN ('time', 'keyword', 'project_status', 'github_event', 'passphrase')",
+            name="chk_conditional_message_condition_type",
+        ),
+        CheckConstraint(
+            "status IN ('sealed', 'queued', 'delivered', 'cancelled', 'expired', 'failed')",
+            name="chk_conditional_message_status",
+        ),
+        CheckConstraint(
+            "condition_type <> 'time' OR deliver_at IS NOT NULL",
+            name="chk_conditional_message_time_requires_delivery",
+        ),
+        CheckConstraint("version >= 1", name="chk_conditional_message_version"),
+        UniqueConstraint("user_id", "dedupe_key", name="uq_conditional_message_user_dedupe"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    message_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    condition_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="sealed", server_default="sealed")
+    deliver_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    condition_json: Mapped[dict] = mapped_column("condition", JSONB, nullable=False, default=dict, server_default="{}")
+    unlock_secret_hash: Mapped[str | None] = mapped_column(String(255))
+    dedupe_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    outbox_message_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "proactive_message.id",
+            ondelete="SET NULL",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        unique=True,
+    )
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    source_turn_id: Mapped[str | None] = mapped_column(String(128))
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class ConditionalMessageEvent(Base):
+    """记录一次条件评估事件，防止相同 Webhook 或客户端重试被重复消费。"""
+
+    __tablename__ = "conditional_message_event"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('keyword', 'project_status', 'github_event', 'passphrase')",
+            name="chk_conditional_message_event_type",
+        ),
+        CheckConstraint("matched_count >= 0", name="chk_conditional_message_event_matched_count"),
+        UniqueConstraint(
+            "user_id",
+            "event_type",
+            "event_id",
+            name="uq_conditional_message_event_user_event",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[dict] = mapped_column("payload", JSONB, nullable=False, default=dict, server_default="{}")
+    matched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class RelationshipThread(Base, TimestampMixin):
     """保存一条需要跨对话延续的关系线程及其当前权威状态。
 
@@ -820,6 +927,23 @@ Index(
     ProactiveMessage.status,
     ProactiveMessage.scheduled_at,
     ProactiveMessage.claimed_until,
+)
+Index(
+    "idx_conditional_message_time_due",
+    ConditionalMessage.status,
+    ConditionalMessage.deliver_at,
+    postgresql_where=text("((condition_type)::text = 'time'::text)"),
+)
+Index(
+    "idx_conditional_message_user_status",
+    ConditionalMessage.user_id,
+    ConditionalMessage.status,
+    ConditionalMessage.created_at.desc(),
+)
+Index(
+    "idx_conditional_message_event_user_time",
+    ConditionalMessageEvent.user_id,
+    ConditionalMessageEvent.occurred_at.desc(),
 )
 Index(
     "idx_relationship_thread_user_status_follow_up",

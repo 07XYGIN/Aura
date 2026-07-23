@@ -19,6 +19,7 @@ from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
     admin,
     attachments,
+    capsules,
     continuity,
     continuity_state,
     games,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
         admin.router,
         games.router,
         pet.router,
+        capsules.router,
         continuity.router,
         continuity_state.router,
         relationship_knowledge.router,

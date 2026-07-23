@@ -47,12 +47,30 @@ def emotion_event(emotion_state: dict[str, Any]) -> dict[str, Any]:
 
 
 def memory_candidate_event(candidate: dict[str, Any]) -> dict[str, Any]:
-    """构造记忆候选事件，供客户端观察本轮记忆判断。"""
+    """构造记忆候选事件，供客户端观察本轮记忆判断。
+
+    条件消息候选可能包含尚未打开的正文和口令，只能向客户端返回类型、标题和
+    授权摘要。真正创建结果由条件消息 API 查询；SSE 不能成为绕过密封边界的
+    第二条数据通道。
+    """
+
+    public_candidate = dict(candidate)
+    raw_conditional_messages = candidate.get("conditional_messages")
+    public_candidate["conditional_messages"] = [
+        {
+            "authorized": bool(item.get("authorized", True)),
+            "message_type": item.get("messageType") or item.get("message_type"),
+            "condition_type": item.get("conditionType") or item.get("condition_type"),
+            "title": item.get("title"),
+        }
+        for item in raw_conditional_messages or []
+        if isinstance(item, dict)
+    ]
 
     return {
         "event": "memory_candidate",
         "type": "memory_candidate",
-        "memory_candidate": candidate,
+        "memory_candidate": public_candidate,
     }
 
 

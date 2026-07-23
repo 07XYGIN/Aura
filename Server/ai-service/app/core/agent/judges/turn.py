@@ -194,12 +194,25 @@ def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
     if isinstance(risk_signal, dict) and risk_signal.get("level") not in {None, "none"}:
         risk_summary = f"{risk_signal.get('level')} / {risk_signal.get('risk_type')}"
 
+    created_messages = turn_judgement.get("conditional_messages_created")
+    conditional_summary = "本轮没有创建时间胶囊或秘密保险箱"
+    if isinstance(created_messages, list) and created_messages:
+        labels = []
+        for item in created_messages[:2]:
+            if not isinstance(item, dict):
+                continue
+            kind = "时间胶囊" if item.get("messageType") == "time_capsule" else "秘密保险箱"
+            labels.append(f"{kind}《{item.get('title') or '未命名'}》")
+        if labels:
+            conditional_summary = "已由服务端密封保存：" + "、".join(labels)
+
     return (
         "这些是内部判断，只用于调整当前回复，不要向用户解释内部流程。\n"
         f"- 回复方式：{mode_label}\n"
         f"- 互动状态：{interaction_summary}\n"
         f"- 记忆判断：{memory_summary}\n"
-        f"- 风险信号：{risk_summary}"
+        f"- 风险信号：{risk_summary}\n"
+        f"- 条件消息：{conditional_summary}。只有显示已保存时才能确认创建成功；不要复述密封正文或口令"
     )
 
 

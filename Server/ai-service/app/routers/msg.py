@@ -20,6 +20,7 @@ from app.core.agent.protocol import (
 )
 from app.core.emotion import derive_emotion_state
 from app.core.auth_store import get_current_user_id
+from app.core.continuity.capsules import trigger_keyword_messages
 from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
 from app.core.games.bash.service import BashGameServiceError
 from app.core.pet.chat import PetChatResponse, try_handle_pet_chat_message
@@ -263,6 +264,12 @@ async def bash_game_event_generator(
         except Exception:
             logging.exception("巴什博弈消息写入统一聊天历史失败，降级为 content 事件")
     if reply_batch:
+        await trigger_keyword_after_external_history(
+            user_id,
+            message,
+            client_message_id,
+            source="bash_game",
+        )
         for item in reply_batch.get("messages", []):
             yield sse_data(
                 assistant_message_event(
@@ -334,6 +341,12 @@ async def pet_event_generator(
         except Exception:
             logging.exception("宠物消息写入统一聊天历史失败，降级为 content 事件")
     if reply_batch:
+        await trigger_keyword_after_external_history(
+            user_id,
+            message,
+            client_message_id,
+            source="pet",
+        )
         for item in reply_batch.get("messages", []):
             yield sse_data(
                 assistant_message_event(
@@ -350,6 +363,38 @@ async def pet_event_generator(
         for content in response.messages:
             yield sse_data(content_event(content))
     yield "data: [DONE]\n\n"
+
+
+async def trigger_keyword_after_external_history(
+    user_id: str,
+    message: str,
+    client_message_id: str | None,
+    *,
+    source: str,
+) -> None:
+    """在游戏或宠物回合确认写入统一历史后评估关键词保险箱。
+
+    缺少稳定客户端消息 ID 时跳过；条件消息的创建和事件消费都依赖该 ID 保证
+    网络重放不会触发第二次。数据库异常只影响条件评估，不回滚已经提交的游戏
+    或宠物状态，也不会中断本轮 SSE。
+    """
+
+    if not client_message_id:
+        return
+    try:
+        async with AsyncSessionLocal() as session:
+            await trigger_keyword_messages(
+                session,
+                user_id,
+                message,
+                event_id=f"chat:{client_message_id}",
+            )
+    except Exception:
+        logging.exception(
+            "外部聊天回合的关键词条件评估失败 source=%s user_id=%s",
+            source,
+            user_id,
+        )
 
 
 @router.post("/send/sse/")

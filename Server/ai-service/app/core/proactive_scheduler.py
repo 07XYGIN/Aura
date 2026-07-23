@@ -13,6 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.agent_graph import append_proactive_history_message, get_history
 from app.core.continuity.state import ensure_daily_states_async
+from app.core.continuity.capsules import (
+    ensure_due_conditional_messages,
+    reconcile_conditional_message_outbox,
+    stage_conditional_message_delivery_state,
+)
 from app.core.continuity.mind import (
     ensure_due_thought_outbox_async,
     ensure_reasoned_surprise_seed_async,
@@ -20,7 +25,6 @@ from app.core.continuity.mind import (
     mark_thought_seed_delivered_async,
 )
 from app.core.proactive.service import (
-    DAILY_GREETING_WINDOWS,
     EVENING_TRIGGER_TYPE,
     MORNING_TRIGGER_TYPE,
     build_daily_greeting_plan,
@@ -769,6 +773,7 @@ async def send_proactive_message_records(
         )
         if not appended:
             mark_proactive_delivery_failure(proactive, now, "聊天历史写入失败")
+            await stage_conditional_message_delivery_state(session, proactive, now)
             changed_count += 1
             continue
 
@@ -777,6 +782,7 @@ async def send_proactive_message_records(
         proactive.claimed_until = None
         proactive.last_error = None
         proactive.updated_at = now
+        await stage_conditional_message_delivery_state(session, proactive, now)
         sent_count += 1
         changed_count += 1
         successful_messages.append(proactive)
@@ -956,6 +962,14 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
         except Exception:
             await session.rollback()
             logging.exception("Aura 离线思绪调度失败，本轮主动消息继续")
+        try:
+            await reconcile_conditional_message_outbox(session, now=now)
+            conditional_messages = await ensure_due_conditional_messages(session, now=now)
+            if has_redis:
+                enqueue_proactive_messages(conditional_messages)
+        except Exception:
+            await session.rollback()
+            logging.exception("时间胶囊与秘密保险箱调度失败，本轮主动消息继续")
         silence_user_ids = collect_due_silence_user_ids(now=now) if has_redis else []
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
         await ensure_daily_greeting_messages(session, now=now)

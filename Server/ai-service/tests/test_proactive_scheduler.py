@@ -508,6 +508,14 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
                 AsyncMock(return_value=[]),
             ),
             patch(
+                "app.core.proactive_scheduler.reconcile_conditional_message_outbox",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_due_conditional_messages",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
                 "app.core.proactive_scheduler.trigger_silence_proactive_messages",
                 AsyncMock(return_value=0),
             ),
