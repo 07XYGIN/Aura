@@ -22,6 +22,12 @@ from app.core.continuity.knowledge import (
     capture_relationship_knowledge_sync,
     mark_relationship_items_used_sync,
 )
+from app.core.continuity.mind import (
+    cancel_pending_second_thoughts_sync,
+    consume_relevant_offline_thought_sync,
+    format_offline_thought_prompt,
+    schedule_second_thought_sync,
+)
 from app.core.continuity.state import (
     apply_scene_message_sync,
     capture_emotional_afterglow_sync,
@@ -288,6 +294,12 @@ def aura_agent(
     previous_state = aura.get_state(config)
     previous_messages = previous_state.values.get("messages", []) if previous_state and previous_state.values else []
     time_context = build_time_context(previous_messages, request_started_at)
+    cancel_pending_second_thoughts_sync(user_id, now=request_started_at)
+    offline_thought = consume_relevant_offline_thought_sync(
+        user_id,
+        human_prompt,
+        now=request_started_at,
+    )
     self_changelog_context = load_self_changelog_context_sync()
     relationship_context = load_relationship_context_sync(user_id)
     apply_scene_message_sync(
@@ -350,7 +362,14 @@ def aura_agent(
         "relationship_context": relationship_context["prompt_context"],
         "relationship_actions": {"turn_id": turn_id, "items": []},
         "relationship_item_usages": {"turn_id": turn_id, "items": []},
-        "continuity_state_context": continuity_state["prompt_context"],
+        "continuity_state_context": "\n\n".join(
+            part
+            for part in (
+                continuity_state["prompt_context"],
+                format_offline_thought_prompt(offline_thought),
+            )
+            if part
+        ),
     }
 
     memory_candidate = turn_judgement["memory_candidate"]
@@ -444,6 +463,19 @@ def aura_agent(
             source_turn_id=turn_id,
         )
     if reply_batch:
+        schedule_second_thought_sync(
+            user_id,
+            human_prompt,
+            "\n".join(
+                str(message.get("content") or "")
+                for message in reply_batch.get("messages", [])
+                if isinstance(message, dict)
+            ),
+            turn_judgement,
+            client_message_id,
+            turn_id,
+            now=request_started_at,
+        )
         for message in reply_batch.get("messages", []):
             yield assistant_message_event(
                 content=message["content"],

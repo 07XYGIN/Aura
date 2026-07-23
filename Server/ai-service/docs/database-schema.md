@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的十六张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的十八张业务表。
 
 ## 业务模型表
 
@@ -16,6 +16,8 @@
 | `aura_daily_state` | Aura 每个自然日唯一、一天内一致的设定生活状态 | `app/core/continuity/state.py` |
 | `emotional_afterglow` | 有限时间自然衰减的情绪余温，只调整后续语气 | `app/core/continuity/state.py` |
 | `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
+| `aura_thought_seed` | 有真实来源、未必展示的离线思绪、第二念头和惊喜候选 | `app/core/continuity/mind.py` |
+| `aura_sleep_cycle` | 每天一次的关系线索、边界与向量记忆整理结果 | `app/core/continuity/mind.py` |
 | `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
 | `bash_game_move` | 巴什博弈每一步不可变行动历史 | `app/core/games/bash/service.py` |
 | `companion_pet` | 小乔与 Aura 共同宠物的当前状态 | `app/core/pet/service.py` |
@@ -86,6 +88,15 @@
 
 `shared_scene` 以部分唯一索引保证最多一个 `active` 场景。地点移动会更新同一场景，关闭后下一轮
 明确注入空场景约束；所有房间和文字约会都属于 `imagined`/`wish`，不能混入现实记忆。
+
+## 离线心智
+
+`aura_thought_seed` 将“产生想法”和“展示想法”分开。第二念头延迟 10-90 分钟，用户回来即取消，
+每天限量；离线反思只有与当前消息相关时才进入一次提示词；惊喜必须同时满足无开放冲突、主动
+消息冷却充分、时间合适且存在真实共同记录。所有主动投递仍由 `proactive_message` 负责。
+
+`aura_sleep_cycle` 按 `(user_id, local_date)` 唯一。凌晨整理开放线程、交互边界并最多合并一组
+重复向量记忆，生成的简短反思只基于已有记录，不生成梦境或现实见闻。
 
 ## 主动消息可靠投递
 

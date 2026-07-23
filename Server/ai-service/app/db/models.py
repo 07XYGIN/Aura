@@ -498,6 +498,88 @@ class SharedScene(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class AuraThoughtSeed(Base, TimestampMixin):
+    """保存有真实来源、但未必需要展示或主动发送的 Aura 思绪候选。"""
+
+    __tablename__ = "aura_thought_seed"
+    __table_args__ = (
+        CheckConstraint(
+            "thought_type IN ('second_thought', 'offline_reflection', 'surprise', 'night_reflection')",
+            name="chk_aura_thought_seed_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'queued', 'used', 'cancelled', 'expired')",
+            name="chk_aura_thought_seed_status",
+        ),
+        CheckConstraint("relevance BETWEEN 0 AND 1", name="chk_aura_thought_seed_relevance"),
+        UniqueConstraint("user_id", "dedupe_key", name="uq_aura_thought_seed_user_dedupe"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    thought_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    dedupe_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    relevance: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=1, server_default="1")
+    visible_on_next_chat: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    source_turn_id: Mapped[str | None] = mapped_column(String(128))
+    eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class AuraSleepCycle(Base, TimestampMixin):
+    """记录一次每日关系与记忆整理，保证夜间维护可追溯且每天只运行一次。"""
+
+    __tablename__ = "aura_sleep_cycle"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('processing', 'completed', 'failed')",
+            name="chk_aura_sleep_cycle_status",
+        ),
+        CheckConstraint("consolidated_count >= 0", name="chk_aura_sleep_cycle_consolidated_count"),
+        UniqueConstraint("user_id", "local_date", name="uq_aura_sleep_cycle_user_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="processing", server_default="processing")
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    reflection: Mapped[str] = mapped_column(Text, nullable=False)
+    open_threads: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    avoid_topics: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    consolidated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
 class BashGameSession(Base, TimestampMixin):
     """一局巴什博弈的当前权威状态和并发版本。"""
 
@@ -788,6 +870,22 @@ Index(
     "idx_shared_scene_user_started",
     SharedScene.user_id,
     SharedScene.started_at.desc(),
+)
+Index(
+    "idx_aura_thought_seed_status_eligible",
+    AuraThoughtSeed.status,
+    AuraThoughtSeed.eligible_at,
+    AuraThoughtSeed.expires_at,
+)
+Index(
+    "idx_aura_thought_seed_user_created",
+    AuraThoughtSeed.user_id,
+    AuraThoughtSeed.created_at.desc(),
+)
+Index(
+    "idx_aura_sleep_cycle_user_date",
+    AuraSleepCycle.user_id,
+    AuraSleepCycle.local_date.desc(),
 )
 Index(
     "uq_bash_game_active_user",

@@ -14,6 +14,8 @@ if str(ROOT) not in sys.path:
 from app.db.models import (
     Base,
     AuraDailyState,
+    AuraSleepCycle,
+    AuraThoughtSeed,
     BashGameMove,
     BashGameSession,
     CompanionPet,
@@ -45,6 +47,8 @@ class DbModelsTest(unittest.TestCase):
                 "aura_daily_state",
                 "emotional_afterglow",
                 "shared_scene",
+                "aura_thought_seed",
+                "aura_sleep_cycle",
                 "bash_game_session",
                 "bash_game_move",
                 "companion_pet",
@@ -83,6 +87,9 @@ class DbModelsTest(unittest.TestCase):
                 "idx_emotional_afterglow_user_expires",
                 "uq_shared_scene_active_user",
                 "idx_shared_scene_user_started",
+                "idx_aura_thought_seed_status_eligible",
+                "idx_aura_thought_seed_user_created",
+                "idx_aura_sleep_cycle_user_date",
                 "uq_bash_game_active_user",
                 "idx_bash_game_user_created",
                 "idx_bash_move_session_created",
@@ -284,6 +291,31 @@ class DbModelsTest(unittest.TestCase):
         )
         self.assertTrue(active_index.unique)
         for model in (AuraDailyState, EmotionalAfterglow, SharedScene):
+            user_fk = next(iter(model.__table__.c.user_id.foreign_keys))
+            self.assertEqual(user_fk.target_fullname, "users.id")
+            self.assertEqual(user_fk.ondelete, "CASCADE")
+
+    def test_offline_mind_models_have_lifecycle_and_daily_idempotency(self):
+        """思绪种子必须有终态，睡前整理必须按用户自然日唯一。"""
+
+        thought_constraints = {constraint.name for constraint in AuraThoughtSeed.__table__.constraints}
+        sleep_constraints = {constraint.name for constraint in AuraSleepCycle.__table__.constraints}
+        self.assertTrue(
+            {
+                "chk_aura_thought_seed_type",
+                "chk_aura_thought_seed_status",
+                "chk_aura_thought_seed_relevance",
+                "uq_aura_thought_seed_user_dedupe",
+            }.issubset(thought_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_aura_sleep_cycle_status",
+                "chk_aura_sleep_cycle_consolidated_count",
+                "uq_aura_sleep_cycle_user_date",
+            }.issubset(sleep_constraints)
+        )
+        for model in (AuraThoughtSeed, AuraSleepCycle):
             user_fk = next(iter(model.__table__.c.user_id.foreign_keys))
             self.assertEqual(user_fk.target_fullname, "users.id")
             self.assertEqual(user_fk.ondelete, "CASCADE")

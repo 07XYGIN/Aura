@@ -13,6 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.agent_graph import append_proactive_history_message, get_history
 from app.core.continuity.state import ensure_daily_states_async
+from app.core.continuity.mind import (
+    ensure_due_thought_outbox_async,
+    ensure_reasoned_surprise_seed_async,
+    ensure_sleep_cycles_async,
+    mark_thought_seed_delivered_async,
+)
 from app.core.proactive.service import (
     DAILY_GREETING_WINDOWS,
     EVENING_TRIGGER_TYPE,
@@ -785,9 +791,10 @@ async def send_proactive_message_records(
     for proactive in successful_messages:
         try:
             await mark_relationship_thread_followed_up_from_proactive(session, proactive, now)
+            await mark_thought_seed_delivered_async(session, proactive, now)
         except Exception:
             await session.rollback()
-            logging.exception("主动跟进发送成功，但关系线程状态更新失败 message_id=%s", proactive.id)
+            logging.exception("主动消息发送成功，但来源业务状态更新失败 message_id=%s", proactive.id)
     if sent_count:
         logging.info("主动消息发送完成 sent_count=%s", sent_count)
     return sent_count
@@ -936,6 +943,19 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
         except Exception:
             await session.rollback()
             logging.exception("Aura 每日生活状态后台创建失败，本轮主动消息继续")
+        try:
+            await ensure_sleep_cycles_async(session, now=now)
+        except Exception:
+            await session.rollback()
+            logging.exception("Aura 睡前整理失败，本轮主动消息继续")
+        try:
+            await ensure_reasoned_surprise_seed_async(session, now=now)
+            thought_messages = await ensure_due_thought_outbox_async(session, now=now)
+            if has_redis:
+                enqueue_proactive_messages(thought_messages)
+        except Exception:
+            await session.rollback()
+            logging.exception("Aura 离线思绪调度失败，本轮主动消息继续")
         silence_user_ids = collect_due_silence_user_ids(now=now) if has_redis else []
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
         await ensure_daily_greeting_messages(session, now=now)

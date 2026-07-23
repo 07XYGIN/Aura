@@ -496,6 +496,18 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
                 AsyncMock(side_effect=RuntimeError("daily unavailable")),
             ),
             patch(
+                "app.core.proactive_scheduler.ensure_sleep_cycles_async",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_reasoned_surprise_seed_async",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_due_thought_outbox_async",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
                 "app.core.proactive_scheduler.trigger_silence_proactive_messages",
                 AsyncMock(return_value=0),
             ),
