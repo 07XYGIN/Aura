@@ -776,13 +776,30 @@ def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
 
 
 def format_docs(docs: list[Document]) -> str:
-    """把 Document 列表格式化为带序号的纯文本。"""
+    """把 Document 列表格式化为带视角和事实层标签的纯文本。
+
+    ``imagined``、``wish`` 和 ``promise`` 必须显式展示标签，避免主模型把共同
+    想象、愿望或尚未兑现的承诺误说成现实经历。旧记忆没有字段时按用户现实事实
+    处理，以兼容迁移前已经存在的向量文档。
+    """
 
     lines: list[str] = []
+    perspective_labels = {"user": "小乔视角", "aura": "Aura 视角", "shared": "共同视角"}
+    world_layer_labels = {
+        "reality": "现实",
+        "shared_history": "真实共同经历",
+        "imagined": "共同想象",
+        "wish": "愿望",
+        "promise": "承诺",
+    }
     for doc in docs:
         title = doc.metadata.get("title") or "未命名记忆"
         create_time = doc.metadata.get("create_time") or "未知时间"
-        lines.append(f"- {title}（记录于 {create_time}）：{doc.page_content}")
+        perspective = perspective_labels.get(doc.metadata.get("perspective"), "小乔视角")
+        world_layer = world_layer_labels.get(doc.metadata.get("world_layer"), "现实")
+        lines.append(
+            f"- [{perspective}/{world_layer}] {title}（记录于 {create_time}）：{doc.page_content}"
+        )
     return "\n".join(lines)
 
 

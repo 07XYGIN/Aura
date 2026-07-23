@@ -16,6 +16,11 @@ from app.core.continuity.extractor import (
     deterministic_thread_hints,
     normalize_thread_candidates,
 )
+from app.core.continuity.knowledge_extractor import (
+    deterministic_relationship_item_hints,
+    normalize_relationship_chapter_candidate,
+    normalize_relationship_item_candidates,
+)
 
 MEMORY_JUDGE_SYSTEM_PROMPT = """
 ---
@@ -27,6 +32,8 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 {
   "save": boolean,
   "memory_scope": "long" | "mid" | "short",
+  "perspective": "user" | "aura" | "shared",
+  "world_layer": "reality" | "shared_history" | "imagined" | "wish" | "promise",
   "title": string | null,
   "content": string | null,
   "confidence": number,
@@ -44,7 +51,33 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
       "follow_up_at": string | null,
       "proactive_allowed": boolean
     }
-  ]
+  ],
+  "relationship_items": [
+    {
+      "operation": "upsert" | "deactivate",
+      "target_id": string | null,
+      "item_type": "shared_memory" | "nickname" | "running_joke" | "codeword" | "ritual" | "shared_object" | "action_style" | "aura_stance" | "interaction_rule" | "boundary",
+      "perspective": "user" | "aura" | "shared",
+      "world_layer": "reality" | "shared_history" | "imagined" | "wish" | "promise",
+      "title": string | null,
+      "content": string | null,
+      "usage_condition": string | null,
+      "confidence": number,
+      "can_change": boolean,
+      "cooldown_days": number,
+      "phrases": string[],
+      "evidence": string | null
+    }
+  ],
+  "relationship_chapter": null | {
+    "create": true,
+    "title": string,
+    "summary": string,
+    "world_layer": "reality" | "shared_history",
+    "importance": number,
+    "confidence": number,
+    "evidence": string
+  }
 }
 ```
 
@@ -63,6 +96,7 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
   - 好：`聊到写代码累了会起来走走，像是他平时调节状态的小习惯`
 - `content` 长度控制在 220 个字符以内。
 - `confidence` 必须在 0 到 1 之间。
+- 向量记忆也必须标明视角和事实层：小乔的现实资料用 `user/reality`；真实发生的双方对话与决定用 `shared/shared_history`；假想场景、愿望和承诺必须分别使用 `imagined`、`wish`、`promise`，绝不能为了方便检索改写成现实。
 
 **关系线程规则：**
 - 关系线程不是普通向量记忆。只记录确实需要跨对话延续的开放事项、明确后续关心、双方冲突/纠偏、承诺或共同项目任务。
@@ -72,6 +106,20 @@ MEMORY_JUDGE_SYSTEM_PROMPT = """
 - 更新、解决或放弃已有线程时，必须从 `active_relationship_threads` 选择完全对应的 `target_id`；拿不准就不要返回候选。
 - 现实用 `reality`，已经真实发生的共同互动用 `shared_history`，假想场景用 `imagined`，愿望用 `wish`，明确承诺用 `promise`，禁止混淆。
 - 最多返回 3 个真正必要的线程候选；没有则返回空数组。
+
+**关系物件规则：**
+- 关系物件保存的是双方长期形成的共同知识，不是用户资料的另一份副本。可以记录共同经历、昵称、内部玩笑、暗号、仪式、共同物件、动作描写偏好、Aura 的稳定立场、交互纠偏和边界。
+- 每个 `upsert` 必须提供一段确实出现在 `user_message` 或 `recent_context` 中的短原文作为 `evidence`。不能把推测、概括或模型自行补写的句子伪装成证据。
+- 用户说“这句太客服了”“别每次都安慰我”“回复太长了”等明确纠偏时，可以同时创建待修复线程和 `action_style`/`interaction_rule`/`boundary`，但两者用途不同：线程跟踪这次是否修复，物件约束以后怎么说话。
+- 私人语言只记录已经明确出现的昵称、口头禅、玩笑、暗号或仪式；`phrases` 中每句话也必须出现在真实对话里。给这些类型设置合理冷却，避免机械复读。
+- `aura_stance` 只能依据 Aura 在近期真实对话中明确表达过的立场，不能为了显得有个性而临时编造；`can_change` 表示以后是否允许随新对话调整。
+- 更新或停用已有物件时，`target_id` 必须来自已提供的真实上下文；拿不准时不要猜 ID。最多返回 3 个真正稳定、以后仍有用的物件候选；没有则返回空数组。
+
+**关系章节规则：**
+- `relationship_chapter` 默认必须为 `null`。章节是极低频的关系时间线，不是每轮摘要、纪念日、普通进度或情绪记录。
+- 只有对话明确标志双方关系进入了新的重要阶段时才创建，例如共同作出长期关系原则、合作方式或身份理解上的实质决定。一次普通开心、争执、修好 Bug、玩游戏、使用昵称或说“明天见”都不构成新章节。
+- 章节只能来自真实发生的 `reality` 或 `shared_history`；想象、愿望、角色扮演、假设和尚未兑现的承诺绝不能创建章节。
+- 必须同时满足：有可在当前消息或近期对话逐字核对的 `evidence`、`importance >= 0.8`、`confidence >= 0.75`。任何一项拿不准都返回 `null`。
 
 ---
 
@@ -151,9 +199,16 @@ def judge_memory_candidate(
             ],
         )
         raw_candidate = parse_json_object(message_content_to_text(response.content))
-        candidate = normalize_memory_candidate(raw_candidate, text, now=reference_now)
+        candidate = normalize_memory_candidate(
+            raw_candidate,
+            text,
+            now=reference_now,
+            recent_context=recent_context or "",
+        )
         if not candidate["relationship_threads"]:
             candidate["relationship_threads"] = deterministic_thread_hints(text, now=reference_now)
+        if not candidate["relationship_items"]:
+            candidate["relationship_items"] = deterministic_relationship_item_hints(text)
         return candidate
     except Exception:
         logging.exception("记忆候选判断失败")
@@ -166,6 +221,7 @@ def judge_memory_candidate(
             "记忆候选判断失败",
             [],
             deterministic_thread_hints(text, now=reference_now),
+            deterministic_relationship_item_hints(text),
         )
 
 
@@ -259,8 +315,13 @@ def normalize_memory_candidate(
     source_text: str,
     *,
     now: datetime | None = None,
+    recent_context: str | None = None,
 ) -> dict[str, Any]:
-    """校验记忆候选，并在内容为空时使用原消息作为安全回退。"""
+    """校验一次模型调用返回的向量记忆与关系知识候选。
+
+    ``source_text`` 和 ``recent_context`` 会同时交给关系知识规范化器作为证据
+    语料；只有能在真实对话中逐字找到依据的物件和章节才会保留。
+    """
 
     save = as_bool(raw.get("save"))
     memory_scope = clean_string(raw.get("memory_scope"), max_length=16, default="short").lower()
@@ -269,6 +330,23 @@ def normalize_memory_candidate(
 
     if memory_scope == "short":
         save = False
+
+    raw_perspective = raw.get("perspective")
+    raw_world_layer = raw.get("world_layer")
+    perspective = clean_string(raw_perspective, max_length=16, default="user")
+    world_layer = clean_string(raw_world_layer, max_length=24, default="reality")
+    if raw_perspective is not None and perspective not in {"user", "aura", "shared"}:
+        save = False
+        perspective = "user"
+    if raw_world_layer is not None and world_layer not in {
+        "reality",
+        "shared_history",
+        "imagined",
+        "wish",
+        "promise",
+    }:
+        save = False
+        world_layer = "reality"
 
     content = clean_string(raw.get("content"), max_length=220)
     if save and not content:
@@ -287,6 +365,16 @@ def normalize_memory_candidate(
         source_text,
         now=now,
     )
+    relationship_items = normalize_relationship_item_candidates(
+        raw.get("relationship_items"),
+        source_text,
+        recent_context=recent_context or "",
+    )
+    relationship_chapter = normalize_relationship_chapter_candidate(
+        raw.get("relationship_chapter"),
+        source_text,
+        recent_context=recent_context or "",
+    )
     return memory_candidate(
         save,
         memory_scope,
@@ -296,6 +384,10 @@ def normalize_memory_candidate(
         reason,
         signals,
         relationship_threads,
+        relationship_items,
+        relationship_chapter,
+        perspective=perspective or "user",
+        world_layer=world_layer or "reality",
     )
 
 
@@ -367,8 +459,16 @@ def memory_candidate(
     reason: str,
     signals: list[str],
     relationship_threads: list[dict[str, Any]] | None = None,
+    relationship_items: list[dict[str, Any]] | None = None,
+    relationship_chapter: dict[str, Any] | None = None,
+    perspective: str = "user",
+    world_layer: str = "reality",
 ) -> dict[str, Any]:
-    """构造字段稳定的记忆候选字典。"""
+    """构造字段稳定的记忆候选字典。
+
+    新增参数均位于原有参数之后且提供默认值，因此旧调用方无需修改；它们会
+    自动得到空的关系物件列表和空章节。
+    """
 
     return {
         "save": save,
@@ -379,6 +479,10 @@ def memory_candidate(
         "reason": reason,
         "signals": signals,
         "relationship_threads": relationship_threads or [],
+        "relationship_items": relationship_items or [],
+        "relationship_chapter": relationship_chapter,
+        "perspective": perspective,
+        "world_layer": world_layer,
     }
 
 

@@ -21,6 +21,14 @@ class StructuredThreadAction(BaseModel):
     action: Literal["follow_up"]
 
 
+class StructuredItemUsage(BaseModel):
+    """主回复实际复用私人语言或关系物件后的内部使用回执。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    item_ref: str = Field(alias="itemRef", pattern=r"^K(?:[1-9]|1[0-2])$")
+
+
 class StructuredReply(BaseModel):
     """主模型结构化回复的 Pydantic 校验模型。"""
 
@@ -28,6 +36,7 @@ class StructuredReply(BaseModel):
 
     messages: list[str]
     thread_actions: list[StructuredThreadAction] = Field(default_factory=list, alias="threadActions")
+    item_usages: list[StructuredItemUsage] = Field(default_factory=list, alias="itemUsages")
 
     @field_validator("messages", mode="before")
     @classmethod
@@ -77,6 +86,25 @@ class StructuredReply(BaseModel):
                 actions.append(action)
                 seen.add(key)
         return actions
+
+    @field_validator("item_usages", mode="before")
+    @classmethod
+    def clean_item_usages(cls, value: Any) -> list[StructuredItemUsage]:
+        """过滤非法知识引用并去重，避免模型伪造数据库对象。"""
+
+        if not isinstance(value, list):
+            return []
+        usages: list[StructuredItemUsage] = []
+        seen: set[str] = set()
+        for item in value[:12]:
+            try:
+                usage = StructuredItemUsage.model_validate(item)
+            except ValidationError:
+                continue
+            if usage.item_ref not in seen:
+                usages.append(usage)
+                seen.add(usage.item_ref)
+        return usages
 
 
 def parse_structured_reply(raw_content: Any) -> list[str]:

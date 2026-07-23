@@ -26,6 +26,24 @@ class FakeStore:
 
 
 class MemoryServiceTest(unittest.TestCase):
+    def test_format_docs_labels_imagined_memory_as_non_reality(self):
+        docs = [
+            Document(
+                page_content="双方想象以后一起去海边。",
+                metadata={
+                    "title": "想象中的旅行",
+                    "create_time": "2026-07-23 10:00",
+                    "perspective": "shared",
+                    "world_layer": "imagined",
+                },
+            )
+        ]
+
+        rendered = term_memory.format_docs(docs)
+
+        self.assertIn("[共同视角/共同想象]", rendered)
+        self.assertIn("想象中的旅行", rendered)
+
     def test_rank_memory_results_drops_below_threshold(self):
         doc = Document(page_content="用户喜欢蛋糕", metadata={"memory_scope": "long"})
 

@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -250,6 +251,111 @@ class RelationshipThreadEvent(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class RelationshipItem(Base, TimestampMixin):
+    """保存稳定的共同关系物件、私人语言、Aura 立场和交互纠偏。"""
+
+    __tablename__ = "relationship_item"
+    __table_args__ = (
+        CheckConstraint(
+            "item_type IN ('shared_memory', 'nickname', 'running_joke', 'codeword', "
+            "'ritual', 'shared_object', 'action_style', 'aura_stance', "
+            "'interaction_rule', 'boundary')",
+            name="chk_relationship_item_type",
+        ),
+        CheckConstraint(
+            "perspective IN ('user', 'aura', 'shared')",
+            name="chk_relationship_item_perspective",
+        ),
+        CheckConstraint(
+            "world_layer IN ('reality', 'shared_history', 'imagined', 'wish', 'promise')",
+            name="chk_relationship_item_world_layer",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'superseded')",
+            name="chk_relationship_item_status",
+        ),
+        CheckConstraint("use_count >= 0", name="chk_relationship_item_use_count"),
+        CheckConstraint("cooldown_days BETWEEN 0 AND 3650", name="chk_relationship_item_cooldown"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="chk_relationship_item_confidence"),
+        CheckConstraint("version >= 1", name="chk_relationship_item_version"),
+        UniqueConstraint("user_id", "item_key", name="uq_relationship_item_user_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    perspective: Mapped[str] = mapped_column(String(16), nullable=False)
+    world_layer: Mapped[str] = mapped_column(String(24), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    usage_condition: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3),
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    can_change: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
+    cooldown_days: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=14, server_default="14")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    source_message_id: Mapped[str | None] = mapped_column(String(128))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class RelationshipChapter(Base, TimestampMixin):
+    """按时间顺序保存由真实重要事件形成的关系章节。"""
+
+    __tablename__ = "relationship_chapter"
+    __table_args__ = (
+        CheckConstraint("sequence_no >= 1", name="chk_relationship_chapter_sequence"),
+        CheckConstraint(
+            "status IN ('current', 'closed')",
+            name="chk_relationship_chapter_status",
+        ),
+        UniqueConstraint("user_id", "sequence_no", name="uq_relationship_chapter_user_sequence"),
+        UniqueConstraint("user_id", "source_key", name="uq_relationship_chapter_user_source"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="current", server_default="current")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    representative_message_id: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
 class BashGameSession(Base, TimestampMixin):
@@ -503,6 +609,24 @@ Index(
     "idx_relationship_thread_event_thread_occurred",
     RelationshipThreadEvent.thread_id,
     RelationshipThreadEvent.occurred_at.desc(),
+)
+Index(
+    "idx_relationship_item_user_type_status",
+    RelationshipItem.user_id,
+    RelationshipItem.item_type,
+    RelationshipItem.status,
+    RelationshipItem.updated_at.desc(),
+)
+Index(
+    "uq_relationship_chapter_current_user",
+    RelationshipChapter.user_id,
+    unique=True,
+    postgresql_where=text("((status)::text = 'current'::text)"),
+)
+Index(
+    "idx_relationship_chapter_user_sequence",
+    RelationshipChapter.user_id,
+    RelationshipChapter.sequence_no.desc(),
 )
 Index(
     "uq_bash_game_active_user",

@@ -73,6 +73,7 @@ class AgentGraphTest(unittest.TestCase):
         format_position = prompt.rfind("## 输出格式：多条独立消息")
         self.assertGreater(format_position, prompt.find("## 对话示范"))
         self.assertGreater(format_position, prompt.find("【本轮附件】"))
+        self.assertIn('"itemUsages":[]', prompt)
 
     def test_self_changelog_context_uses_the_same_current_user_identity(self):
         entry = SimpleNamespace(
@@ -225,6 +226,37 @@ class AgentGraphTest(unittest.TestCase):
             {
                 "turn_id": "turn-1",
                 "items": [{"thread_ref": "T1", "action": "follow_up"}],
+            },
+        )
+
+    def test_call_model_preserves_valid_relationship_item_usage_sidecar(self):
+        response = AIMessage(
+            content=(
+                '{"messages":["宝宝，过来。"],'
+                '"itemUsages":[{"itemRef":"K1"}]}'
+            )
+        )
+        state = {
+            "messages": [HumanMessage(content="要抱抱")],
+            "turn_id": "turn-knowledge-1",
+            "user_id": "user-1",
+            "request_started_at": datetime.now(UTC).isoformat(),
+        }
+
+        with (
+            patch(
+                "app.core.agent.agent_graph.llm_with_tools",
+                SimpleNamespace(invoke=unittest.mock.Mock(return_value=response)),
+            ),
+            patch("app.core.agent.agent_graph.store_reply_timing_state", return_value=True),
+        ):
+            result = call_model(state)
+
+        self.assertEqual(
+            result["relationship_item_usages"],
+            {
+                "turn_id": "turn-knowledge-1",
+                "items": [{"item_ref": "K1"}],
             },
         )
 

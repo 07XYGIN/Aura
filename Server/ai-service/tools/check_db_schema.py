@@ -38,6 +38,9 @@ DELETE_ACTIONS = {
 def normalize_type(value: str) -> str:
     """统一 PostgreSQL 类型别名和空白，便于模型与数据库直接比较。"""
     normalized = " ".join(value.lower().split())
+    # SQLAlchemy 会把 numeric 精度渲染为 ``numeric(4, 3)``，PostgreSQL 系统目录
+    # 返回 ``numeric(4,3)``；逗号周围空白不改变类型语义，比较前应统一去掉。
+    normalized = re.sub(r"\s*,\s*", ",", normalized)
     aliases = {
         "varchar": "character varying",
         "bool": "boolean",

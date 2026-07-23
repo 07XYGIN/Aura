@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的十一张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的十三张业务表。
 
 ## 业务模型表
 
@@ -11,6 +11,8 @@
 | `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
+| `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
+| `relationship_chapter` | 由真实重要关系事件形成的低频时间线章节 | `app/core/continuity/` |
 | `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
 | `bash_game_move` | 巴什博弈每一步不可变行动历史 | `app/core/games/bash/service.py` |
 | `companion_pet` | 小乔与 Aura 共同宠物的当前状态 | `app/core/pet/service.py` |
@@ -58,6 +60,17 @@
 
 聊天历史以 LangGraph checkpoint 为唯一事实源；语义记忆以 LangChain PGVector 表为事实源；
 需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
+稳定关系知识以 `relationship_item` 为可更新投影，低频关系阶段以 `relationship_chapter` 为时间线；
+两者都显式区分小乔、Aura、共同视角以及现实、共同历史、想象、愿望和承诺，不使用关系积分。
+
+## 关系知识与章节
+
+`relationship_item` 使用 `(user_id, item_key)` 保证同一稳定知识不会因模型或网络重试重复创建。
+昵称、玩笑、暗号、仪式和共同物件带使用冷却；说话边界、纠偏规则和稳定立场不受冷却影响，
+始终可以约束当前回复。`confidence` 只表示原对话对该知识的支持程度，不衡量关系好坏。
+
+`relationship_chapter` 使用 `(user_id, source_key)` 保证同一来源只创建一次章节，同时以部分唯一
+索引保证每个用户最多一个 `current` 章节。新章节创建时，服务会在同一事务中关闭上一章节。
 
 ## 主动消息可靠投递
 

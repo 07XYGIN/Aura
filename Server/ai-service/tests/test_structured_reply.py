@@ -62,6 +62,22 @@ class StructuredReplyTest(unittest.TestCase):
             [{"thread_ref": "T1", "action": "follow_up"}],
         )
 
+    def test_only_whitelisted_relationship_item_usages_survive(self) -> None:
+        """关系物件使用回执只接受 K1-K12，并应去掉重复引用。"""
+
+        payload = try_parse_structured_reply_payload(
+            '{"messages":["宝宝，过来。"],"itemUsages":['
+            '{"itemRef":"K2"},{"itemRef":"K2"},{"itemRef":"K99"},'
+            '{"itemRef":"T1"},{"itemRef":"K3","extra":"ignored"}]}'
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(
+            [usage.item_ref for usage in payload.item_usages],
+            ["K2", "K3"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

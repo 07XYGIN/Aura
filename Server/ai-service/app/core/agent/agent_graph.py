@@ -18,6 +18,10 @@ from langsmith import traceable
 from app.core.attachment_store import format_attachment_context, load_attachments
 from app.core.config import llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
+from app.core.continuity.knowledge import (
+    capture_relationship_knowledge_sync,
+    mark_relationship_items_used_sync,
+)
 from app.core.continuity.service import (
     apply_reply_thread_actions_sync,
     capture_relationship_candidates_sync,
@@ -69,6 +73,7 @@ class AuraState(TypedDict, total=False):
     pet_context: str
     relationship_context: str
     relationship_actions: dict[str, Any]
+    relationship_item_usages: dict[str, Any]
 
 
 tools = CHAT_TOOLS
@@ -127,6 +132,10 @@ def call_model(state: AuraState) -> AuraState:
                 "turn_id": state.get("turn_id"),
                 "items": [],
             },
+            "relationship_item_usages": {
+                "turn_id": state.get("turn_id"),
+                "items": [],
+            },
         }
 
     draft_content = message_content_to_text(getattr(response, "content", ""))
@@ -144,12 +153,20 @@ def call_model(state: AuraState) -> AuraState:
         action.model_dump()
         for action in (parsed_payload.thread_actions if parsed_payload is not None else [])
     ]
+    relationship_item_usages = [
+        usage.model_dump()
+        for usage in (parsed_payload.item_usages if parsed_payload is not None else [])
+    ]
     return {
         "messages": reply_messages,
         "last_reply_batch": reply_batch,
         "relationship_actions": {
             "turn_id": state.get("turn_id"),
             "items": relationship_actions,
+        },
+        "relationship_item_usages": {
+            "turn_id": state.get("turn_id"),
+            "items": relationship_item_usages,
         },
     }
 
@@ -311,6 +328,7 @@ def aura_agent(
         "pet_context": pet_context,
         "relationship_context": relationship_context["prompt_context"],
         "relationship_actions": {"turn_id": turn_id, "items": []},
+        "relationship_item_usages": {"turn_id": turn_id, "items": []},
     }
 
     memory_candidate = turn_judgement["memory_candidate"]
@@ -370,14 +388,38 @@ def aura_agent(
             user_id,
         )
 
+    relationship_item_candidates = memory_candidate.get("relationship_items")
+    relationship_chapter_candidate = memory_candidate.get("relationship_chapter")
+    if (relationship_item_candidates or relationship_chapter_candidate) and client_message_id:
+        capture_relationship_knowledge_sync(
+            user_id,
+            relationship_item_candidates,
+            relationship_chapter_candidate,
+            source_message_id=client_message_id,
+            source_turn_id=turn_id,
+        )
+    elif relationship_item_candidates or relationship_chapter_candidate:
+        logging.warning(
+            "本轮识别到关系知识候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
+            user_id,
+        )
+
     reply_batch = get_latest_reply_batch(config, turn_id)
     relationship_actions = get_latest_relationship_actions(config, turn_id)
+    relationship_item_usages = get_latest_relationship_item_usages(config, turn_id)
     if reply_batch and relationship_actions:
         apply_reply_thread_actions_sync(
             user_id,
             relationship_actions,
             relationship_context["items"],
             turn_id=turn_id,
+        )
+    if reply_batch and relationship_item_usages:
+        mark_relationship_items_used_sync(
+            user_id,
+            relationship_context["knowledge_items"],
+            relationship_item_usages,
+            source_turn_id=turn_id,
         )
     if reply_batch:
         for message in reply_batch.get("messages", []):
@@ -562,6 +604,23 @@ def get_latest_relationship_actions(config: RunnableConfig, turn_id: str) -> lis
     return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
 
 
+def get_latest_relationship_item_usages(
+    config: RunnableConfig,
+    turn_id: str,
+) -> list[dict[str, Any]]:
+    """读取当前回合主回复中通过白名单校验的关系物件使用回执。"""
+
+    if aura is None:
+        return []
+    state = aura.get_state(config)
+    values = state.values if state and state.values else {}
+    usage_batch = values.get("relationship_item_usages")
+    if not isinstance(usage_batch, dict) or usage_batch.get("turn_id") != turn_id:
+        return []
+    items = usage_batch.get("items")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
 def build_time_context(messages: list, current_time: datetime) -> dict[str, Any]:
     """根据当前时间和最近消息时间生成对话间隔上下文。"""
 
@@ -718,6 +777,10 @@ def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
             memory_scope=memory_scope,
             confidence=candidate.get("confidence") if isinstance(candidate.get("confidence"), (float, int)) else None,
             signals=candidate.get("signals") if isinstance(candidate.get("signals"), list) else None,
+            extra_metadata={
+                "perspective": candidate.get("perspective") or "user",
+                "world_layer": candidate.get("world_layer") or "reality",
+            },
         )
         logging.info("记忆候选保存完成 scope=%s user_id=%s title=%s", memory_scope, user_id, title)
     except Exception:

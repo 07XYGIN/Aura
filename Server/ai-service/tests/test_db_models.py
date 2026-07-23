@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import SmallInteger
+from sqlalchemy import Boolean, Numeric, SmallInteger
 from sqlalchemy.dialects.postgresql import JSON
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,8 @@ from app.db.models import (
     LangchainPgEmbedding,
     ProactiveMessage,
     PetEvent,
+    RelationshipChapter,
+    RelationshipItem,
     RelationshipThread,
     RelationshipThreadEvent,
     Users,
@@ -35,6 +37,8 @@ class DbModelsTest(unittest.TestCase):
                 "proactive_message",
                 "relationship_thread",
                 "relationship_thread_event",
+                "relationship_item",
+                "relationship_chapter",
                 "bash_game_session",
                 "bash_game_move",
                 "companion_pet",
@@ -66,6 +70,9 @@ class DbModelsTest(unittest.TestCase):
                 "idx_proactive_message_claim",
                 "idx_relationship_thread_user_status_follow_up",
                 "idx_relationship_thread_event_thread_occurred",
+                "idx_relationship_item_user_type_status",
+                "uq_relationship_chapter_current_user",
+                "idx_relationship_chapter_user_sequence",
                 "uq_bash_game_active_user",
                 "idx_bash_game_user_created",
                 "idx_bash_move_session_created",
@@ -182,6 +189,51 @@ class DbModelsTest(unittest.TestCase):
         )
         self.assertEqual(RelationshipThread.__table__.c.version.server_default.arg, "1")
         self.assertEqual(RelationshipThread.__table__.c.status.server_default.arg, "pending")
+
+    def test_relationship_item_models_perspective_cooldown_and_mutable_stance(self):
+        """关系知识应支持事实分层和自然冷却，但不能退化为亲密度打分。"""
+
+        table = RelationshipItem.__table__
+        self.assertNotIn("relationship_score", table.c)
+        self.assertIsInstance(table.c.confidence.type, Numeric)
+        self.assertIsInstance(table.c.can_change.type, Boolean)
+        self.assertEqual(table.c.confidence.server_default.arg, "1")
+        self.assertEqual(table.c.can_change.server_default.arg, "true")
+        constraints = {constraint.name for constraint in table.constraints}
+        self.assertTrue(
+            {
+                "chk_relationship_item_type",
+                "chk_relationship_item_perspective",
+                "chk_relationship_item_world_layer",
+                "chk_relationship_item_status",
+                "chk_relationship_item_cooldown",
+                "chk_relationship_item_confidence",
+                "chk_relationship_item_version",
+                "uq_relationship_item_user_key",
+            }.issubset(constraints)
+        )
+        user_fk = next(iter(table.c.user_id.foreign_keys))
+        self.assertEqual(user_fk.target_fullname, "users.id")
+        self.assertEqual(user_fk.ondelete, "CASCADE")
+
+    def test_relationship_chapter_is_source_idempotent_and_single_current(self):
+        """章节必须按来源幂等，并且每个用户同一时刻只能有一个当前章节。"""
+
+        table = RelationshipChapter.__table__
+        constraints = {constraint.name for constraint in table.constraints}
+        self.assertTrue(
+            {
+                "chk_relationship_chapter_sequence",
+                "chk_relationship_chapter_status",
+                "uq_relationship_chapter_user_sequence",
+                "uq_relationship_chapter_user_source",
+            }.issubset(constraints)
+        )
+        self.assertFalse(table.c.source_key.nullable)
+        current_index = next(
+            index for index in table.indexes if index.name == "uq_relationship_chapter_current_user"
+        )
+        self.assertTrue(current_index.unique)
 
     def test_pet_models_preserve_single_ownership_and_event_history(self):
         """共同宠物应归属用户，事件应随宠物级联删除。"""
