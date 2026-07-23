@@ -10,7 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.db.models import Base, LangchainPgCollection, LangchainPgEmbedding, ProactiveMessage, Users
+from app.db.models import (
+    Base,
+    BashGameMove,
+    BashGameSession,
+    LangchainPgCollection,
+    LangchainPgEmbedding,
+    ProactiveMessage,
+    Users,
+)
 
 
 class DbModelsTest(unittest.TestCase):
@@ -20,6 +28,8 @@ class DbModelsTest(unittest.TestCase):
                 "users",
                 "self_changelog_entry",
                 "proactive_message",
+                "bash_game_session",
+                "bash_game_move",
                 "langchain_pg_collection",
                 "langchain_pg_embedding",
             },
@@ -44,6 +54,9 @@ class DbModelsTest(unittest.TestCase):
                 "idx_self_changelog_unreacted",
                 "idx_self_changelog_occurred_at",
                 "idx_proactive_message_user_schedule",
+                "uq_bash_game_active_user",
+                "idx_bash_game_user_created",
+                "idx_bash_move_session_created",
                 "ix_cmetadata_gin",
             },
             index_names,
@@ -54,6 +67,16 @@ class DbModelsTest(unittest.TestCase):
         foreign_keys = list(ProactiveMessage.__table__.c.user_id.foreign_keys)
         self.assertEqual(len(foreign_keys), 1)
         self.assertEqual(foreign_keys[0].target_fullname, "users.id")
+
+    def test_bash_models_preserve_user_ownership_and_move_history(self):
+        """游戏会话应归属用户，行动应随会话级联删除。"""
+
+        game_user_fk = list(BashGameSession.__table__.c.user_id.foreign_keys)
+        move_session_fk = list(BashGameMove.__table__.c.session_id.foreign_keys)
+        self.assertEqual(game_user_fk[0].target_fullname, "users.id")
+        self.assertEqual(game_user_fk[0].ondelete, "CASCADE")
+        self.assertEqual(move_session_fk[0].target_fullname, "bash_game_session.id")
+        self.assertEqual(move_session_fk[0].ondelete, "CASCADE")
 
 
 if __name__ == "__main__":

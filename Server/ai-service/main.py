@@ -16,7 +16,7 @@ from app.core.exceptions import (
 from app.core.logging_config import configure_logging
 from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
-from app.routers import admin, attachments, history, location, memory, msg, user
+from app.routers import admin, attachments, games, history, location, memory, msg, user
 
 configure_logging()
 
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     )
     routers: list[APIRouter] = [
         admin.router,
+        games.router,
         msg.router,
         history.router,
         memory.router,

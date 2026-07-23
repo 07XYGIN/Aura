@@ -117,6 +117,107 @@ class ProactiveMessage(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class BashGameSession(Base, TimestampMixin):
+    """一局巴什博弈的当前权威状态和并发版本。"""
+
+    __tablename__ = "bash_game_session"
+    __table_args__ = (
+        CheckConstraint("initial_stones BETWEEN 5 AND 100", name="chk_bash_game_initial_stones"),
+        CheckConstraint("max_take BETWEEN 1 AND 10 AND max_take < initial_stones", name="chk_bash_game_max_take"),
+        CheckConstraint(
+            "remaining_stones BETWEEN 0 AND initial_stones",
+            name="chk_bash_game_remaining_stones",
+        ),
+        CheckConstraint("first_player IN ('user', 'aura')", name="chk_bash_game_first_player"),
+        CheckConstraint(
+            "current_player IS NULL OR current_player IN ('user', 'aura')",
+            name="chk_bash_game_current_player",
+        ),
+        CheckConstraint(
+            "difficulty IN ('serious', 'casual', 'teaching')",
+            name="chk_bash_game_difficulty",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'finished', 'resigned')",
+            name="chk_bash_game_status",
+        ),
+        CheckConstraint(
+            "winner IS NULL OR winner IN ('user', 'aura')",
+            name="chk_bash_game_winner",
+        ),
+        UniqueConstraint("user_id", "start_request_id", name="uq_bash_game_start_request"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    initial_stones: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=15, server_default="15")
+    remaining_stones: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    max_take: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=3, server_default="3")
+    first_player: Mapped[str] = mapped_column(String(16), nullable=False)
+    current_player: Mapped[str | None] = mapped_column(String(16))
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="serious", server_default="serious")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
+    winner: Mapped[str | None] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    start_request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BashGameMove(Base):
+    """巴什博弈不可变的单步行动事件。"""
+
+    __tablename__ = "bash_game_move"
+    __table_args__ = (
+        CheckConstraint("turn_no >= 1", name="chk_bash_move_turn_no"),
+        CheckConstraint("player IN ('user', 'aura')", name="chk_bash_move_player"),
+        CheckConstraint("take_count >= 1", name="chk_bash_move_take_count"),
+        CheckConstraint(
+            "remaining_before - remaining_after = take_count AND remaining_after >= 0",
+            name="chk_bash_move_remaining",
+        ),
+        CheckConstraint(
+            "(player = 'user' AND client_move_id IS NOT NULL) OR "
+            "(player = 'aura' AND client_move_id IS NULL)",
+            name="chk_bash_move_client_id",
+        ),
+        UniqueConstraint("session_id", "turn_no", name="uq_bash_move_turn"),
+        UniqueConstraint("session_id", "client_move_id", name="uq_bash_move_client_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("bash_game_session.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    turn_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    player: Mapped[str] = mapped_column(String(16), nullable=False)
+    take_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    remaining_before: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    remaining_after: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    strategy: Mapped[str | None] = mapped_column(String(32))
+    client_move_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class LangchainPgCollection(Base):
     """LangChain PGVector 使用的向量集合元数据表。"""
 
@@ -154,6 +255,22 @@ Index(
     ProactiveMessage.user_id,
     ProactiveMessage.status,
     ProactiveMessage.scheduled_at,
+)
+Index(
+    "uq_bash_game_active_user",
+    BashGameSession.user_id,
+    unique=True,
+    postgresql_where=text("((status)::text = 'active'::text)"),
+)
+Index(
+    "idx_bash_game_user_created",
+    BashGameSession.user_id,
+    BashGameSession.created_at.desc(),
+)
+Index(
+    "idx_bash_move_session_created",
+    BashGameMove.session_id,
+    BashGameMove.created_at,
 )
 Index(
     "ix_cmetadata_gin",

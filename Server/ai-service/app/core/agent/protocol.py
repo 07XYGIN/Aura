@@ -72,6 +72,25 @@ def error_event(message: str) -> dict[str, Any]:
     return {"event": "error", "type": "error", "message": message}
 
 
+def bash_game_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """构造巴什博弈状态事件。
+
+    Args:
+        snapshot: 游戏事务服务返回的公开快照，包含动作、棋局和行动列表。
+
+    Returns:
+        同时携带 ``event``/``type`` 的 SSE 业务事件；旧客户端可以忽略未知
+        类型，新客户端可直接用 ``bashGame`` 渲染棋局。
+    """
+
+    return {
+        "event": "bash_game_state",
+        "type": "bash_game_state",
+        "action": snapshot.get("action"),
+        "bashGame": snapshot,
+    }
+
+
 def sse_data(event: dict[str, Any]) -> str:
     """把事件字典编码为一帧 UTF-8 SSE ``data`` 文本。"""
 

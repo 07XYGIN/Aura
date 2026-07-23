@@ -9,10 +9,19 @@ from typing import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.agent_graph import aura_agent
-from app.core.agent.protocol import error_event, sse_data
+from app.core.agent.agent_graph import append_external_history_turn, aura_agent
+from app.core.agent.protocol import (
+    assistant_message_event,
+    bash_game_state_event,
+    content_event,
+    error_event,
+    sse_data,
+)
 from app.core.emotion import derive_emotion_state
+from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
+from app.core.games.bash.service import BashGameServiceError
 from app.core.silence_state import schedule_user_message_activity_record
+from app.db.session import AsyncSessionLocal
 from app.schemas.request import MessageRequest
 
 router = APIRouter(
@@ -197,6 +206,77 @@ async def event_generator(
         stop_event.set()
 
 
+async def bash_game_event_generator(
+    response: BashChatResponse,
+    *,
+    message: str,
+    user_id: str,
+    client_message_id: str | None,
+) -> AsyncIterator[str]:
+    """把已完成的巴什博弈事务转换为 SSE，并写入统一聊天历史。
+
+    Args:
+        response: 游戏聊天服务返回的已提交结果。
+        message: 用户原始游戏指令。
+        user_id: 当前用户和 LangGraph 线程 ID。
+        client_message_id: 客户端回合 ID，用于历史去重。
+
+    Yields:
+        可选 ``bash_game_state``、一到多条 Aura 消息以及最终 ``[DONE]``。
+
+    Side Effects:
+        在线程中向 LangGraph checkpoint 写入本轮用户与 Aura 消息。写入失败时
+        降级为兼容 content 事件，不会改变已经提交的游戏状态。
+    """
+
+    snapshot = response.snapshot
+    if snapshot is not None:
+        yield sse_data(bash_game_state_event(snapshot))
+
+    source_metadata: dict[str, object] = {"game_action": response.action}
+    if snapshot and snapshot.get("game"):
+        game = snapshot["game"]
+        source_metadata.update(
+            {
+                "game_session_id": game.get("id"),
+                "game_version": game.get("version"),
+            }
+        )
+    idempotent_replay = bool(snapshot and snapshot.get("idempotentReplay"))
+    reply_batch = None
+    if not idempotent_replay:
+        try:
+            reply_batch = await asyncio.to_thread(
+                append_external_history_turn,
+                user_id,
+                message,
+                response.messages,
+                source="bash_game",
+                turn_id=client_message_id,
+                client_message_id=client_message_id,
+                source_metadata=source_metadata,
+            )
+        except Exception:
+            logging.exception("巴什博弈消息写入统一聊天历史失败，降级为 content 事件")
+    if reply_batch:
+        for item in reply_batch.get("messages", []):
+            yield sse_data(
+                assistant_message_event(
+                    content=item["content"],
+                    message_id=item["message_id"],
+                    batch_id=item["batch_id"],
+                    batch_index=item["batch_index"],
+                    batch_total=item["batch_total"],
+                    delay_ms=item["delay_ms"],
+                    sent_at=item["sent_at"],
+                )
+            )
+    else:
+        for content in response.messages:
+            yield sse_data(content_event(content))
+    yield "data: [DONE]\n\n"
+
+
 @router.post("/send/sse/")
 async def send_message(msg: MessageRequest):
     """申请并发槽并为一轮用户消息创建 SSE 响应。
@@ -207,6 +287,40 @@ async def send_message(msg: MessageRequest):
     Returns:
         ``text/event-stream`` 流式响应；并同时异步记录用户活跃时间。
     """
+    game_response: BashChatResponse | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            game_response = await try_handle_bash_chat_message(
+                session,
+                message=msg.message,
+                user_id=msg.user_id,
+                client_message_id=msg.client_message_id,
+            )
+    except BashGameServiceError as exc:
+        game_response = BashChatResponse(
+            action="rejected",
+            snapshot=None,
+            messages=[str(exc)],
+        )
+    except Exception:
+        logging.exception("巴什博弈聊天分流失败，回退到普通 Aura 对话")
+
+    if game_response is not None:
+        schedule_user_message_activity_record(msg.user_id)
+        return StreamingResponse(
+            bash_game_event_generator(
+                game_response,
+                message=msg.message,
+                user_id=msg.user_id,
+                client_message_id=msg.client_message_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     if not _try_acquire_sse_slot():
         raise HTTPException(
             status_code=429,

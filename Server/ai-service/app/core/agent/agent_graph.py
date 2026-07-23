@@ -782,6 +782,109 @@ def append_proactive_history_message(
     return True
 
 
+def append_external_history_turn(
+    user_id: str,
+    human_content: str,
+    aura_contents: list[str],
+    *,
+    source: str,
+    turn_id: str | None = None,
+    client_message_id: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
+    sent_at: datetime | None = None,
+) -> dict[str, Any] | None:
+    """把确定性领域功能的一轮问答追加到 LangGraph 历史。
+
+    Args:
+        user_id: LangGraph 线程 ID。
+        human_content: 用户触发领域动作的原始文本。
+        aura_contents: 已由领域规则确认、需要展示的 Aura 消息列表。
+        source: 消息来源标识，例如 ``bash_game``；用于历史审计和后续过滤。
+        turn_id: 可选回合 ID；未提供时生成带来源前缀的新 ID。
+        client_message_id: 客户端消息 ID，用于历史去重和请求关联。
+        source_metadata: 需要附加到双方消息的只读领域元数据。
+        sent_at: 回合开始时间，默认当前 UTC 时间。
+
+    Returns:
+        与普通 Agent 回复相同结构的 ``reply_batch``；图未初始化、参数无效或
+        历史写入失败时返回 ``None``。
+
+    Side Effects:
+        向现有 LangGraph checkpoint 追加一条 HumanMessage 和一到多条 AIMessage，
+        并写入临时回复时序状态。领域数据库已经提交的事实不会因历史失败回滚。
+    """
+
+    if aura is None:
+        logging.warning("Aura 对话图尚未初始化，跳过外部功能历史写入 source=%s", source)
+        return None
+
+    normalized_user_id = str(user_id or "").strip()
+    normalized_human_content = str(human_content or "").strip()
+    normalized_source = str(source or "").strip()
+    normalized_aura_contents = [
+        str(content).strip()
+        for content in aura_contents
+        if isinstance(content, str) and content.strip()
+    ]
+    if not normalized_user_id or not normalized_human_content or not normalized_source or not normalized_aura_contents:
+        return None
+
+    started_at = sent_at or datetime.now(UTC)
+    normalized_turn_id = str(turn_id or client_message_id or f"{normalized_source}-{uuid4()}")
+    metadata = dict(source_metadata or {})
+    state: AuraState = {
+        "user_id": normalized_user_id,
+        "turn_id": normalized_turn_id,
+        "request_started_at": started_at.isoformat(),
+    }
+    ai_messages, reply_batch = build_reply_messages_from_texts(
+        normalized_aura_contents,
+        AIMessage(content=""),
+        state,
+    )
+    for message in ai_messages:
+        message.additional_kwargs.update(
+            {
+                "source": normalized_source,
+                **metadata,
+            }
+        )
+    human_message = HumanMessage(
+        id=f"human-{normalized_turn_id}",
+        content=normalized_human_content,
+        additional_kwargs={
+            "turn_id": normalized_turn_id,
+            "sent_at": started_at.isoformat(),
+            "source": normalized_source,
+            **({"client_message_id": client_message_id} if client_message_id else {}),
+            **metadata,
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": normalized_user_id,
+            "user_id": normalized_user_id,
+        }
+    }
+    try:
+        aura.update_state(
+            config,
+            {
+                "messages": [human_message, *ai_messages],
+                "user_id": normalized_user_id,
+                "last_reply_batch": reply_batch,
+            },
+        )
+    except Exception:
+        logging.exception(
+            "外部功能消息写入 Aura 历史失败 source=%s user_id=%s",
+            normalized_source,
+            normalized_user_id,
+        )
+        return None
+    return reply_batch
+
+
 def delete_history_message(user_id: str, message_id: str) -> bool:
     """向 LangGraph 写入单条 RemoveMessage；目标不存在时返回 ``False``。"""
 
