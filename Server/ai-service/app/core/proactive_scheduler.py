@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.agent_graph import append_proactive_history_message, get_history
+from app.core.continuity.state import ensure_daily_states_async
 from app.core.proactive.service import (
     DAILY_GREETING_WINDOWS,
     EVENING_TRIGGER_TYPE,
@@ -930,6 +931,11 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
     now = now or datetime.now(UTC)
     has_redis = redis_available()
     async with AsyncSessionLocal() as session:
+        try:
+            await ensure_daily_states_async(session, now=now)
+        except Exception:
+            await session.rollback()
+            logging.exception("Aura 每日生活状态后台创建失败，本轮主动消息继续")
         silence_user_ids = collect_due_silence_user_ids(now=now) if has_redis else []
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
         await ensure_daily_greeting_messages(session, now=now)

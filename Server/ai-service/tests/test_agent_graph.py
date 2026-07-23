@@ -61,6 +61,17 @@ class AgentGraphTest(unittest.TestCase):
         self.assertIn("【本轮判断】", prompt)
         self.assertIn("孤独陪伴", prompt)
 
+    def test_runtime_prompt_includes_continuity_state_after_pet_context(self):
+        prompt = build_runtime_system_prompt(
+            {
+                "pet_context": "【共同宠物】\n今天有一条真实宠物事件。",
+                "continuity_state_context": "【连续状态】\n今天在家里书桌画草图。",
+            }
+        )
+
+        self.assertIn("【连续状态】", prompt)
+        self.assertGreater(prompt.find("【连续状态】"), prompt.find("【共同宠物】"))
+
     def test_runtime_prompt_includes_few_shot_examples(self):
         prompt = build_runtime_system_prompt({})
 

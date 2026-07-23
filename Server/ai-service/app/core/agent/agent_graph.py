@@ -22,6 +22,11 @@ from app.core.continuity.knowledge import (
     capture_relationship_knowledge_sync,
     mark_relationship_items_used_sync,
 )
+from app.core.continuity.state import (
+    apply_scene_message_sync,
+    capture_emotional_afterglow_sync,
+    load_continuity_state_context_sync,
+)
 from app.core.continuity.service import (
     apply_reply_thread_actions_sync,
     capture_relationship_candidates_sync,
@@ -74,6 +79,7 @@ class AuraState(TypedDict, total=False):
     relationship_context: str
     relationship_actions: dict[str, Any]
     relationship_item_usages: dict[str, Any]
+    continuity_state_context: str
 
 
 tools = CHAT_TOOLS
@@ -187,6 +193,7 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
             state.get("relationship_context") or "",
             state.get("pet_context") or "",
+            state.get("continuity_state_context") or "",
             STRUCTURED_REPLY_PROMPT.strip(),
         )
         if part
@@ -282,8 +289,15 @@ def aura_agent(
     previous_messages = previous_state.values.get("messages", []) if previous_state and previous_state.values else []
     time_context = build_time_context(previous_messages, request_started_at)
     self_changelog_context = load_self_changelog_context_sync()
-    pet_context = load_pet_context_sync(user_id)
     relationship_context = load_relationship_context_sync(user_id)
+    apply_scene_message_sync(
+        user_id,
+        human_prompt,
+        client_message_id,
+        now=request_started_at,
+    )
+    continuity_state = load_continuity_state_context_sync(user_id, now=request_started_at)
+    pet_context = load_pet_context_sync(user_id)
 
     turn_judgement = judge_turn(
         human_prompt,
@@ -292,6 +306,13 @@ def aura_agent(
         relationship_context=relationship_context["judge_context"],
     )
     emotion_state = turn_judgement["emotion"]
+    if not turn_judgement["risk_signal"].get("requires_safety_gate"):
+        capture_emotional_afterglow_sync(
+            user_id,
+            emotion_state,
+            client_message_id,
+            now=request_started_at,
+        )
     attachments = load_attachments(user_id, attachment_ids)
     logging.info(
         "Aura 对话开始 user_id=%s message_length=%s attachments=%s",
@@ -329,6 +350,7 @@ def aura_agent(
         "relationship_context": relationship_context["prompt_context"],
         "relationship_actions": {"turn_id": turn_id, "items": []},
         "relationship_item_usages": {"turn_id": turn_id, "items": []},
+        "continuity_state_context": continuity_state["prompt_context"],
     }
 
     memory_candidate = turn_judgement["memory_candidate"]

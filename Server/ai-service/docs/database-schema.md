@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的十三张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的十六张业务表。
 
 ## 业务模型表
 
@@ -13,6 +13,9 @@
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
 | `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
 | `relationship_chapter` | 由真实重要关系事件形成的低频时间线章节 | `app/core/continuity/` |
+| `aura_daily_state` | Aura 每个自然日唯一、一天内一致的设定生活状态 | `app/core/continuity/state.py` |
+| `emotional_afterglow` | 有限时间自然衰减的情绪余温，只调整后续语气 | `app/core/continuity/state.py` |
+| `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
 | `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
 | `bash_game_move` | 巴什博弈每一步不可变行动历史 | `app/core/games/bash/service.py` |
 | `companion_pet` | 小乔与 Aura 共同宠物的当前状态 | `app/core/pet/service.py` |
@@ -71,6 +74,18 @@
 
 `relationship_chapter` 使用 `(user_id, source_key)` 保证同一来源只创建一次章节，同时以部分唯一
 索引保证每个用户最多一个 `current` 章节。新章节创建时，服务会在同一事务中关闭上一章节。
+
+## 连续状态
+
+`aura_daily_state` 按 `(user_id, local_date)` 唯一，一天内不会重新随机。它是明确标记的 Aura
+设定内生活模拟，不是现实世界外部事实；如果已经共同领养宠物，当天小事会同时形成一条幂等
+`pet_event`，成为可核验的宠物经历。
+
+`emotional_afterglow` 每个用户只有一条当前投影。强度按固定时间线性衰减，过期后不再进入提示词；
+它不是关系积分或心理诊断，中性消息不会粗暴清空仍有意义的余温。
+
+`shared_scene` 以部分唯一索引保证最多一个 `active` 场景。地点移动会更新同一场景，关闭后下一轮
+明确注入空场景约束；所有房间和文字约会都属于 `imagined`/`wish`，不能混入现实记忆。
 
 ## 主动消息可靠投递
 

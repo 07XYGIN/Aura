@@ -475,6 +475,54 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
             await task
             tick.assert_not_awaited()
 
+    async def test_daily_state_failure_does_not_stop_persistent_outbox(self):
+        """每日生活投影失败时应回滚该事务，但仍继续领取并发送已有主动消息。"""
+
+        now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
+        session = SimpleNamespace(rollback=AsyncMock())
+
+        class SessionContext:
+            async def __aenter__(self):
+                return session
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        with (
+            patch("app.core.proactive_scheduler.AsyncSessionLocal", return_value=SessionContext()),
+            patch("app.core.proactive_scheduler.redis_available", return_value=False),
+            patch(
+                "app.core.proactive_scheduler.ensure_daily_states_async",
+                AsyncMock(side_effect=RuntimeError("daily unavailable")),
+            ),
+            patch(
+                "app.core.proactive_scheduler.trigger_silence_proactive_messages",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_daily_greeting_messages",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_relationship_follow_up_messages",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.claim_due_proactive_messages",
+                AsyncMock(return_value=[]),
+            ) as claim,
+            patch(
+                "app.core.proactive_scheduler.send_proactive_message_records",
+                AsyncMock(return_value=0),
+            ) as send,
+        ):
+            sent_count = await proactive_scheduler.run_proactive_scheduler_tick(now=now)
+
+        self.assertEqual(sent_count, 0)
+        session.rollback.assert_awaited_once()
+        claim.assert_awaited_once_with(session, now=now)
+        send.assert_awaited_once_with(session, [], now=now)
+
 
 if __name__ == "__main__":
     unittest.main()

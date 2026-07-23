@@ -358,6 +358,146 @@ class RelationshipChapter(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class AuraDailyState(Base, TimestampMixin):
+    """Aura 在一个本地自然日内保持一致的轻量设定生活状态。"""
+
+    __tablename__ = "aura_daily_state"
+    __table_args__ = (
+        CheckConstraint(
+            "energy IN ('rested', 'steady', 'low')",
+            name="chk_aura_daily_state_energy",
+        ),
+        CheckConstraint(
+            "mood IN ('calm', 'focused', 'playful', 'annoyed', 'tired', 'cozy')",
+            name="chk_aura_daily_state_mood",
+        ),
+        CheckConstraint(
+            "generated_by IN ('deterministic', 'model', 'user')",
+            name="chk_aura_daily_state_generated_by",
+        ),
+        UniqueConstraint("user_id", "local_date", name="uq_aura_daily_state_user_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Asia/Shanghai", server_default="Asia/Shanghai")
+    activity: Mapped[str] = mapped_column(Text, nullable=False)
+    energy: Mapped[str] = mapped_column(String(16), nullable=False)
+    mood: Mapped[str] = mapped_column(String(24), nullable=False)
+    location: Mapped[str] = mapped_column(String(160), nullable=False)
+    pet_event: Mapped[str | None] = mapped_column(Text)
+    current_content: Mapped[str | None] = mapped_column(Text)
+    daily_event: Mapped[str | None] = mapped_column(Text)
+    generated_by: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="deterministic",
+        server_default="deterministic",
+    )
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class EmotionalAfterglow(Base, TimestampMixin):
+    """保存会自然衰减、但不会在下一轮立刻消失的情绪余温。"""
+
+    __tablename__ = "emotional_afterglow"
+    __table_args__ = (
+        CheckConstraint(
+            "emotion IN ('happy', 'distressed', 'stressed', 'angry', 'lonely', 'tired', "
+            "'affectionate', 'unsettled')",
+            name="chk_emotional_afterglow_emotion",
+        ),
+        CheckConstraint(
+            "interaction_mode IN ('natural', 'affection', 'repair')",
+            name="chk_emotional_afterglow_interaction_mode",
+        ),
+        CheckConstraint(
+            "intensity BETWEEN 0 AND 1",
+            name="chk_emotional_afterglow_intensity",
+        ),
+        CheckConstraint("version >= 1", name="chk_emotional_afterglow_version"),
+        UniqueConstraint("user_id", name="uq_emotional_afterglow_user"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    emotion: Mapped[str] = mapped_column(String(24), nullable=False)
+    interaction_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    intensity: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False)
+    source_message_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class SharedScene(Base, TimestampMixin):
+    """保存双方当前想象场景的位置、物件和有限状态机进度。"""
+
+    __tablename__ = "shared_scene"
+    __table_args__ = (
+        CheckConstraint(
+            "scene_type IN ('room', 'date', 'imagined')",
+            name="chk_shared_scene_type",
+        ),
+        CheckConstraint(
+            "world_layer IN ('imagined', 'wish')",
+            name="chk_shared_scene_world_layer",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'closed')",
+            name="chk_shared_scene_status",
+        ),
+        CheckConstraint("version >= 1", name="chk_shared_scene_version"),
+        UniqueConstraint("user_id", "source_key", name="uq_shared_scene_user_source"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    scene_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    world_layer: Mapped[str] = mapped_column(String(24), nullable=False, default="imagined", server_default="imagined")
+    place: Mapped[str] = mapped_column(String(160), nullable=False)
+    participants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    objects: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    state_json: Mapped[dict] = mapped_column("state", JSONB, nullable=False, default=dict, server_default="{}")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_message_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
 class BashGameSession(Base, TimestampMixin):
     """一局巴什博弈的当前权威状态和并发版本。"""
 
@@ -627,6 +767,27 @@ Index(
     "idx_relationship_chapter_user_sequence",
     RelationshipChapter.user_id,
     RelationshipChapter.sequence_no.desc(),
+)
+Index(
+    "idx_aura_daily_state_user_date",
+    AuraDailyState.user_id,
+    AuraDailyState.local_date.desc(),
+)
+Index(
+    "idx_emotional_afterglow_user_expires",
+    EmotionalAfterglow.user_id,
+    EmotionalAfterglow.expires_at,
+)
+Index(
+    "uq_shared_scene_active_user",
+    SharedScene.user_id,
+    unique=True,
+    postgresql_where=text("((status)::text = 'active'::text)"),
+)
+Index(
+    "idx_shared_scene_user_started",
+    SharedScene.user_id,
+    SharedScene.started_at.desc(),
 )
 Index(
     "uq_bash_game_active_user",

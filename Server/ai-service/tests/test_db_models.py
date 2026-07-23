@@ -13,9 +13,11 @@ if str(ROOT) not in sys.path:
 
 from app.db.models import (
     Base,
+    AuraDailyState,
     BashGameMove,
     BashGameSession,
     CompanionPet,
+    EmotionalAfterglow,
     LangchainPgCollection,
     LangchainPgEmbedding,
     ProactiveMessage,
@@ -24,6 +26,7 @@ from app.db.models import (
     RelationshipItem,
     RelationshipThread,
     RelationshipThreadEvent,
+    SharedScene,
     Users,
 )
 
@@ -39,6 +42,9 @@ class DbModelsTest(unittest.TestCase):
                 "relationship_thread_event",
                 "relationship_item",
                 "relationship_chapter",
+                "aura_daily_state",
+                "emotional_afterglow",
+                "shared_scene",
                 "bash_game_session",
                 "bash_game_move",
                 "companion_pet",
@@ -73,6 +79,10 @@ class DbModelsTest(unittest.TestCase):
                 "idx_relationship_item_user_type_status",
                 "uq_relationship_chapter_current_user",
                 "idx_relationship_chapter_user_sequence",
+                "idx_aura_daily_state_user_date",
+                "idx_emotional_afterglow_user_expires",
+                "uq_shared_scene_active_user",
+                "idx_shared_scene_user_started",
                 "uq_bash_game_active_user",
                 "idx_bash_game_user_created",
                 "idx_bash_move_session_created",
@@ -234,6 +244,49 @@ class DbModelsTest(unittest.TestCase):
             index for index in table.indexes if index.name == "uq_relationship_chapter_current_user"
         )
         self.assertTrue(current_index.unique)
+
+    def test_continuity_state_models_keep_daily_emotion_and_scene_boundaries(self):
+        """连续状态应分别约束自然日、情绪衰减和唯一活动想象场景。"""
+
+        daily_constraints = {constraint.name for constraint in AuraDailyState.__table__.constraints}
+        afterglow_constraints = {
+            constraint.name for constraint in EmotionalAfterglow.__table__.constraints
+        }
+        scene_constraints = {constraint.name for constraint in SharedScene.__table__.constraints}
+        self.assertTrue(
+            {
+                "chk_aura_daily_state_energy",
+                "chk_aura_daily_state_mood",
+                "chk_aura_daily_state_generated_by",
+                "uq_aura_daily_state_user_date",
+            }.issubset(daily_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_emotional_afterglow_emotion",
+                "chk_emotional_afterglow_interaction_mode",
+                "chk_emotional_afterglow_intensity",
+                "chk_emotional_afterglow_version",
+                "uq_emotional_afterglow_user",
+            }.issubset(afterglow_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_shared_scene_type",
+                "chk_shared_scene_world_layer",
+                "chk_shared_scene_status",
+                "chk_shared_scene_version",
+                "uq_shared_scene_user_source",
+            }.issubset(scene_constraints)
+        )
+        active_index = next(
+            index for index in SharedScene.__table__.indexes if index.name == "uq_shared_scene_active_user"
+        )
+        self.assertTrue(active_index.unique)
+        for model in (AuraDailyState, EmotionalAfterglow, SharedScene):
+            user_fk = next(iter(model.__table__.c.user_id.foreign_keys))
+            self.assertEqual(user_fk.target_fullname, "users.id")
+            self.assertEqual(user_fk.ondelete, "CASCADE")
 
     def test_pet_models_preserve_single_ownership_and_event_history(self):
         """共同宠物应归属用户，事件应随宠物级联删除。"""
