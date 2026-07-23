@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import SmallInteger
@@ -62,6 +63,7 @@ class DbModelsTest(unittest.TestCase):
                 "idx_self_changelog_unreacted",
                 "idx_self_changelog_occurred_at",
                 "idx_proactive_message_user_schedule",
+                "idx_proactive_message_claim",
                 "idx_relationship_thread_user_status_follow_up",
                 "idx_relationship_thread_event_thread_occurred",
                 "uq_bash_game_active_user",
@@ -78,6 +80,61 @@ class DbModelsTest(unittest.TestCase):
         foreign_keys = list(ProactiveMessage.__table__.c.user_id.foreign_keys)
         self.assertEqual(len(foreign_keys), 1)
         self.assertEqual(foreign_keys[0].target_fullname, "users.id")
+
+    def test_proactive_message_models_reliable_outbox_contract(self):
+        table = ProactiveMessage.__table__
+        self.assertEqual(
+            {
+                "id",
+                "user_id",
+                "trigger_type",
+                "title",
+                "content",
+                "scheduled_at",
+                "sent_at",
+                "dedupe_key",
+                "delivery_message_id",
+                "attempt_count",
+                "claimed_until",
+                "last_error",
+                "cancelled_at",
+                "status",
+                "metadata",
+                "created_at",
+                "updated_at",
+            },
+            set(table.c.keys()),
+        )
+        self.assertEqual(table.c.dedupe_key.type.length, 160)
+        self.assertTrue(table.c.dedupe_key.nullable)
+        self.assertEqual(table.c.delivery_message_id.type.length, 128)
+        self.assertFalse(table.c.delivery_message_id.nullable)
+        self.assertEqual(table.c.delivery_message_id.server_default.arg.text, "(gen_random_uuid())::text")
+        self.assertIsInstance(UUID(table.c.delivery_message_id.default.arg(None)), UUID)
+        self.assertFalse(table.c.attempt_count.nullable)
+        self.assertEqual(table.c.attempt_count.server_default.arg, "0")
+        self.assertTrue(table.c.claimed_until.type.timezone)
+        self.assertTrue(table.c.claimed_until.nullable)
+        self.assertTrue(table.c.last_error.nullable)
+        self.assertTrue(table.c.cancelled_at.type.timezone)
+        self.assertTrue(table.c.cancelled_at.nullable)
+
+        constraints = {constraint.name: constraint for constraint in table.constraints}
+        self.assertIn("chk_proactive_message_status", constraints)
+        self.assertIn("uq_proactive_message_user_dedupe", constraints)
+        status_sql = str(constraints["chk_proactive_message_status"].sqltext)
+        for status in ("pending", "processing", "sent", "skipped", "failed", "cancelled"):
+            self.assertIn(f"'{status}'", status_sql)
+        unique_columns = tuple(
+            column.name for column in constraints["uq_proactive_message_user_dedupe"].columns
+        )
+        self.assertEqual(unique_columns, ("user_id", "dedupe_key"))
+
+        claim_index = next(index for index in table.indexes if index.name == "idx_proactive_message_claim")
+        self.assertEqual(
+            tuple(expression.name for expression in claim_index.expressions),
+            ("status", "scheduled_at", "claimed_until"),
+        )
 
     def test_bash_models_preserve_user_ownership_and_move_history(self):
         """游戏会话应归属用户，行动应随会话级联删除。"""

@@ -96,6 +96,13 @@ class ProactiveMessage(Base, TimestampMixin):
     """计划发送的主动消息及其调度、发送状态。"""
 
     __tablename__ = "proactive_message"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'sent', 'skipped', 'failed', 'cancelled')",
+            name="chk_proactive_message_status",
+        ),
+        UniqueConstraint("user_id", "dedupe_key", name="uq_proactive_message_user_dedupe"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -113,6 +120,17 @@ class ProactiveMessage(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dedupe_key: Mapped[str | None] = mapped_column(String(160))
+    delivery_message_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        default=lambda: str(uuid4()),
+        server_default=text("(gen_random_uuid())::text"),
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
@@ -468,6 +486,12 @@ Index(
     ProactiveMessage.user_id,
     ProactiveMessage.status,
     ProactiveMessage.scheduled_at,
+)
+Index(
+    "idx_proactive_message_claim",
+    ProactiveMessage.status,
+    ProactiveMessage.scheduled_at,
+    ProactiveMessage.claimed_until,
 )
 Index(
     "idx_relationship_thread_user_status_follow_up",

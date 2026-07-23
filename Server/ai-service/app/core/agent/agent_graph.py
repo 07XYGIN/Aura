@@ -827,6 +827,20 @@ def append_proactive_history_message(
     if not normalized_user_id or not normalized_content or not normalized_message_id:
         return False
 
+    # reliable outbox 在进程崩溃窗口内可能使用同一 delivery_message_id 重试。
+    # checkpoint 更新前先检查公开历史，确保首次已成功但数据库尚未标 sent 时，
+    # 重试只确认已有消息，不会追加第二条相同主动消息。
+    try:
+        if any(
+            item.get("isProactive")
+            and item.get("id") == f"ai-proactive-{normalized_message_id}"
+            for item in get_history(normalized_user_id)
+        ):
+            return True
+    except Exception:
+        logging.exception("主动消息写入前的幂等历史检查失败 user_id=%s", normalized_user_id)
+        return False
+
     turn_id = f"proactive-{normalized_message_id}"
     config: RunnableConfig = {
         "configurable": {

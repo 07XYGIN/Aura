@@ -7,7 +7,8 @@ from typing import Iterable
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.agent_graph import append_proactive_history_message, get_history
@@ -39,6 +40,9 @@ from app.db.session import AsyncSessionLocal
 PROACTIVE_QUEUE_KEY = "proactive_message_queue"
 PROACTIVE_ENQUEUE_LIMIT = 200
 PROACTIVE_DUE_LIMIT = 50
+PROACTIVE_CLAIM_LEASE_SECONDS = 5 * 60
+PROACTIVE_MAX_DELIVERY_ATTEMPTS = 3
+PROACTIVE_RETRY_BASE_SECONDS = 60
 SILENCE_TRIGGER_TYPE = "silence"
 SILENCE_THRESHOLD_SECONDS = 8 * 3600
 SILENCE_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -165,7 +169,8 @@ def enqueue_proactive_messages(messages: Iterable[ProactiveMessage]) -> int:
 def pop_due_proactive_message_ids(now: datetime | None = None, limit: int = PROACTIVE_DUE_LIMIT) -> list[str]:
     """从 Redis 取出并移除一批到期主动消息 ID。
 
-    此操作由查询和删除两步组成，不保证多个调度实例之间的原子消费。
+    Redis 这里只负责清理到期加速索引，不再决定消息所有权。真正的多实例抢占由
+    PostgreSQL ``FOR UPDATE SKIP LOCKED`` 完成，因此两步删除失败不会丢失消息。
     """
     now = now or datetime.now(UTC)
     score = proactive_score(now)
@@ -215,6 +220,62 @@ async def enqueue_pending_proactive_messages(
         .limit(limit)
     )
     return enqueue_proactive_messages(result.scalars().all())
+
+
+async def claim_due_proactive_messages(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = PROACTIVE_DUE_LIMIT,
+    message_ids: list[UUID] | None = None,
+) -> list[ProactiveMessage]:
+    """从 PostgreSQL 原子抢占一批到期主动消息。
+
+    ``processing`` 记录只有在租约过期后才可被另一 worker 重新抢占。抢占状态先
+    提交再执行 checkpoint 写入，进程中途退出时可在五分钟后恢复；同一时刻的
+    其他实例通过 ``SKIP LOCKED`` 不会拿到同一行。
+
+    Returns:
+        已改为 ``processing`` 且增加过尝试次数的 ORM 记录。
+    """
+
+    reference_now = now or datetime.now(UTC)
+    claimable = or_(
+        ProactiveMessage.status == "pending",
+        and_(
+            ProactiveMessage.status == "processing",
+            ProactiveMessage.claimed_until.is_not(None),
+            ProactiveMessage.claimed_until <= reference_now,
+        ),
+    )
+    statement = (
+        select(ProactiveMessage)
+        .where(
+            claimable,
+            ProactiveMessage.scheduled_at <= reference_now,
+        )
+        .order_by(ProactiveMessage.scheduled_at.asc(), ProactiveMessage.created_at.asc())
+        .with_for_update(skip_locked=True)
+        .limit(max(1, min(limit, PROACTIVE_DUE_LIMIT)))
+    )
+    if message_ids is not None:
+        if not message_ids:
+            return []
+        statement = statement.where(ProactiveMessage.id.in_(message_ids))
+
+    result = await session.execute(statement)
+    messages = list(result.scalars().all())
+    if not messages:
+        return []
+
+    claimed_until = reference_now + timedelta(seconds=PROACTIVE_CLAIM_LEASE_SECONDS)
+    for proactive in messages:
+        proactive.status = "processing"
+        proactive.claimed_until = claimed_until
+        proactive.attempt_count = int(getattr(proactive, "attempt_count", 0) or 0) + 1
+        proactive.updated_at = reference_now
+    await session.commit()
+    return messages
 
 
 async def build_recent_conversation_context(
@@ -410,6 +471,10 @@ async def ensure_daily_greeting_messages(
                 content=DAILY_GREETING_PLACEHOLDER,
                 scheduled_at=plan["scheduled_at"],
                 status="pending",
+                dedupe_key=(
+                    f"daily_greeting:{plan['trigger_type']}:"
+                    f"{plan['greeting_date']}:{plan['timezone']}"
+                ),
                 metadata_json={
                     "source": "daily_greeting_scheduler",
                     "trigger_type": plan["trigger_type"],
@@ -428,11 +493,87 @@ async def ensure_daily_greeting_messages(
     if not messages:
         return 0
 
-    await session.flush()
-    queued_count = enqueue_proactive_messages(messages)
-    await session.commit()
+    try:
+        await session.flush()
+        queued_count = enqueue_proactive_messages(messages)
+        await session.commit()
+    except IntegrityError:
+        # 多个调度实例可能同时发现缺口；数据库 dedupe 唯一约束决定唯一赢家。
+        await session.rollback()
+        logging.info("每日问候计划已由另一调度实例创建，忽略本轮重复")
+        return 0
     logging.info("主动问候计划完成 message_count=%s", len(messages))
     return queued_count
+
+
+async def ensure_relationship_follow_up_messages(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = PROACTIVE_ENQUEUE_LIMIT,
+) -> int:
+    """为明确授权且已经到期的关系线程创建可靠主动消息。
+
+    普通自动识别事项即使有 ``follow_up_at`` 也不会进入此流程；只有抽取器在
+    用户原文中确认“记得问我/提醒我”并写入 ``proactive_allowed=true`` 的线程
+    才可创建。数据库唯一 ``dedupe_key`` 处理多实例并发和调度重试。
+    """
+
+    from app.db.models import RelationshipThread
+
+    reference_now = now or datetime.now(UTC)
+    result = await session.execute(
+        select(RelationshipThread)
+        .where(
+            RelationshipThread.status == "pending",
+            RelationshipThread.follow_up_at.is_not(None),
+            RelationshipThread.follow_up_at <= reference_now,
+            RelationshipThread.metadata_json["proactive_allowed"].astext == "true",
+        )
+        .order_by(RelationshipThread.follow_up_at.asc())
+        .limit(max(1, min(limit, PROACTIVE_ENQUEUE_LIMIT)))
+    )
+    messages: list[ProactiveMessage] = []
+    for thread in result.scalars().all():
+        content = build_relationship_follow_up_content(thread.title, thread.summary)
+        proactive = ProactiveMessage(
+            id=uuid4(),
+            user_id=thread.user_id,
+            trigger_type="relationship_follow_up",
+            title="接着问一句",
+            content=content,
+            scheduled_at=reference_now,
+            status="pending",
+            dedupe_key=f"relationship_follow_up:{thread.id}:{thread.version}",
+            metadata_json={
+                "source": "relationship_thread",
+                "relationship_thread_id": str(thread.id),
+                "relationship_thread_version": thread.version,
+            },
+        )
+        session.add(proactive)
+        messages.append(proactive)
+
+    if not messages:
+        return 0
+    try:
+        await session.flush()
+        queued_count = enqueue_proactive_messages(messages)
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        logging.info("关系线程主动跟进已由另一调度实例创建，忽略本轮重复")
+        return 0
+    return queued_count
+
+
+def build_relationship_follow_up_content(title: str, summary: str) -> str:
+    """根据已确认的线程事实生成简短、具体、不催回复的跟进文本。"""
+
+    normalized_title = " ".join(str(title or "").split()).strip()
+    normalized_summary = " ".join(str(summary or "").split()).strip()
+    subject = normalized_title or normalized_summary or "你之前提到的那件事"
+    return f"你之前说的“{subject[:60]}”，后来怎么样了？"
 
 
 async def trigger_silence_proactive_messages(
@@ -573,8 +714,8 @@ async def send_proactive_message_records(
 ) -> int:
     """处理主动消息记录，将有效内容追加到聊天历史并更新发送状态。
 
-    过期的每日问候或无可用文案的记录标记为 ``skipped``，其余标记为
-    ``sent``；有状态变化时统一提交数据库事务。
+    过期问候和空文案标记为 ``skipped``。checkpoint 写入成功后才标记
+    ``sent``；失败时按尝试次数回到 ``pending`` 或进入 ``failed``，不会静默丢失。
 
     Returns:
         成功写入聊天历史的消息数量。
@@ -582,12 +723,21 @@ async def send_proactive_message_records(
     now = now or datetime.now(UTC)
     sent_count = 0
     changed_count = 0
+    successful_messages: list[ProactiveMessage] = []
     for proactive in messages:
+        if proactive.status not in {"pending", "processing"}:
+            continue
+        if proactive.status == "pending":
+            proactive.status = "processing"
+            proactive.attempt_count = int(getattr(proactive, "attempt_count", 0) or 0) + 1
+            proactive.claimed_until = now + timedelta(seconds=PROACTIVE_CLAIM_LEASE_SECONDS)
+
         if is_stale_daily_greeting(proactive, now):
             metadata = dict(getattr(proactive, "metadata_json", None) or {})
             metadata["skipped_reason"] = "stale_daily_greeting"
             proactive.metadata_json = metadata
             proactive.status = "skipped"
+            proactive.claimed_until = None
             proactive.updated_at = now
             changed_count += 1
             continue
@@ -595,29 +745,146 @@ async def send_proactive_message_records(
         content = await prepare_proactive_message_content(session, proactive)
         if not content:
             proactive.status = "skipped"
+            proactive.claimed_until = None
             proactive.updated_at = now
             changed_count += 1
             continue
 
-        message_id = str(uuid4())
-        append_proactive_history_message(
+        delivery_message_id = str(
+            getattr(proactive, "delivery_message_id", None) or proactive.id
+        )
+        appended = append_proactive_history_message(
             user_id=str(proactive.user_id),
             content=content,
-            message_id=message_id,
+            message_id=delivery_message_id,
             sent_at=now,
             trigger_type=proactive.trigger_type,
         )
+        if not appended:
+            mark_proactive_delivery_failure(proactive, now, "聊天历史写入失败")
+            changed_count += 1
+            continue
+
         proactive.status = "sent"
         proactive.sent_at = now
+        proactive.claimed_until = None
+        proactive.last_error = None
         proactive.updated_at = now
         sent_count += 1
         changed_count += 1
+        successful_messages.append(proactive)
 
     if changed_count:
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            logging.exception("主动消息投递状态提交失败")
+            return 0
+    for proactive in successful_messages:
+        try:
+            await mark_relationship_thread_followed_up_from_proactive(session, proactive, now)
+        except Exception:
+            await session.rollback()
+            logging.exception("主动跟进发送成功，但关系线程状态更新失败 message_id=%s", proactive.id)
     if sent_count:
         logging.info("主动消息发送完成 sent_count=%s", sent_count)
     return sent_count
+
+
+async def mark_relationship_thread_followed_up_from_proactive(
+    session: AsyncSession,
+    proactive: ProactiveMessage,
+    now: datetime,
+) -> None:
+    """在跟进消息确认写入历史后，把来源线程推进到 ``followed_up``。
+
+    ``relationship_thread_id`` 仅从服务端生成的 metadata 读取，并同时校验线程
+    所有者。重复执行时终态检查会直接返回，不会追加重复事件。
+    """
+
+    if proactive.trigger_type != "relationship_follow_up":
+        return
+    metadata = dict(getattr(proactive, "metadata_json", None) or {})
+    raw_thread_id = metadata.get("relationship_thread_id")
+    try:
+        thread_id = UUID(str(raw_thread_id))
+    except (TypeError, ValueError):
+        return
+
+    from app.db.models import RelationshipThread, RelationshipThreadEvent
+
+    result = await session.execute(
+        select(RelationshipThread)
+        .where(
+            RelationshipThread.id == thread_id,
+            RelationshipThread.user_id == proactive.user_id,
+        )
+        .with_for_update()
+    )
+    thread = result.scalar_one_or_none()
+    if thread is None or thread.status != "pending":
+        return
+
+    state_before = relationship_thread_scheduler_state(thread)
+    thread.status = "followed_up"
+    thread.last_followed_up_at = now
+    thread.follow_up_at = None
+    thread.version += 1
+    thread.updated_at = now
+    session.add(
+        RelationshipThreadEvent(
+            thread_id=thread.id,
+            sequence_no=thread.version,
+            actor="aura",
+            event_type="followed_up",
+            state_before=state_before,
+            state_after=relationship_thread_scheduler_state(thread),
+            client_action_id=f"proactive-followup:{proactive.id}",
+            metadata_json={"proactive_message_id": str(proactive.id)},
+            occurred_at=now,
+        )
+    )
+    await session.commit()
+
+
+def relationship_thread_scheduler_state(thread) -> dict[str, object]:
+    """构造调度器写入线程事件所需的紧凑状态快照。"""
+
+    return {
+        "thread_type": thread.thread_type,
+        "perspective": thread.perspective,
+        "world_layer": thread.world_layer,
+        "title": thread.title,
+        "summary": thread.summary,
+        "status": thread.status,
+        "follow_up_at": thread.follow_up_at.isoformat() if thread.follow_up_at else None,
+        "last_followed_up_at": (
+            thread.last_followed_up_at.isoformat() if thread.last_followed_up_at else None
+        ),
+        "resolved_at": thread.resolved_at.isoformat() if thread.resolved_at else None,
+        "version": thread.version,
+        "metadata": dict(thread.metadata_json or {}),
+    }
+
+
+def mark_proactive_delivery_failure(
+    proactive: ProactiveMessage,
+    now: datetime,
+    error_message: str,
+) -> None:
+    """记录一次投递失败，并决定延迟重试还是进入人工可见的失败终态。"""
+
+    attempts = int(getattr(proactive, "attempt_count", 0) or 0)
+    proactive.last_error = error_message[:1000]
+    proactive.claimed_until = None
+    proactive.updated_at = now
+    if attempts >= PROACTIVE_MAX_DELIVERY_ATTEMPTS:
+        proactive.status = "failed"
+        return
+    proactive.status = "pending"
+    retry_seconds = PROACTIVE_RETRY_BASE_SECONDS * (2 ** max(attempts - 1, 0))
+    proactive.scheduled_at = now + timedelta(seconds=retry_seconds)
 
 
 async def process_due_proactive_messages(
@@ -643,40 +910,39 @@ async def process_due_proactive_messages(
     if not parsed_ids:
         return 0
 
-    result = await session.execute(
-        select(ProactiveMessage)
-        .where(
-            ProactiveMessage.id.in_(parsed_ids),
-            ProactiveMessage.status == "pending",
-            ProactiveMessage.scheduled_at <= now,
-        )
-        .order_by(ProactiveMessage.scheduled_at.asc())
+    messages = await claim_due_proactive_messages(
+        session,
+        now=now,
+        message_ids=parsed_ids,
     )
-    messages = result.scalars().all()
-
     return await send_proactive_message_records(session, messages, now=now)
 
 
 async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
     """执行一个完整主动消息调度周期。
 
-    顺序处理沉默问候、每日问候补计划、待发送记录入队和到期消息发送。
-    Redis 不可用时跳过本周期。
+    顺序处理沉默问候、每日问候补计划、Redis 加速索引和 PostgreSQL 到期抢占。
+    Redis 不可用时只跳过依赖在线活跃状态的沉默问候；持久化消息仍会发送。
 
     Returns:
         本周期实际发送的主动消息总数。
     """
-    if not redis_available():
-        return 0
-
     now = now or datetime.now(UTC)
+    has_redis = redis_available()
     async with AsyncSessionLocal() as session:
-        silence_user_ids = collect_due_silence_user_ids(now=now)
+        silence_user_ids = collect_due_silence_user_ids(now=now) if has_redis else []
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
         await ensure_daily_greeting_messages(session, now=now)
-        await enqueue_pending_proactive_messages(session, now=now)
-        due_ids = pop_due_proactive_message_ids(now=now)
-        scheduled_sent_count = await process_due_proactive_messages(session, due_ids, now=now)
+        await ensure_relationship_follow_up_messages(session, now=now)
+        if has_redis:
+            await enqueue_pending_proactive_messages(session, now=now)
+            pop_due_proactive_message_ids(now=now)
+        claimed_messages = await claim_due_proactive_messages(session, now=now)
+        scheduled_sent_count = await send_proactive_message_records(
+            session,
+            claimed_messages,
+            now=now,
+        )
         return silence_sent_count + scheduled_sent_count
 
 

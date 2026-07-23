@@ -101,7 +101,84 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(proactive.sent_at, now)
         append_history.assert_called_once()
         self.assertEqual(append_history.call_args.kwargs["trigger_type"], "daily_care")
+        self.assertEqual(session.commit.await_count, 2)
+
+    async def test_failed_checkpoint_write_retries_with_stable_delivery_id(self):
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
+        proactive = SimpleNamespace(
+            id=uuid4(),
+            user_id=uuid4(),
+            trigger_type="follow_up",
+            title="跟进",
+            content="昨天那个接口后来通了吗？",
+            scheduled_at=now,
+            sent_at=None,
+            status="processing",
+            attempt_count=1,
+            delivery_message_id="stable-delivery-1",
+            claimed_until=now + timedelta(minutes=5),
+            last_error=None,
+            updated_at=None,
+        )
+        session = SimpleNamespace(commit=AsyncMock())
+
+        with patch(
+            "app.core.proactive_scheduler.append_proactive_history_message",
+            return_value=False,
+        ) as append_history:
+            sent_count = await proactive_scheduler.send_proactive_message_records(
+                session,
+                [proactive],
+                now=now,
+            )
+
+        self.assertEqual(sent_count, 0)
+        self.assertEqual(proactive.status, "pending")
+        self.assertEqual(proactive.scheduled_at, now + timedelta(seconds=60))
+        self.assertEqual(proactive.last_error, "聊天历史写入失败")
+        self.assertIsNone(proactive.claimed_until)
+        self.assertEqual(append_history.call_args.kwargs["message_id"], "stable-delivery-1")
         session.commit.assert_awaited_once()
+
+    async def test_relationship_follow_up_requires_explicit_server_authorization(self):
+        now = datetime(2026, 7, 24, 2, 0, tzinfo=UTC)
+        unauthorized = SimpleNamespace(
+            id=uuid4(),
+            user_id=uuid4(),
+            title="普通未来事项",
+            summary="明天发布接口",
+            version=1,
+            metadata_json={"proactive_allowed": False},
+        )
+        authorized = SimpleNamespace(
+            id=uuid4(),
+            user_id=unauthorized.user_id,
+            title="面试结果",
+            summary="记得问面试结果",
+            version=1,
+            metadata_json={"proactive_allowed": True},
+        )
+        # SQL 已在数据库层过滤授权值，这里的假结果只返回已授权线程。
+        result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [authorized]))
+        session = SimpleNamespace(
+            execute=AsyncMock(return_value=result),
+            add=unittest.mock.Mock(),
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+            rollback=AsyncMock(),
+        )
+        with patch("app.core.proactive_scheduler.enqueue_proactive_messages", return_value=1):
+            count = await proactive_scheduler.ensure_relationship_follow_up_messages(
+                session,
+                now=now,
+            )
+
+        self.assertEqual(count, 1)
+        record = session.add.call_args.args[0]
+        self.assertEqual(record.trigger_type, "relationship_follow_up")
+        self.assertIn(str(authorized.id), record.dedupe_key)
+        self.assertEqual(record.metadata_json["relationship_thread_id"], str(authorized.id))
+        self.assertNotIn(str(unauthorized.id), record.dedupe_key)
 
     async def test_enqueue_pending_indexes_future_messages_within_lookahead(self):
         now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)

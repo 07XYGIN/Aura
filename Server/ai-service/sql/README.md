@@ -8,13 +8,16 @@
 2. 执行 `20260723_bash_game.sql`，创建巴什博弈会话和行动表。
 3. 执行 `20260723_companion_pet.sql`，创建共同宠物和宠物事件表。
 4. 执行 `20260723_relationship_continuity.sql`，创建关系线程当前状态和事件历史表。
-5. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
-6. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
+5. 执行 `20260723_proactive_delivery.sql`，为主动消息增加幂等键、稳定投递 ID、领取租约和失败重试状态。
+6. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
+7. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
 
 ## 已有数据库
 
 先执行 `20260722_single_user_schema_cleanup.sql`，再执行尚未应用的日期增量。迁移会保留当前功能数据，
 移除未使用的旧表和 `proactive_message.notification_plan_id`，并补齐当前索引与约束。脚本可以重复执行。
+`20260723_proactive_delivery.sql` 会为历史主动消息回填稳定的 `delivery_message_id` 和零值尝试次数，
+随后再设置默认值与非空约束；不会删除已有主动消息。
 
 ## 历史文件
 

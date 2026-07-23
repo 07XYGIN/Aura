@@ -107,7 +107,10 @@ class AgentGraphTest(unittest.TestCase):
         self.assertNotIn("merge_similar_memories_tool", prompt)
 
     def test_append_proactive_history_message_updates_graph_state(self):
-        fake_aura = SimpleNamespace(update_state=unittest.mock.Mock())
+        fake_aura = SimpleNamespace(
+            update_state=unittest.mock.Mock(),
+            get_state=unittest.mock.Mock(return_value=SimpleNamespace(values={})),
+        )
         sent_at = datetime(2026, 7, 7, 10, 0, tzinfo=UTC)
 
         with patch("app.core.agent.agent_graph.aura", fake_aura):
@@ -127,6 +130,33 @@ class AgentGraphTest(unittest.TestCase):
         self.assertEqual(message.content, "我在。")
         self.assertTrue(message.additional_kwargs["is_proactive"])
         self.assertEqual(message.additional_kwargs["trigger_type"], "silence")
+
+    def test_append_proactive_history_message_replays_stable_id_without_duplicate(self):
+        message_id = "stable-delivery-1"
+        fake_aura = SimpleNamespace(update_state=unittest.mock.Mock())
+        with (
+            patch("app.core.agent.agent_graph.aura", fake_aura),
+            patch(
+                "app.core.agent.agent_graph.get_history",
+                return_value=[
+                    {
+                        "id": f"ai-proactive-{message_id}",
+                        "role": "aura",
+                        "content": "已经发过",
+                        "isProactive": True,
+                    }
+                ],
+            ),
+        ):
+            appended = append_proactive_history_message(
+                user_id="user-1",
+                content="已经发过",
+                message_id=message_id,
+                sent_at=datetime.now(UTC),
+            )
+
+        self.assertTrue(appended)
+        fake_aura.update_state.assert_not_called()
 
     def test_trim_short_term_messages_drops_orphan_tool_messages(self):
         messages = [

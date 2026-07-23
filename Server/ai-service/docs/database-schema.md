@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
 | `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
-| `proactive_message` | 主动消息计划、状态和发送时间 | `app/core/proactive_scheduler.py` |
+| `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
 | `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
@@ -58,6 +58,25 @@
 
 聊天历史以 LangGraph checkpoint 为唯一事实源；语义记忆以 LangChain PGVector 表为事实源；
 需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
+
+## 主动消息可靠投递
+
+`proactive_message` 是主动消息投递的 PostgreSQL 权威来源。Redis 可以用于唤醒或加速，
+但不能代替数据库中的计划和最终状态。
+
+| 字段或约束 | 语义 |
+| --- | --- |
+| `dedupe_key varchar(160)` | 可空业务幂等键；`(user_id, dedupe_key)` 唯一，避免重复计划同一件事 |
+| `delivery_message_id varchar(128)` | 非空稳定消息 ID；创建、进程重启和重试时保持不变 |
+| `attempt_count integer` | 非空且默认 `0`，记录已经执行的投递尝试次数 |
+| `claimed_until timestamptz` | worker 租约截止时间；过期的 `processing` 消息可以被其他 worker 接管 |
+| `last_error text` | 最近一次失败原因，供重试策略和运维诊断使用 |
+| `cancelled_at timestamptz` | 进入 `cancelled` 终态的时间 |
+| `chk_proactive_message_status` | 只允许 `pending`、`processing`、`sent`、`skipped`、`failed`、`cancelled` |
+| `idx_proactive_message_claim` | 按 `(status, scheduled_at, claimed_until)` 查找应领取或租约已过期的消息 |
+
+`sent`、`skipped`、`failed` 和 `cancelled` 是终态。投递失败但仍可重试时，业务层应增加
+`attempt_count`、记录 `last_error` 并重新置为 `pending`；达到上限后才进入 `failed`。
 
 ## 自动核对
 
