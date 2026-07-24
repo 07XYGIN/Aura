@@ -53,7 +53,14 @@ def parse_args() -> argparse.Namespace:
 
 def git_output(repo_root: Path, args: Sequence[str]) -> str:
     completed = subprocess.run(
-        ["git", "-c", "core.quotepath=false", *args],
+        [
+            "git",
+            "-c",
+            "core.quotepath=false",
+            "-c",
+            "i18n.logOutputEncoding=UTF-8",
+            *args,
+        ],
         cwd=repo_root,
         check=True,
         capture_output=True,
@@ -165,8 +172,17 @@ def record_update(update: SelfUpdate) -> str:
                 "SELECT id FROM self_changelog_entry WHERE metadata ->> 'source_commit' = %s LIMIT 1",
                 (source_commit,),
             )
-            if cursor.fetchone():
-                return "already-recorded"
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE self_changelog_entry
+                    SET title = %s, detail = %s, category = %s, metadata = %s::jsonb, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (update.title, update.detail, update.category, metadata_json, existing[0]),
+                )
+                return "refreshed"
 
             cursor.execute(
                 """
