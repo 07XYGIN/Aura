@@ -382,7 +382,7 @@ def aura_agent(
         "turn_judgement": turn_judgement,
         "time_context": time_context,
         "self_changelog_context": {
-            "entry_id": self_changelog_context.entry_id,
+            "entry_ids": list(self_changelog_context.entry_ids),
             "text": self_changelog_context.text,
         },
         "turn_id": turn_id,
@@ -522,11 +522,11 @@ def aura_agent(
                 delay_ms=message["delay_ms"],
                 sent_at=message["sent_at"],
             )
-        mark_self_changelog_reacted_sync(self_changelog_context.entry_id)
+        mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
     elif raw_chat_parts:
         for content in parse_structured_reply("".join(raw_chat_parts)):
             yield content_event(content)
-        mark_self_changelog_reacted_sync(self_changelog_context.entry_id)
+        mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
 
     logging.info("Aura 对话结束 user_id=%s", user_id)
 

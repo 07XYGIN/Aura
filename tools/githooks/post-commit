@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+
+# A failed changelog write must never turn a successful commit into a failed one.
+if [ "${AURA_SKIP_COMMIT_SYNC:-}" = "1" ]; then
+    exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+script="$repo_root/Server/ai-service/tools/record_self_update_from_commit.py"
+
+if [ ! -f "$script" ]; then
+    exit 0
+fi
+
+windows_python="$repo_root/Server/ai-service/.venv/Scripts/python.exe"
+unix_python="$repo_root/Server/ai-service/.venv/bin/python"
+
+if [ -x "$windows_python" ]; then
+    "$windows_python" "$script" --commit HEAD --repo-root "$repo_root" || printf '%s\n' 'Aura commit sync skipped; the commit was kept.' >&2
+elif [ -x "$unix_python" ]; then
+    "$unix_python" "$script" --commit HEAD --repo-root "$repo_root" || printf '%s\n' 'Aura commit sync skipped; the commit was kept.' >&2
+elif command -v uv >/dev/null 2>&1; then
+    (
+        cd "$repo_root/Server/ai-service" || exit 1
+        uv run python tools/record_self_update_from_commit.py --commit HEAD --repo-root "$repo_root"
+    ) || printf '%s\n' 'Aura commit sync skipped; the commit was kept.' >&2
+else
+    printf '%s\n' 'Aura commit sync skipped; no Python environment was found.' >&2
+fi
+
+exit 0

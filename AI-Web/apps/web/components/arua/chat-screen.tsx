@@ -1,9 +1,20 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { Copy, ImagePlus, Mic, Paperclip, SendHorizontal, Square, Star, Trash2 } from 'lucide-react'
+import {
+    Copy,
+    FileText,
+    ImagePlus,
+    Mic,
+    Paperclip,
+    SendHorizontal,
+    Square,
+    Star,
+    Trash2,
+} from 'lucide-react'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { ChatMessageContent } from '@/components/arua/chat-message-content'
+import { Live2DStage } from '@/components/arua/live2d-stage'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { UseSse } from '@ai-web/utils/main'
@@ -52,6 +63,29 @@ type ChatStreamChunk = {
 const FEEDBACK_IDLE_DELAY_MS = 30_000
 const MAX_ATTACHMENTS_PER_MESSAGE = 4
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const ACCEPTED_ATTACHMENT_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif',
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+    'application/json',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
+const ACCEPTED_ATTACHMENT_EXTENSIONS = new Set([
+    '.txt',
+    '.md',
+    '.markdown',
+    '.csv',
+    '.json',
+    '.pdf',
+    '.doc',
+    '.docx',
+])
 const MIN_ASSISTANT_DELAY_MS = 500
 const MAX_ASSISTANT_DELAY_MS = 2500
 const SPEECH_RECOGNITION_LANG = {
@@ -193,6 +227,26 @@ const normalizeAssistantDelay = (value?: number) => {
     }
 
     return Math.min(MAX_ASSISTANT_DELAY_MS, Math.max(MIN_ASSISTANT_DELAY_MS, value))
+}
+
+const isAcceptedAttachment = (file: File) => {
+    if (ACCEPTED_ATTACHMENT_TYPES.has(file.type) || file.type.startsWith('image/')) {
+        return true
+    }
+
+    const extension = file.name.includes('.')
+        ? `.${file.name.split('.').pop()?.toLowerCase() ?? ''}`
+        : ''
+
+    return ACCEPTED_ATTACHMENT_EXTENSIONS.has(extension)
+}
+
+const getAttachmentIcon = (fileName: string) => {
+    const extension = fileName.includes('.')
+        ? `.${fileName.split('.').pop()?.toLowerCase() ?? ''}`
+        : ''
+
+    return ACCEPTED_ATTACHMENT_EXTENSIONS.has(extension) ? FileText : ImagePlus
 }
 
 const buildUploadPayload = async (files: File[]): Promise<AuraUploadAttachmentInput[]> =>
@@ -560,18 +614,19 @@ export function AruaChatScreen() {
     }, [disconnect, isStreaming])
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files ?? [])
-        const validFiles = files.filter((file) => file.type.startsWith('image/'))
+        const validFiles = files.filter(isAcceptedAttachment)
         const oversized = validFiles.find((file) => file.size > MAX_ATTACHMENT_BYTES)
 
         if (files.length !== validFiles.length) {
-            toast.error('Only image uploads are supported for now.', {
+            toast.error('Unsupported attachment type', {
+                description: 'Please upload text documents or images.',
                 position: 'top-center',
             })
         }
 
         if (oversized) {
-            toast.error('Image is too large', {
-                description: 'Each image must be 10MB or smaller.',
+            toast.error('Attachment is too large', {
+                description: 'Each attachment must be 10MB or smaller.',
                 position: 'top-center',
             })
         }
@@ -747,7 +802,7 @@ export function AruaChatScreen() {
             pendingAssistantMessageIdRef.current = null
             setIsStreaming(false)
             setIsAssistantTyping(false)
-            toast.error('Image upload failed', {
+            toast.error('Attachment upload failed', {
                 description: error instanceof Error ? error.message : t('chat.tryAgain'),
                 position: 'top-center',
             })
@@ -979,12 +1034,21 @@ export function AruaChatScreen() {
             title={null}
             contentClassName="relative min-h-0 flex-1 overflow-hidden p-0 sm:p-0 lg:p-0"
         >
-            <section className="absolute inset-0 flex min-h-0 w-full flex-col overflow-hidden bg-[color-mix(in_srgb,var(--aura-surface-solid)_72%,transparent)]">
+            <section className="absolute inset-0 grid min-h-0 w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[color-mix(in_srgb,var(--aura-surface-solid)_70%,transparent)] lg:grid-cols-[minmax(24rem,44%)_minmax(0,1fr)] lg:grid-rows-1">
+                <aside className="min-h-0 border-b border-[var(--aura-border)] p-4 lg:border-r lg:border-b-0 lg:p-5">
+                    <Live2DStage
+                        className="h-[22rem] lg:h-full lg:min-h-[calc(100vh-2.5rem)]"
+                        isActive={isStreaming || isAssistantTyping}
+                        emotionLabel={latestEmotion ? getEmotionLabel(latestEmotion) : null}
+                    />
+                </aside>
+
+                <div className="relative flex min-h-0 flex-col overflow-hidden">
                 <div
                     ref={messagesRef}
-                    className="aura-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-52 sm:px-8 lg:px-10"
+                    className="aura-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-56 sm:px-6 lg:px-8"
                 >
-                    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+                    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
                         {messages.map((chatMessage) => {
                             const isUser = chatMessage.role === 'user'
 
@@ -1029,22 +1093,26 @@ export function AruaChatScreen() {
                                                         : 'text-[var(--aura-text-muted)]',
                                                 )}
                                             >
-                                                {chatMessage.attachments.map((attachment) => (
-                                                    <span
-                                                        key={attachment}
-                                                        className={cn(
-                                                            'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs',
-                                                            isUser
-                                                                ? 'bg-[#201733]/10'
-                                                                : 'bg-[var(--aura-surface-strong)]',
-                                                        )}
-                                                    >
-                                                        <ImagePlus className="h-3.5 w-3.5 shrink-0" />
-                                                        <span className="truncate">
-                                                            {attachment}
+                                                {chatMessage.attachments.map((attachment) => {
+                                                    const AttachmentIcon = getAttachmentIcon(attachment)
+
+                                                    return (
+                                                        <span
+                                                            key={attachment}
+                                                            className={cn(
+                                                                'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs',
+                                                                isUser
+                                                                    ? 'bg-[#201733]/10'
+                                                                    : 'bg-[var(--aura-surface-strong)]',
+                                                            )}
+                                                        >
+                                                            <AttachmentIcon className="h-3.5 w-3.5 shrink-0" />
+                                                            <span className="truncate">
+                                                                {attachment}
+                                                            </span>
                                                         </span>
-                                                    </span>
-                                                ))}
+                                                    )
+                                                })}
                                             </div>
                                         ) : null}
                                     </div>
@@ -1099,19 +1167,23 @@ export function AruaChatScreen() {
                     </div>
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_86%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-8 lg:px-10">
-                    <div className="w-full max-w-4xl rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3">
+                <div className="absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_88%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
+                    <div className="w-full max-w-3xl rounded-[1.25rem] border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3 shadow-[0_22px_64px_-46px_var(--aura-glow)]">
                         {selectedFiles.length > 0 ? (
                             <div className="mb-3 flex flex-wrap gap-2">
-                                {selectedFiles.map((file) => (
-                                    <div
-                                        key={`${file.name}-${file.lastModified}`}
-                                        className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)]"
-                                    >
-                                        <ImagePlus className="h-3.5 w-3.5 shrink-0 text-[var(--aura-primary)]" />
-                                        <span className="truncate">{file.name}</span>
-                                    </div>
-                                ))}
+                                {selectedFiles.map((file) => {
+                                    const AttachmentIcon = getAttachmentIcon(file.name)
+
+                                    return (
+                                        <div
+                                            key={`${file.name}-${file.lastModified}`}
+                                            className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)]"
+                                        >
+                                            <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-[var(--aura-primary)]" />
+                                            <span className="truncate">{file.name}</span>
+                                        </div>
+                                    )
+                                })}
                             </div>
                         ) : null}
 
@@ -1129,7 +1201,7 @@ export function AruaChatScreen() {
                                     id={inputId}
                                     ref={fileInputRef}
                                     type="file"
-                                    accept="image/*"
+                                    accept="image/*,.txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx"
                                     multiple
                                     className="hidden"
                                     onChange={handleFileChange}
@@ -1139,7 +1211,8 @@ export function AruaChatScreen() {
                                     variant="ghost"
                                     size="icon"
                                     className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                                    aria-label={t('chat.uploadImage')}
+                                    aria-label="Upload text or image"
+                                    title="Upload text or image"
                                     onClick={() => fileInputRef.current?.click()}
                                 >
                                     <Paperclip className="h-4 w-4" />
@@ -1211,6 +1284,7 @@ export function AruaChatScreen() {
                             </Button>
                         </div>
                     </div>
+                </div>
                 </div>
             </section>
         </AruaAppShell>

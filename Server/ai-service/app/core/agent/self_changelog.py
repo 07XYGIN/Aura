@@ -17,14 +17,20 @@ from app.db.session import AsyncSessionLocal, SyncSessionLocal
 
 @dataclass(frozen=True)
 class SelfChangelogContext:
-    """准备注入系统提示词的一条未回应更新。"""
+    """准备注入系统提示词的一批未回应更新。"""
 
-    entry_id: str | None
+    entry_ids: tuple[str, ...]
     text: str
 
+    @property
+    def entry_id(self) -> str | None:
+        """兼容单条更新的旧调用方。"""
 
-async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
-    """异步读取最早的未回应更新；数据库失败时返回空上下文。"""
+        return self.entry_ids[0] if self.entry_ids else None
+
+
+async def load_self_changelog_context(limit: int = 8) -> SelfChangelogContext:
+    """异步读取一小批未回应更新；数据库失败时返回空上下文。"""
 
     try:
         await ensure_self_changelog_admin_fields_async()
@@ -37,18 +43,18 @@ async def load_self_changelog_context(limit: int = 1) -> SelfChangelogContext:
             )
             entries = list(result.scalars().all())
             if not entries:
-                return SelfChangelogContext(entry_id=None, text="")
+                return SelfChangelogContext(entry_ids=(), text="")
             return SelfChangelogContext(
-                entry_id=str(entries[0].id),
+                entry_ids=tuple(str(entry.id) for entry in entries),
                 text=format_self_changelog_context(entries),
             )
     except Exception:
         logging.exception("读取 Aura 自我更新上下文失败")
-        return SelfChangelogContext(entry_id=None, text="")
+        return SelfChangelogContext(entry_ids=(), text="")
 
 
-def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
-    """同步读取最早的未回应更新，供同步 LangGraph 入口使用。"""
+def load_self_changelog_context_sync(limit: int = 8) -> SelfChangelogContext:
+    """同步读取一小批未回应更新，供同步 LangGraph 入口使用。"""
 
     try:
         ensure_self_changelog_admin_fields()
@@ -61,14 +67,14 @@ def load_self_changelog_context_sync(limit: int = 1) -> SelfChangelogContext:
             )
             entries = list(result.scalars().all())
             if not entries:
-                return SelfChangelogContext(entry_id=None, text="")
+                return SelfChangelogContext(entry_ids=(), text="")
             return SelfChangelogContext(
-                entry_id=str(entries[0].id),
+                entry_ids=tuple(str(entry.id) for entry in entries),
                 text=format_self_changelog_context(entries),
             )
     except Exception:
         logging.exception("读取 Aura 自我更新上下文失败")
-        return SelfChangelogContext(entry_id=None, text="")
+        return SelfChangelogContext(entry_ids=(), text="")
 
 
 def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
@@ -88,52 +94,80 @@ def format_self_changelog_context(entries: list[SelfChangelogEntry]) -> str:
     return "\n".join(lines)
 
 
-async def mark_self_changelog_reacted(entry_id: str | None) -> None:
+async def mark_self_changelog_reacted(entry_ids: str | tuple[str, ...] | list[str] | None) -> None:
     """异步标记指定更新已被 Aura 在对话中回应。"""
 
-    if not entry_id:
-        return
-
-    try:
-        parsed_entry_id = UUID(entry_id)
-    except ValueError:
+    parsed_entry_ids = parse_entry_ids(entry_ids)
+    if not parsed_entry_ids:
         return
 
     try:
         await ensure_self_changelog_admin_fields_async()
         async with AsyncSessionLocal() as session:
-            entry = await session.get(SelfChangelogEntry, parsed_entry_id)
-            if entry is None or entry.reacted:
-                return
-            entry.reacted = True
-            entry.reacted_at = datetime.now(UTC)
-            await session.commit()
+            result = await session.execute(
+                select(SelfChangelogEntry).where(
+                    SelfChangelogEntry.id.in_(parsed_entry_ids),
+                    SelfChangelogEntry.reacted.is_(False),
+                )
+            )
+            entries = list(result.scalars().all())
+            if entries:
+                reacted_at = datetime.now(UTC)
+                for entry in entries:
+                    entry.reacted = True
+                    entry.reacted_at = reacted_at
+                await session.commit()
     except Exception:
-        logging.exception("标记 Aura 自我更新已回应失败 entry_id=%s", entry_id)
+        logging.exception("标记 Aura 自我更新已回应失败 entry_ids=%s", entry_ids)
 
 
-def mark_self_changelog_reacted_sync(entry_id: str | None) -> None:
+def mark_self_changelog_reacted_sync(entry_ids: str | tuple[str, ...] | list[str] | None) -> None:
     """同步标记指定更新已回应；无效 ID 或数据库错误不会中断聊天。"""
 
-    if not entry_id:
-        return
-
-    try:
-        parsed_entry_id = UUID(entry_id)
-    except ValueError:
+    parsed_entry_ids = parse_entry_ids(entry_ids)
+    if not parsed_entry_ids:
         return
 
     try:
         ensure_self_changelog_admin_fields()
         with SyncSessionLocal() as session:
-            entry = session.get(SelfChangelogEntry, parsed_entry_id)
-            if entry is None or entry.reacted:
-                return
-            entry.reacted = True
-            entry.reacted_at = datetime.now(UTC)
-            session.commit()
+            entries = list(
+                session.execute(
+                    select(SelfChangelogEntry).where(
+                        SelfChangelogEntry.id.in_(parsed_entry_ids),
+                        SelfChangelogEntry.reacted.is_(False),
+                    )
+                ).scalars()
+            )
+            if entries:
+                reacted_at = datetime.now(UTC)
+                for entry in entries:
+                    entry.reacted = True
+                    entry.reacted_at = reacted_at
+                session.commit()
     except Exception:
-        logging.exception("标记 Aura 自我更新已回应失败 entry_id=%s", entry_id)
+        logging.exception("标记 Aura 自我更新已回应失败 entry_ids=%s", entry_ids)
+
+
+def parse_entry_ids(entry_ids: str | tuple[str, ...] | list[str] | None) -> tuple[UUID, ...]:
+    """过滤无效 ID，兼容旧的单条更新调用。"""
+
+    if isinstance(entry_ids, str):
+        values = (entry_ids,)
+    elif isinstance(entry_ids, (tuple, list)):
+        values = entry_ids
+    else:
+        return ()
+
+    parsed: list[UUID] = []
+    for entry_id in values:
+        if not isinstance(entry_id, str):
+            continue
+        try:
+            parsed.append(UUID(entry_id))
+        except ValueError:
+            continue
+    return tuple(parsed)
 
 
 def format_date(value: Any) -> str:
