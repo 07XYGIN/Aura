@@ -120,3 +120,5 @@ docker-compose.override.yml
 *.crt
 *.p12
 secrets/
+
+\learn
