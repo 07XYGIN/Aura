@@ -175,14 +175,50 @@ def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dic
 
     无效 ID、缺失文件、损坏 JSON 和不属于当前用户的记录都会被忽略。
     """
+    return [
+        public_attachment(record)
+        for record, _ in load_verified_attachments(user_id, attachment_ids)
+    ]
+
+
+def load_attachment_data_urls(user_id: str, attachment_ids: list[str] | None) -> list[str]:
+    """Return verified image files as private data URLs for one model invocation.
+
+    The URLs are deliberately not added to public attachment metadata or graph
+    state. They are only used to construct the current multimodal model message.
+    """
+
+    data_urls: list[str] = []
+    for record, stored_path in load_verified_attachments(user_id, attachment_ids):
+        content_type = str(record.get("contentType") or "").strip().lower()
+        if content_type not in ALLOWED_IMAGE_TYPES:
+            continue
+        try:
+            raw = stored_path.read_bytes()
+        except OSError:
+            continue
+        if len(raw) > MAX_ATTACHMENT_BYTES or not matches_image_signature(raw, content_type):
+            continue
+        encoded = base64.b64encode(raw).decode("ascii")
+        data_urls.append(f"data:{content_type};base64,{encoded}")
+    return data_urls
+
+
+def load_verified_attachments(
+    user_id: str,
+    attachment_ids: list[str] | None,
+) -> list[tuple[dict[str, Any], Path]]:
+    """Load attachment metadata only after ownership and path checks succeed."""
+
     if not attachment_ids:
         return []
 
-    records: list[dict[str, Any]] = []
     try:
         normalized_user_id = normalize_user_id(user_id)
     except AttachmentValidationError:
         return []
+
+    records: list[tuple[dict[str, Any], Path]] = []
     user_dir = user_upload_dir(normalized_user_id)
     for attachment_id in attachment_ids[:MAX_ATTACHMENTS_PER_MESSAGE]:
         if not is_uuid_like(attachment_id):
@@ -192,7 +228,7 @@ def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dic
             continue
         try:
             record = json.loads(meta_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, OSError):
             continue
         stored_path = Path(str(record.get("path") or "")).resolve()
         if (
@@ -200,7 +236,7 @@ def load_attachments(user_id: str, attachment_ids: list[str] | None) -> list[dic
             and stored_path.parent == user_dir.resolve()
             and stored_path.is_file()
         ):
-            records.append(public_attachment(record))
+            records.append((record, stored_path))
     return records
 
 
@@ -210,14 +246,13 @@ def format_attachment_context(attachments: list[dict[str, Any]]) -> str:
         return "本轮没有附件。"
 
     lines = [
-        "本轮附件摘要：",
+        "本轮附件：最新用户消息中的 image_url 图片内容才是可见视觉证据；下面只有文件元数据。",
     ]
     for item in attachments:
         lines.append(
-            f"- {item.get('fileName')}（{item.get('contentType')}，{format_bytes(item.get('size'))}）："
-            f"{item.get('summary')}"
+            f"- {item.get('fileName')}（{item.get('contentType')}，{format_bytes(item.get('size'))}）"
         )
-    lines.append("只基于附件摘要和用户文字回应；没有视觉描述时，不要编造图片画面。")
+    lines.append("可以结合实际图片和用户文字回应；若没有 image_url 图片内容，则不要根据文件名或元数据编造画面。")
     return "\n".join(lines)
 
 
@@ -262,7 +297,7 @@ def build_attachment_summary(file_name: str, content_type: str, size: int) -> st
     """生成不包含虚构视觉信息的附件元数据摘要。"""
     return (
         f"用户上传了图片 {file_name}，类型 {content_type}，大小 {format_bytes(size)}。"
-        "当前服务只记录附件元数据，尚未生成可靠视觉描述。"
+        "未根据文件名或元数据生成画面描述。"
     )
 
 

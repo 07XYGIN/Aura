@@ -271,6 +271,59 @@ class AgentGraphTest(unittest.TestCase):
             },
         )
 
+    def test_call_model_attaches_current_turn_images_without_mutating_history(self):
+        response = AIMessage(
+            content='{"messages":["我看到了。"],"threadActions":[],"itemUsages":[]}'
+        )
+        image_data_urls = [
+            f"data:image/png;base64,image-{index}"
+            for index in range(4)
+        ]
+        human_message = HumanMessage(
+            content="这几张图怎么样？",
+            additional_kwargs={"turn_id": "turn-image-1"},
+        )
+        state = {
+            "messages": [human_message],
+            "turn_id": "turn-image-1",
+            "user_id": "user-1",
+            "attachments": [{"id": f"attachment-{index}"} for index in range(5)],
+            "request_started_at": datetime.now(UTC).isoformat(),
+        }
+        invoke = unittest.mock.Mock(return_value=response)
+
+        with (
+            patch(
+                "app.core.agent.agent_graph.load_attachment_data_urls",
+                return_value=image_data_urls,
+            ) as load_images,
+            patch(
+                "app.core.agent.agent_graph.llm_with_tools",
+                SimpleNamespace(invoke=invoke),
+            ),
+            patch("app.core.agent.agent_graph.store_reply_timing_state", return_value=True),
+        ):
+            call_model(state)
+
+        load_images.assert_called_once_with(
+            "user-1",
+            ["attachment-0", "attachment-1", "attachment-2", "attachment-3"],
+        )
+        request_messages = invoke.call_args.args[0]
+        visual_message = request_messages[-1]
+        self.assertEqual(
+            visual_message.content,
+            [
+                {"type": "text", "text": "这几张图怎么样？"},
+                *[
+                    {"type": "image_url", "image_url": {"url": url}}
+                    for url in image_data_urls
+                ],
+            ],
+        )
+        self.assertEqual(human_message.content, "这几张图怎么样？")
+        self.assertEqual(state["messages"][0].content, "这几张图怎么样？")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,11 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer
 from langsmith import traceable
 
-from app.core.attachment_store import format_attachment_context, load_attachments
+from app.core.attachment_store import (
+    format_attachment_context,
+    load_attachment_data_urls,
+    load_attachments,
+)
 from app.core.config import llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
 from app.core.continuity.capsules import (
@@ -131,6 +135,12 @@ def call_model(state: AuraState) -> AuraState:
 
     system_prompt = build_runtime_system_prompt(state)
     messages = [SystemMessage(content=system_prompt)] + trim_short_term_messages(state["messages"])
+    messages = add_current_turn_images(
+        messages,
+        user_id=str(state.get("user_id") or ""),
+        attachments=state.get("attachments", []),
+        turn_id=state.get("turn_id"),
+    )
     response = llm_with_tools.invoke(messages)
     tool_calls = getattr(response, "tool_calls", None) or []
     if tool_calls:
@@ -529,6 +539,63 @@ def aura_agent(
         mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
 
     logging.info("Aura 对话结束 user_id=%s", user_id)
+
+
+def add_current_turn_images(
+    messages: list,
+    *,
+    user_id: str,
+    attachments: list[dict[str, Any]],
+    turn_id: str | None,
+) -> list:
+    """Attach images only to the in-flight Qwen request, not graph state."""
+
+    attachment_ids = [
+        str(item.get("id") or "")
+        for item in attachments[:4]
+        if isinstance(item, dict) and item.get("id")
+    ]
+    if not user_id or not attachment_ids:
+        return messages
+
+    try:
+        image_data_urls = load_attachment_data_urls(user_id, attachment_ids)
+    except Exception:
+        logging.exception("Aura 图片附件读取失败，将继续使用文字上下文")
+        return messages
+    if not image_data_urls:
+        return messages
+
+    target_index = None
+    fallback_index = None
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, HumanMessage):
+            continue
+        fallback_index = index
+        metadata = getattr(message, "additional_kwargs", {}) or {}
+        if turn_id and metadata.get("turn_id") == turn_id:
+            target_index = index
+            break
+
+    if turn_id and target_index is None:
+        return messages
+    target_index = target_index if target_index is not None else fallback_index
+    if target_index is None:
+        return messages
+
+    target = messages[target_index]
+    text = message_content_to_text(target.content).strip() or "（用户发送了图片）"
+    content = [{"type": "text", "text": text}]
+    content.extend(
+        {"type": "image_url", "image_url": {"url": url}}
+        for url in image_data_urls
+    )
+
+    # Keep Base64 image data out of the checkpointed message list.
+    updated = list(messages)
+    updated[target_index] = target.model_copy(update={"content": content})
+    return updated
 
 
 def build_reply_messages(response: Any, state: AuraState) -> tuple[list[AIMessage], dict[str, Any]]:
