@@ -22,6 +22,8 @@ from app.db.models import (
     ConditionalMessage,
     ConditionalMessageEvent,
     EmotionalAfterglow,
+    FocusSession,
+    FocusSessionEvent,
     LangchainPgCollection,
     LangchainPgEmbedding,
     ProactiveMessage,
@@ -44,6 +46,8 @@ class DbModelsTest(unittest.TestCase):
                 "proactive_message",
                 "conditional_message",
                 "conditional_message_event",
+                "focus_session",
+                "focus_session_event",
                 "relationship_thread",
                 "relationship_thread_event",
                 "relationship_item",
@@ -85,6 +89,10 @@ class DbModelsTest(unittest.TestCase):
                 "idx_conditional_message_time_due",
                 "idx_conditional_message_user_status",
                 "idx_conditional_message_event_user_time",
+                "uq_focus_session_running_user",
+                "idx_focus_session_user_created",
+                "idx_focus_session_due",
+                "idx_focus_session_event_session_time",
                 "idx_relationship_thread_user_status_follow_up",
                 "idx_relationship_thread_event_thread_occurred",
                 "idx_relationship_item_user_type_status",
@@ -222,6 +230,39 @@ class DbModelsTest(unittest.TestCase):
         )
         event_user_fk = list(event_table.c.user_id.foreign_keys)[0]
         self.assertEqual(event_user_fk.ondelete, "CASCADE")
+
+    def test_focus_models_preserve_single_running_session_and_event_history(self):
+        focus_constraints = {constraint.name for constraint in FocusSession.__table__.constraints}
+        event_constraints = {constraint.name for constraint in FocusSessionEvent.__table__.constraints}
+
+        self.assertTrue(
+            {
+                "chk_focus_session_status",
+                "chk_focus_session_duration",
+                "chk_focus_session_remaining",
+                "chk_focus_session_version",
+                "uq_focus_session_user_request",
+            }.issubset(focus_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_focus_session_event_sequence",
+                "chk_focus_session_event_actor",
+                "chk_focus_session_event_type",
+                "uq_focus_session_event_sequence",
+                "uq_focus_session_event_action",
+            }.issubset(event_constraints)
+        )
+        active_index = next(
+            index for index in FocusSession.__table__.indexes if index.name == "uq_focus_session_running_user"
+        )
+        self.assertTrue(active_index.unique)
+        outbox_fk = next(iter(FocusSession.__table__.c.outbox_message_id.foreign_keys))
+        event_fk = next(iter(FocusSessionEvent.__table__.c.session_id.foreign_keys))
+        self.assertEqual(outbox_fk.target_fullname, "proactive_message.id")
+        self.assertTrue(outbox_fk.deferrable)
+        self.assertEqual(event_fk.target_fullname, "focus_session.id")
+        self.assertEqual(event_fk.ondelete, "CASCADE")
 
     def test_bash_models_preserve_user_ownership_and_move_history(self):
         """游戏会话应归属用户，行动应随会话级联删除。"""

@@ -76,7 +76,7 @@ class AgentGraphTest(unittest.TestCase):
         prompt = build_runtime_system_prompt({})
 
         self.assertIn("## 对话示范", prompt)
-        self.assertIn("用户表达过度依赖", prompt)
+        self.assertIn("拒绝独占式依赖", prompt)
 
     def test_output_format_instruction_comes_after_examples_and_runtime_context(self):
         prompt = build_runtime_system_prompt({})

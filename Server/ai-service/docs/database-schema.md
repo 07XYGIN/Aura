@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的二十二张业务表。
 
 ## 业务模型表
 
@@ -9,6 +9,8 @@
 | `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
 | `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
 | `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
+| `focus_session` | 一起专注的当前计时、暂停、结束问询和用户汇报状态 | `app/core/focus/service.py` |
+| `focus_session_event` | 一起专注每次状态变化的不可变审计事件 | `app/core/focus/service.py` |
 | `conditional_message` | 时间胶囊与秘密保险箱的密封正文、触发条件和交付状态 | `app/core/continuity/capsules.py` |
 | `conditional_message_event` | 关键词、项目、GitHub 和口令事件的幂等 inbox | `app/core/continuity/capsules.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |

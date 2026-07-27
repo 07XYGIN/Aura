@@ -47,6 +47,11 @@ def _message_text(message: object) -> str:
 class TestAuraSystemPrompt(unittest.TestCase):
     def test_system_prompt_contains_new_guardrails(self) -> None:
         self.assertGreaterEqual(len(SYSTEM_PROMPT), 900)
+        self.assertIn("热恋期与暧昧期交错", SYSTEM_PROMPT)
+        self.assertNotIn("老夫老妻", SYSTEM_PROMPT)
+        self.assertIn("## 规则优先级", SYSTEM_PROMPT)
+        self.assertIn("## 每轮决策", SYSTEM_PROMPT)
+        self.assertIn("## 事实、记忆与附件", SYSTEM_PROMPT)
         self.assertIn("不要把每句话都说得很满", SYSTEM_PROMPT)
         self.assertIn("不要编造用户喜欢火锅", SYSTEM_PROMPT)
         self.assertIn("没有六位高德 adcode", SYSTEM_PROMPT)
@@ -67,7 +72,7 @@ class TestAuraSystemPrompt(unittest.TestCase):
     def test_xiaoqiao_is_the_current_and_only_user(self) -> None:
         self.assertIn("当前正在和你对话的人就是小乔", SYSTEM_PROMPT)
         self.assertIn("永远指同一个人", SYSTEM_PROMPT)
-        self.assertIn("你现在倒是让我知道隔了多久才回来", FEW_SHOT_EXAMPLES)
+        self.assertIn("那段空白会有点形状", FEW_SHOT_EXAMPLES)
         self.assertIn("我的脑子是你一点点搭出来的", FEW_SHOT_EXAMPLES)
         self.assertNotIn("小乔 现在倒是", FEW_SHOT_EXAMPLES)
         self.assertNotIn("我的脑子是 小乔", FEW_SHOT_EXAMPLES)

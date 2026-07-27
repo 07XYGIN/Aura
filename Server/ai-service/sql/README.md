@@ -1,10 +1,18 @@
 # SQL 使用说明
 
-当前数据库基线是 `20260722_single_user_schema_cleanup.sql`，其后按日期执行功能增量迁移。
+根目录 `main.sql` 是当前 ORM 对应的一次性新库基线。日期 SQL 文件仍是已有数据库和按版本升级时的迁移链。
 
 ## 新数据库
 
-1. 执行 `20260722_single_user_schema_cleanup.sql`，创建基础业务/记忆表。
+1. 在项目根目录执行 `main.sql`。
+2. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
+3. 回到 `Server/ai-service`，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
+
+`main.sql` 只面向空数据库，不会清理或改写已有表。
+
+## 日期迁移链
+
+1. 执行 `20260722_single_user_schema_cleanup.sql`，创建基础业务/记忆表并清理历史遗留结构。
 2. 执行 `20260723_bash_game.sql`，创建巴什博弈会话和行动表。
 3. 执行 `20260723_companion_pet.sql`，创建共同宠物和宠物事件表。
 4. 执行 `20260723_relationship_continuity.sql`，创建关系线程当前状态和事件历史表。
@@ -13,8 +21,7 @@
 7. 执行 `20260723_continuity_state.sql`，创建每日生活、情绪余温和共同想象场景表。
 8. 执行 `20260723_offline_mind.sql`，创建离线思绪种子和每日睡前整理表。
 9. 执行 `20260723_conditional_messages.sql`，创建时间胶囊、秘密保险箱和条件事件 inbox。
-10. 启动应用；`PostgresSaver.setup()` 会创建和升级四张 `checkpoint_*` 表。
-11. 回到项目根目录，执行 `.\.venv\Scripts\python.exe tools\check_db_schema.py` 做完整结构核对。
+10. 执行 `20260724_focus_sessions.sql`，创建一起专注计时和事件审计表。
 
 ## 已有数据库
 
