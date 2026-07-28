@@ -46,6 +46,29 @@ def emotion_event(emotion_state: dict[str, Any]) -> dict[str, Any]:
     return {"event": "emotion", "type": "emotion", "emotion": emotion_state}
 
 
+def live2d_state_event(presence: dict[str, Any]) -> dict[str, Any]:
+    """构造经过后端白名单约束的 Live2D 表情事件。"""
+
+    return {"event": "live2d_state", "type": "live2d_state", "presence": presence}
+
+
+def approval_required_event(approval: dict[str, Any]) -> dict[str, Any]:
+    """通知客户端一条持久化副作用正在等待用户明确决定。"""
+
+    return {"event": "approval_required", "type": "approval_required", "approval": approval}
+
+
+def conversation_branch_event(branch_id: str, source_message_id: str | None = None) -> dict[str, Any]:
+    """通知客户端后续消息已写入新的 LangGraph 对话分支。"""
+
+    return {
+        "event": "conversation_branch",
+        "type": "conversation_branch",
+        "branchId": branch_id,
+        "sourceMessageId": source_message_id,
+    }
+
+
 def memory_candidate_event(candidate: dict[str, Any]) -> dict[str, Any]:
     """构造记忆候选事件，供客户端观察本轮记忆判断。
 

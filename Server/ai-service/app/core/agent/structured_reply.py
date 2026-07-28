@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from .presence import Live2DPresence
+
 MAX_REPLY_MESSAGES = 4
 FALLBACK_REPLY = "我刚才有点卡住了，你再说一遍？"
 
@@ -37,6 +39,7 @@ class StructuredReply(BaseModel):
     messages: list[str]
     thread_actions: list[StructuredThreadAction] = Field(default_factory=list, alias="threadActions")
     item_usages: list[StructuredItemUsage] = Field(default_factory=list, alias="itemUsages")
+    presence: Live2DPresence = Field(default_factory=Live2DPresence)
 
     @field_validator("messages", mode="before")
     @classmethod
@@ -105,6 +108,16 @@ class StructuredReply(BaseModel):
                 usages.append(usage)
                 seen.add(usage.item_ref)
         return usages
+
+    @field_validator("presence", mode="before")
+    @classmethod
+    def clean_presence(cls, value: Any) -> Live2DPresence:
+        """无效表情侧信道不能让文本回复整体解析失败。"""
+
+        try:
+            return Live2DPresence.model_validate(value)
+        except ValidationError:
+            return Live2DPresence()
 
 
 def parse_structured_reply(raw_content: Any) -> list[str]:

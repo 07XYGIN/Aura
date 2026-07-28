@@ -62,13 +62,26 @@ export type ChatMessage = {
   sessionId?: string
   role: 'assistant' | 'user'
   content: string
-  attachments?: string[]
+  attachments?: ChatAttachment[]
   pending?: boolean
   createdAt?: string
   turnId?: string
   batchId?: string
   batchIndex?: number
   batchTotal?: number
+}
+
+export type ChatAttachment = {
+  id?: string
+  fileName: string
+  contentType?: string
+  size?: number
+}
+
+export type Live2DPresence = {
+  expression: 'calm' | 'warm' | 'playful' | 'thinking' | 'soft' | 'concerned'
+  motion: 'idle' | 'acknowledge' | 'wave'
+  intensity: number
 }
 
 declare global {

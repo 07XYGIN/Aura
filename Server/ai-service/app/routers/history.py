@@ -3,8 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.agent.agent_graph import clear_history, delete_history_message, get_history
+from app.core.agent.agent_graph import (
+    clear_history,
+    create_history_branch,
+    delete_history_message,
+    get_history,
+)
 from app.core.auth_store import get_current_user_id
+from app.schemas.history import ConversationBranchRequest
 from app.schemas.response import SuccessResponse
 
 router = APIRouter(
@@ -21,6 +27,7 @@ router = APIRouter(
 async def delete_history(
     userId: str,
     current_user_id: Annotated[str, Depends(get_current_user_id)],
+    branchId: str | None = None,
 ):
     """清空当前 JWT 用户的全部 LangGraph 聊天历史。
 
@@ -28,7 +35,14 @@ async def delete_history(
     权威身份，因此伪造路径参数不能读取或删除另一条会话线程。
     """
     warn_legacy_user_mismatch(userId, current_user_id)
-    deleted_count = clear_history(current_user_id)
+    try:
+        deleted_count = (
+            clear_history(current_user_id, branchId)
+            if branchId is not None
+            else clear_history(current_user_id)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SuccessResponse(data={"deletedCount": deleted_count})
 
 
@@ -41,6 +55,7 @@ async def delete_history_item(
     userId: str,
     messageId: str,
     current_user_id: Annotated[str, Depends(get_current_user_id)],
+    branchId: str | None = None,
 ):
     """删除用户的一条聊天消息。
 
@@ -48,7 +63,14 @@ async def delete_history_item(
         HTTPException: 指定消息不存在。
     """
     warn_legacy_user_mismatch(userId, current_user_id)
-    deleted = delete_history_message(current_user_id, messageId)
+    try:
+        deleted = (
+            delete_history_message(current_user_id, messageId, branchId)
+            if branchId is not None
+            else delete_history_message(current_user_id, messageId)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="聊天记录不存在")
 
@@ -63,11 +85,41 @@ async def delete_history_item(
 async def history(
     userId: str,
     current_user_id: Annotated[str, Depends(get_current_user_id)],
+    branchId: str | None = None,
 ):
     """返回当前 JWT 用户保存的完整聊天历史。"""
     warn_legacy_user_mismatch(userId, current_user_id)
-    state = get_history(current_user_id)
+    try:
+        state = get_history(current_user_id, branchId) if branchId is not None else get_history(current_user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SuccessResponse(data=state)
+
+
+@router.post(
+    "/{userId}/branches",
+    response_model=SuccessResponse,
+    summary="从一条聊天消息创建对话分支",
+)
+async def branch_history(
+    userId: str,
+    request: ConversationBranchRequest,
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    """复制指定消息前的历史到新的 LangGraph 线程，不影响原对话。"""
+
+    warn_legacy_user_mismatch(userId, current_user_id)
+    try:
+        branch_id = create_history_branch(
+            current_user_id,
+            request.message_id,
+            request.branch_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if branch_id is None:
+        raise HTTPException(status_code=404, detail="聊天消息不存在，无法创建分支")
+    return SuccessResponse(data={"branchId": branch_id, "sourceMessageId": request.message_id})
 
 
 def warn_legacy_user_mismatch(request_user_id: str, current_user_id: str) -> None:

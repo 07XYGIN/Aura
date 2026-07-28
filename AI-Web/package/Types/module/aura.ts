@@ -1,12 +1,19 @@
 import type { PageResult } from './api'
 
+export type AuraChatAttachment = {
+    id?: string
+    fileName: string
+    contentType?: string
+    size?: number
+}
+
 export type AuraHistoryMessage = {
     id?: string
     sessionId?: string
     role?: 'user' | 'assistant' | 'aura' | 'system'
     senderType?: 'user' | 'assistant' | 'system'
     content?: string
-    attachments?: string[]
+    attachments?: AuraChatAttachment[] | string[]
     createdAt?: string
     turnId?: string
     batchId?: string

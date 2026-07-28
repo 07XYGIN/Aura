@@ -78,6 +78,26 @@ class StructuredReplyTest(unittest.TestCase):
             ["K2", "K3"],
         )
 
+    def test_presence_sidecar_is_bounded_without_breaking_messages(self) -> None:
+        payload = try_parse_structured_reply_payload(
+            '{"messages":["我在。"],"presence":'
+            '{"expression":"warm","motion":"acknowledge","intensity":2}}'
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload.presence.model_dump(), {"expression": "warm", "motion": "acknowledge", "intensity": 2})
+
+    def test_invalid_presence_falls_back_to_calm(self) -> None:
+        payload = try_parse_structured_reply_payload(
+            '{"messages":["我在。"],"presence":'
+            '{"expression":"EyeRoll","motion":"eye_roll","intensity":99}}'
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload.presence.model_dump(), {"expression": "calm", "motion": "idle", "intensity": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

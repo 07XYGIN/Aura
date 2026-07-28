@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from app.core.agent import agent_graph
+from app.core.agent import agent_graph, approval
 from app.core.config import AURA_CORS_ORIGINS, SYNC_DATABASE_URL
 from app.core.exceptions import (
     http_exception_handler,
@@ -18,10 +18,12 @@ from app.core.proactive_scheduler import start_proactive_scheduler, stop_proacti
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
     admin,
+    approvals,
     attachments,
     capsules,
     continuity,
     continuity_state,
+    feedback,
     games,
     history,
     location,
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
         checkpointer.setup()
         agent_graph.aura = agent_graph.build_graph(checkpointer)
+        approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")
         proactive_stop_event = start_proactive_scheduler()
         try:
@@ -76,11 +79,13 @@ def create_app() -> FastAPI:
     )
     routers: list[APIRouter] = [
         admin.router,
+        approvals.router,
         games.router,
         pet.router,
         capsules.router,
         continuity.router,
         continuity_state.router,
+        feedback.router,
         relationship_knowledge.router,
         offline_mind.router,
         msg.router,

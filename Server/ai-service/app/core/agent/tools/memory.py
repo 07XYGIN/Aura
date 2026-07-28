@@ -34,6 +34,8 @@ def save_memory_tool(
     user_id = configurable.get("user_id")
     if not user_id:
         return "缺少用户 ID，无法保存记忆。"
+    if configurable.get("allow_persistence") is False:
+        return "当前是对话分支预览，未写入长期记忆。"
 
     clean_title = clean_text(title, 80) or ("对话记忆" if memory_scope == "long" else "近期线索")
     clean_content = clean_text(content, 320)

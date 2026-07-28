@@ -3,29 +3,38 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { Live2DPresence } from '@/types/arua'
 
 const PIXI_URL = 'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js'
-const LIVE2D_CUBISM2_URL = 'https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js'
+const LIVE2D_CUBISM2_URL =
+    'https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js'
 const LIVE2D_CUBISM4_URL = 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js'
-const LIVE2D_DISPLAY_URL = 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js'
+const LIVE2D_DISPLAY_URL =
+    'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js'
 const DEFAULT_MODEL_URL =
     process.env.NEXT_PUBLIC_LIVE2D_MODEL_URL ??
-    process.env.NEXT_PUBLIC_LIVE2D_YANDERE_MAID_MODEL_URL ??
     'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json'
-const MODEL_EXPRESSION =
-    process.env.NEXT_PUBLIC_LIVE2D_MODEL_EXPRESSION ??
-    process.env.NEXT_PUBLIC_LIVE2D_EYE_ROLL_EXPRESSION ??
-    'EyeRoll'
-const MODEL_MOTION_GROUP =
-    process.env.NEXT_PUBLIC_LIVE2D_MODEL_MOTION_GROUP ??
-    process.env.NEXT_PUBLIC_LIVE2D_EYE_ROLL_MOTION_GROUP ??
-    'EyeRoll'
 const MODEL_SCALE = Number(process.env.NEXT_PUBLIC_LIVE2D_MODEL_SCALE ?? '')
+const EXPRESSION_BY_PRESENCE: Record<Live2DPresence['expression'], string | undefined> = {
+    calm: process.env.NEXT_PUBLIC_LIVE2D_CALM_EXPRESSION,
+    warm: process.env.NEXT_PUBLIC_LIVE2D_WARM_EXPRESSION,
+    playful: process.env.NEXT_PUBLIC_LIVE2D_PLAYFUL_EXPRESSION,
+    thinking: process.env.NEXT_PUBLIC_LIVE2D_THINKING_EXPRESSION,
+    soft: process.env.NEXT_PUBLIC_LIVE2D_SOFT_EXPRESSION,
+    concerned: process.env.NEXT_PUBLIC_LIVE2D_CONCERNED_EXPRESSION,
+}
+const MOTION_BY_PRESENCE: Record<Live2DPresence['motion'], string | undefined> = {
+    idle: process.env.NEXT_PUBLIC_LIVE2D_IDLE_MOTION_GROUP,
+    acknowledge: process.env.NEXT_PUBLIC_LIVE2D_ACKNOWLEDGE_MOTION_GROUP,
+    wave: process.env.NEXT_PUBLIC_LIVE2D_WAVE_MOTION_GROUP,
+}
+const DEFAULT_PRESENCE: Live2DPresence = { expression: 'calm', motion: 'idle', intensity: 0 }
 
 type Live2DStageProps = {
     className?: string
     isActive?: boolean
     emotionLabel?: string | null
+    presence?: Live2DPresence | null
 }
 
 type PixiApplication = {
@@ -36,7 +45,10 @@ type PixiApplication = {
     renderer: {
         resize: (width: number, height: number) => void
     }
-    destroy: (removeView?: boolean, options?: { children?: boolean; texture?: boolean; baseTexture?: boolean }) => void
+    destroy: (
+        removeView?: boolean,
+        options?: { children?: boolean; texture?: boolean; baseTexture?: boolean },
+    ) => void
 }
 
 type Live2DDisplayModel = {
@@ -111,23 +123,37 @@ const loadLive2DRuntime = () => {
     return live2dRuntimePromise
 }
 
-export function Live2DStage({ className, isActive = false, emotionLabel }: Live2DStageProps) {
+export function Live2DStage({
+    className,
+    isActive = false,
+    emotionLabel,
+    presence,
+}: Live2DStageProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const modelRef = useRef<Live2DDisplayModel | null>(null)
+    const presenceRef = useRef<Live2DPresence>(presence ?? DEFAULT_PRESENCE)
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
     const [isExpressionPlaying, setIsExpressionPlaying] = useState(false)
 
-    const triggerExpression = () => {
+    const triggerPresence = (nextPresence = presenceRef.current) => {
         const model = modelRef.current
         try {
-            model?.expression?.(MODEL_EXPRESSION)
-            model?.motion?.(MODEL_MOTION_GROUP)
+            const expression = EXPRESSION_BY_PRESENCE[nextPresence.expression]
+            const motion = MOTION_BY_PRESENCE[nextPresence.motion]
+            if (expression) {
+                model?.expression?.(expression)
+            }
+            if (motion) {
+                model?.motion?.(motion)
+            }
         } catch {
-            // Some Live2D assets do not ship matching expressions; keep the stage feedback.
+            // Assets may not define every optional expression or motion group.
         }
-        setIsExpressionPlaying(true)
-        window.setTimeout(() => setIsExpressionPlaying(false), 900)
+        if (nextPresence.intensity > 0) {
+            setIsExpressionPlaying(true)
+            window.setTimeout(() => setIsExpressionPlaying(false), 900)
+        }
     }
 
     useEffect(() => {
@@ -186,7 +212,7 @@ export function Live2DStage({ className, isActive = false, emotionLabel }: Live2
                 }
 
                 model.on('hit', () => {
-                    triggerExpression()
+                    triggerPresence()
                 })
 
                 modelRef.current = model
@@ -223,6 +249,13 @@ export function Live2DStage({ className, isActive = false, emotionLabel }: Live2
         modelRef.current?.motion?.('Tap')
     }, [isActive, status])
 
+    useEffect(() => {
+        presenceRef.current = presence ?? DEFAULT_PRESENCE
+        if (status === 'ready') {
+            triggerPresence(presenceRef.current)
+        }
+    }, [presence, status])
+
     return (
         <div
             ref={containerRef}
@@ -248,7 +281,9 @@ export function Live2DStage({ className, isActive = false, emotionLabel }: Live2
                     <span
                         className={cn(
                             'h-2 w-2 rounded-full',
-                            status === 'ready' ? 'bg-[var(--aura-primary)]' : 'bg-[var(--aura-tertiary)]',
+                            status === 'ready'
+                                ? 'bg-[var(--aura-primary)]'
+                                : 'bg-[var(--aura-tertiary)]',
                         )}
                     />
                     <span>{status === 'ready' ? 'online' : status}</span>
@@ -259,17 +294,17 @@ export function Live2DStage({ className, isActive = false, emotionLabel }: Live2
 
             <div
                 className={cn(
-                    'pointer-events-none absolute left-1/2 top-[34%] z-10 h-16 w-40 -translate-x-1/2 rounded-full bg-white/85 opacity-0 blur-[18px] transition-opacity duration-150',
+                    'pointer-events-none absolute top-[34%] left-1/2 z-10 h-16 w-40 -translate-x-1/2 rounded-full bg-white/85 opacity-0 blur-[18px] transition-opacity duration-150',
                     isExpressionPlaying && 'opacity-80',
                 )}
             />
 
             <button
                 type="button"
-                className="absolute right-6 top-20 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text-muted)] shadow-[0_14px_34px_-26px_var(--aura-glow)] transition hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                aria-label="Play model expression"
-                title="Play model expression"
-                onClick={triggerExpression}
+                className="absolute top-20 right-6 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text-muted)] shadow-[0_14px_34px_-26px_var(--aura-glow)] transition hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                aria-label="播放当前表情"
+                title="播放当前表情"
+                onClick={() => triggerPresence()}
             >
                 <Sparkles className="h-4 w-4" />
             </button>

@@ -53,6 +53,33 @@ export type AuraUploadedAttachment = {
   createdAt?: string
 }
 
+export type AuraReplyFeedbackCategory =
+  | 'helpful'
+  | 'too_long'
+  | 'too_preachy'
+  | 'too_clingy'
+  | 'too_many_questions'
+  | 'wrong_context'
+
+export type AuraApproval = {
+  id: string
+  kind: string
+  title: string
+  summary: string
+  createdAt?: string
+}
+
+export type AuraRelationshipChapter = {
+  id: string
+  sequenceNo: number
+  title: string
+  summary: string
+  status: 'current' | 'closed'
+  startedAt?: string
+  endedAt?: string
+  representativeMessageId?: string
+}
+
 export type AuraCityAdcode = {
   adcode: string
   province?: string
@@ -95,20 +122,61 @@ export const aura = {
       method: 'GET',
     })
   },
-  getCurrentMessages: () =>
-    pythonRequest<AuraHistoryMessage[]>(`/api/history/${encodeURIComponent(requireCurrentUserId())}`, {
-      method: 'GET',
-    }),
-  deleteCurrentMessage: (messageId: string) =>
-    pythonRequest<{ deleted: boolean; messageId: string }>(
-      `/api/history/${encodeURIComponent(requireCurrentUserId())}/messages/${encodeURIComponent(messageId)}`,
+  getCurrentMessages: (branchId?: string | null) => {
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : ''
+    return pythonRequest<AuraHistoryMessage[]>(
+      `/api/history/${encodeURIComponent(requireCurrentUserId())}${query}`,
+      {
+        method: 'GET',
+      },
+    )
+  },
+  deleteCurrentMessage: (messageId: string, branchId?: string | null) => {
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : ''
+    return pythonRequest<{ deleted: boolean; messageId: string }>(
+      `/api/history/${encodeURIComponent(requireCurrentUserId())}/messages/${encodeURIComponent(messageId)}${query}`,
       {
         method: 'DELETE',
       },
+    )
+  },
+  clearCurrentMessages: (branchId?: string | null) => {
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : ''
+    return pythonRequest<{ deletedCount: number }>(
+      `/api/history/${encodeURIComponent(requireCurrentUserId())}${query}`,
+      {
+        method: 'DELETE',
+      },
+    )
+  },
+  createConversationBranch: (messageId: string, branchId?: string | null) =>
+    pythonRequest<{ branchId: string; sourceMessageId: string }>(
+      `/api/history/${encodeURIComponent(requireCurrentUserId())}/branches`,
+      {
+        method: 'POST',
+        body: { messageId, branchId: branchId || undefined },
+      },
     ),
-  clearCurrentMessages: () =>
-    pythonRequest<{ deletedCount: number }>(`/api/history/${encodeURIComponent(requireCurrentUserId())}`, {
-      method: 'DELETE',
+  submitReplyFeedback: (messageId: string, category: AuraReplyFeedbackCategory) =>
+    pythonRequest<{ stored: boolean; category: AuraReplyFeedbackCategory }>('/api/feedback/reply', {
+      method: 'POST',
+      body: { messageId, category },
+    }),
+  getPendingApprovals: () =>
+    pythonRequest<{ items: AuraApproval[] }>('/api/approvals', {
+      method: 'GET',
+    }),
+  resolveApproval: (approvalId: string, approved: boolean) =>
+    pythonRequest<{ approval: AuraApproval; approved: boolean }>(
+      `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
+      {
+        method: 'POST',
+        body: { approved },
+      },
+    ),
+  getRelationshipChapters: () =>
+    pythonRequest<{ items: AuraRelationshipChapter[] }>('/api/continuity/chapters', {
+      method: 'GET',
     }),
   getMemories: (
     page = 1,
@@ -143,11 +211,7 @@ export const aura = {
         method: 'DELETE',
       },
     ),
-  submitConversationFeedback: (payload: {
-    sessionId: string
-    score: number
-    comment?: string
-  }) =>
+  submitConversationFeedback: (payload: { sessionId: string; score: number; comment?: string }) =>
     pythonRequest('/api/aura/conversation-feedback', {
       method: 'POST',
       body: { ...payload, userId: requireCurrentUserId() },

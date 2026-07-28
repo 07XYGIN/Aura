@@ -204,6 +204,19 @@ def load_attachment_data_urls(user_id: str, attachment_ids: list[str] | None) ->
     return data_urls
 
 
+def open_attachment_file(user_id: str, attachment_id: str) -> tuple[Path, str] | None:
+    """返回当前用户可读取的已验证图片路径和 MIME 类型。"""
+
+    records = load_verified_attachments(user_id, [attachment_id])
+    if not records:
+        return None
+    record, stored_path = records[0]
+    content_type = str(record.get("contentType") or "").strip().lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        return None
+    return stored_path, content_type
+
+
 def load_verified_attachments(
     user_id: str,
     attachment_ids: list[str] | None,

@@ -9,7 +9,7 @@ from typing import Annotated, AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.agent_graph import append_external_history_turn, aura_agent
+from app.core.agent.agent_graph import append_external_history_turn, aura_agent, retry_aura_agent
 from app.core.agent.protocol import (
     assistant_message_event,
     bash_game_state_event,
@@ -109,6 +109,8 @@ async def event_generator(
     client_message_id: str | None = None,
     attachment_ids: list[str] | None = None,
     city_adcode: str | None = None,
+    branch_id: str | None = None,
+    retry_message_id: str | None = None,
 ) -> AsyncIterator[str]:
     """在线程池运行同步 Agent，并桥接为异步 SSE 文本流。
 
@@ -174,14 +176,19 @@ async def event_generator(
     def produce_events() -> None:
         """同步消费 Agent 事件并推入异步队列，异常时发送统一错误事件。"""
         try:
-            for event in aura_agent(
-                message,
-                user_id,
-                emotion_state,
-                client_message_id,
-                attachment_ids,
-                city_adcode,
-            ):
+            if retry_message_id:
+                events = retry_aura_agent(user_id, retry_message_id, branch_id)
+            else:
+                events = aura_agent(
+                    message,
+                    user_id,
+                    emotion_state,
+                    client_message_id,
+                    attachment_ids,
+                    city_adcode,
+                    branch_id,
+                )
+            for event in events:
                 if stop_event.is_set():
                     break
                 # logging.info("Aura SSE event user_id=%s event=%s", user_id, event.get("event"))
@@ -482,23 +489,43 @@ async def send_message(
             msg.user_id,
             current_user_id,
         )
-    focus_response: FocusChatResponse | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            focus_response = await try_handle_focus_chat_message(
-                session,
-                message=msg.message,
-                user_id=user_id,
-                client_message_id=msg.client_message_id,
+    if msg.retry_message_id:
+        if not _try_acquire_sse_slot():
+            raise HTTPException(
+                status_code=429,
+                detail=f"Aura 正在处理太多实时对话，请稍后再试。（当前上限 {_sse_max_concurrency}）",
             )
-    except FocusServiceError as exc:
-        focus_response = FocusChatResponse(
-            action="rejected",
-            snapshot=None,
-            messages=[str(exc)],
+        return StreamingResponse(
+            event_generator(
+                "",
+                user_id,
+                branch_id=msg.branch_id,
+                retry_message_id=msg.retry_message_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
-    except Exception:
-        logging.exception("一起专注聊天分流失败，回退到普通 Aura 对话")
+    focus_response: FocusChatResponse | None = None
+    if msg.branch_id is None:
+        try:
+            async with AsyncSessionLocal() as session:
+                focus_response = await try_handle_focus_chat_message(
+                    session,
+                    message=msg.message,
+                    user_id=user_id,
+                    client_message_id=msg.client_message_id,
+                )
+        except FocusServiceError as exc:
+            focus_response = FocusChatResponse(
+                action="rejected",
+                snapshot=None,
+                messages=[str(exc)],
+            )
+        except Exception:
+            logging.exception("一起专注聊天分流失败，回退到普通 Aura 对话")
 
     if focus_response is not None:
         schedule_user_message_activity_record(user_id)
@@ -517,22 +544,23 @@ async def send_message(
         )
 
     game_response: BashChatResponse | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            game_response = await try_handle_bash_chat_message(
-                session,
-                message=msg.message,
-                user_id=user_id,
-                client_message_id=msg.client_message_id,
+    if msg.branch_id is None:
+        try:
+            async with AsyncSessionLocal() as session:
+                game_response = await try_handle_bash_chat_message(
+                    session,
+                    message=msg.message,
+                    user_id=user_id,
+                    client_message_id=msg.client_message_id,
+                )
+        except BashGameServiceError as exc:
+            game_response = BashChatResponse(
+                action="rejected",
+                snapshot=None,
+                messages=[str(exc)],
             )
-    except BashGameServiceError as exc:
-        game_response = BashChatResponse(
-            action="rejected",
-            snapshot=None,
-            messages=[str(exc)],
-        )
-    except Exception:
-        logging.exception("巴什博弈聊天分流失败，回退到普通 Aura 对话")
+        except Exception:
+            logging.exception("巴什博弈聊天分流失败，回退到普通 Aura 对话")
 
     if game_response is not None:
         schedule_user_message_activity_record(user_id)
@@ -551,22 +579,23 @@ async def send_message(
         )
 
     pet_response: PetChatResponse | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            pet_response = await try_handle_pet_chat_message(
-                session,
-                message=msg.message,
-                user_id=user_id,
-                client_message_id=msg.client_message_id,
+    if msg.branch_id is None:
+        try:
+            async with AsyncSessionLocal() as session:
+                pet_response = await try_handle_pet_chat_message(
+                    session,
+                    message=msg.message,
+                    user_id=user_id,
+                    client_message_id=msg.client_message_id,
+                )
+        except PetServiceError as exc:
+            pet_response = PetChatResponse(
+                action="rejected",
+                snapshot=None,
+                messages=[str(exc)],
             )
-    except PetServiceError as exc:
-        pet_response = PetChatResponse(
-            action="rejected",
-            snapshot=None,
-            messages=[str(exc)],
-        )
-    except Exception:
-        logging.exception("共同宠物聊天分流失败，回退到普通 Aura 对话")
+        except Exception:
+            logging.exception("共同宠物聊天分流失败，回退到普通 Aura 对话")
 
     if pet_response is not None:
         schedule_user_message_activity_record(user_id)
@@ -598,6 +627,7 @@ async def send_message(
             msg.client_message_id,
             msg.attachment_ids,
             msg.city_adcode,
+            msg.branch_id,
         ),
         media_type="text/event-stream",
         headers={

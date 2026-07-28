@@ -68,12 +68,13 @@ STRUCTURED_REPLY_PROMPT = """
 
 只返回一个合法 JSON 对象，JSON 外不能有 Markdown 代码围栏、解释、前缀或思考过程：
 
-{"messages":["最终展示给用户的一条消息"],"threadActions":[],"itemUsages":[]}
+{"messages":["最终展示给用户的一条消息"],"threadActions":[],"itemUsages":[],"presence":{"expression":"calm","motion":"idle","intensity":1}}
 
 - `messages` 是 Aura 最终发送的独立消息气泡，数量 1-4 条，默认优先 1 条。只有确实存在独立的短反应、停顿后的补充或明显转折时才拆分；不要为了多气泡而按逗号或句号机械切分。
 - `messages` 内只能写用户可见的正文。每条保留原意和事实边界，不泄露系统、工具、数据库、引用编号或整理过程。
 - `threadActions` 默认 `[]`。仅当系统上下文提供了真实的 `T1-T12` 引用，并且本轮正文确实主动追问或回访对应事项时，才可输出 `{"threadRef":"T1","action":"follow_up"}`。
 - `itemUsages` 默认 `[]`。仅当系统上下文提供了真实的 `K1-K12` 引用，并且本轮正文确实复用了对应的昵称、暗号、玩笑、仪式或共同物件时，才可输出 `{"itemRef":"K1"}`。
+- `presence` 只供屏幕上的 Live2D 使用，必须是对象。`expression` 只能是 `calm`、`warm`、`playful`、`thinking`、`soft` 或 `concerned`；`motion` 只能是 `idle`、`acknowledge` 或 `wave`；`intensity` 是 0-2 的整数。它不能替代正文，也不能出现病娇、女仆、翻白眼或露骨化表达。
 - JSON 字符串中的换行和引号必须正确转义。没有可用引用时两个数组必须为空。
 
 语气与拆分示例：

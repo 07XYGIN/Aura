@@ -1,6 +1,7 @@
 """Aura 主对话图、回复编排和 LangGraph 历史读写。"""
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Generator, TypedDict
 from uuid import uuid4
@@ -48,13 +49,20 @@ from app.core.continuity.service import (
 from app.core.emotion import format_emotion_context
 from app.core.reply_timing_state import store_reply_timing_state
 from .protocol import (
+    approval_required_event,
     assistant_message_event,
+    conversation_branch_event,
     content_event,
     emotion_event,
+    error_event,
+    live2d_state_event,
     memory_reference_event,
     memory_candidate_event,
 )
+from .approval import approval_config, resume_approval, start_approval
 from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
+from .presence import resolve_live2d_presence
+from .reliability import invoke_model_with_retry
 from .structured_reply import (
     parse_structured_reply,
     try_parse_structured_reply_payload,
@@ -71,6 +79,7 @@ MIN_REPLY_DELAY_MS = 500
 MAX_REPLY_DELAY_MS = 2500
 BASE_REPLY_DELAY_MS = 300
 DELAY_PER_CHAR_MS = 50
+BRANCH_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 class AuraState(TypedDict, total=False):
@@ -94,6 +103,9 @@ class AuraState(TypedDict, total=False):
     relationship_actions: dict[str, Any]
     relationship_item_usages: dict[str, Any]
     continuity_state_context: str
+    reply_presence: dict[str, Any]
+    live2d_state: dict[str, Any]
+    pending_approvals: list[dict[str, Any]]
 
 
 tools = CHAT_TOOLS
@@ -141,7 +153,21 @@ def call_model(state: AuraState) -> AuraState:
         attachments=state.get("attachments", []),
         turn_id=state.get("turn_id"),
     )
-    response = llm_with_tools.invoke(messages)
+    try:
+        response = invoke_model_with_retry(
+            llm_with_tools.invoke,
+            messages,
+            operation="主对话",
+        )
+    except Exception:
+        logging.exception("Aura 主模型在重试后仍不可用，返回安全降级回复")
+        response = AIMessage(
+            content=(
+                '{"messages":["我这边刚刚没有接上，等一下再试一次。"],'
+                '"threadActions":[],"itemUsages":[],'
+                '"presence":{"expression":"thinking","motion":"idle","intensity":0}}'
+            )
+        )
     tool_calls = getattr(response, "tool_calls", None) or []
     if tool_calls:
         logging.info(
@@ -186,6 +212,11 @@ def call_model(state: AuraState) -> AuraState:
     return {
         "messages": reply_messages,
         "last_reply_batch": reply_batch,
+        "reply_presence": (
+            parsed_payload.presence.model_dump()
+            if parsed_payload is not None
+            else {}
+        ),
         "relationship_actions": {
             "turn_id": state.get("turn_id"),
             "items": relationship_actions,
@@ -233,26 +264,62 @@ def should_continue(state: AuraState) -> str:
     return END
 
 
+def build_intent_subgraph() -> CompiledStateGraph:
+    """构建负责上下文准备、情绪、关系和记忆候选判断的子图。"""
+
+    workflow = StateGraph(AuraState)
+    workflow.add_node("prepare_context", prepare_context)
+    workflow.add_node("turn_judge", turn_judge)
+    workflow.set_entry_point("prepare_context")
+    workflow.add_edge("prepare_context", "turn_judge")
+    workflow.add_edge("turn_judge", END)
+    return workflow.compile()
+
+
+def build_dialogue_subgraph() -> CompiledStateGraph:
+    """构建负责工具调用与自然语言回复的对话智能体子图。"""
+
+    workflow = StateGraph(AuraState)
+    workflow.add_node("chat", call_model)
+    workflow.add_node("tools", tool_node)
+    workflow.set_entry_point("chat")
+    workflow.add_conditional_edges("chat", should_continue)
+    workflow.add_edge("tools", "chat")
+    return workflow.compile()
+
+
+@traceable(name="aura_experience_director")
+def experience_director(state: AuraState) -> AuraState:
+    """把对话结果映射成受限的 Live2D 状态，不让模型直接驱动资源名称。"""
+
+    return {
+        "live2d_state": resolve_live2d_presence(
+            state.get("reply_presence"),
+            state.get("turn_judgement"),
+        )
+    }
+
+
 def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
-    """构建并编译 Aura LangGraph。
+    """构建 Aura 协调图：对话子图后接体验导演节点。
 
     Args:
         checkpointer: 用于持久化每个用户线程状态的 LangGraph checkpointer。
 
     Returns:
-        已连接上下文准备、回合判断、聊天和工具节点的可执行图。
+        已连接多角色子图和体验状态节点的可执行图。
     """
 
+    intent_subgraph = build_intent_subgraph()
+    dialogue_subgraph = build_dialogue_subgraph()
     workflow = StateGraph(AuraState)
-    workflow.add_node("prepare_context", prepare_context)
-    workflow.add_node("turn_judge", turn_judge)
-    workflow.add_node("chat", call_model)
-    workflow.add_node("tools", tool_node)
-    workflow.set_entry_point("prepare_context")
-    workflow.add_edge("prepare_context", "turn_judge")
-    workflow.add_edge("turn_judge", "chat")
-    workflow.add_conditional_edges("chat", should_continue)
-    workflow.add_edge("tools", "chat")
+    workflow.add_node("intent_specialist", intent_subgraph)
+    workflow.add_node("dialogue_agent", dialogue_subgraph)
+    workflow.add_node("experience_director", experience_director)
+    workflow.set_entry_point("intent_specialist")
+    workflow.add_edge("intent_specialist", "dialogue_agent")
+    workflow.add_edge("dialogue_agent", "experience_director")
+    workflow.add_edge("experience_director", END)
     return workflow.compile(checkpointer=checkpointer)
 
 
@@ -266,6 +333,7 @@ def aura_agent(
     client_message_id: str | None = None,
     attachment_ids: list[str] | None = None,
     city_adcode: str | None = None,
+    branch_id: str | None = None,
 ) -> Generator[Any, None, None]:
     """执行一轮 Aura 对话并按顺序产出 SSE 业务事件。
 
@@ -287,6 +355,11 @@ def aura_agent(
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
+    normalized_branch_id = normalize_branch_id(branch_id)
+    if branch_id is not None and normalized_branch_id is None:
+        raise ValueError("对话分支 ID 无效")
+    is_branch = normalized_branch_id is not None
+    thread_id = conversation_thread_id(user_id, normalized_branch_id)
     request_started_at = datetime.now(UTC)
     turn_id = client_message_id or f"turn-{uuid4()}"
     normalized_city_adcode = normalize_city_adcode(city_adcode)
@@ -299,29 +372,35 @@ def aura_agent(
             "client_message_id": client_message_id,
             "attachment_count": len(attachment_ids or []),
             "city_adcode": normalized_city_adcode,
+            "branch_id": normalized_branch_id,
         },
         "configurable": {
-            "thread_id": user_id,
+            "thread_id": thread_id,
             "user_id": user_id,
+            "allow_persistence": not is_branch,
         }
     }
     previous_state = aura.get_state(config)
     previous_messages = previous_state.values.get("messages", []) if previous_state and previous_state.values else []
     time_context = build_time_context(previous_messages, request_started_at)
-    cancel_pending_second_thoughts_sync(user_id, now=request_started_at)
-    offline_thought = consume_relevant_offline_thought_sync(
-        user_id,
-        human_prompt,
-        now=request_started_at,
-    )
+    if not is_branch:
+        cancel_pending_second_thoughts_sync(user_id, now=request_started_at)
+        offline_thought = consume_relevant_offline_thought_sync(
+            user_id,
+            human_prompt,
+            now=request_started_at,
+        )
+    else:
+        offline_thought = None
     self_changelog_context = load_self_changelog_context_sync()
     relationship_context = load_relationship_context_sync(user_id)
-    apply_scene_message_sync(
-        user_id,
-        human_prompt,
-        client_message_id,
-        now=request_started_at,
-    )
+    if not is_branch:
+        apply_scene_message_sync(
+            user_id,
+            human_prompt,
+            client_message_id,
+            now=request_started_at,
+        )
     continuity_state = load_continuity_state_context_sync(user_id, now=request_started_at)
     pet_context = load_pet_context_sync(user_id)
 
@@ -333,7 +412,7 @@ def aura_agent(
     )
     conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
     conditional_messages_created: list[dict[str, Any]] = []
-    if conditional_candidates and client_message_id:
+    if not is_branch and conditional_candidates and client_message_id:
         conditional_messages_created = capture_conditional_candidates_sync(
             user_id,
             conditional_candidates,
@@ -341,7 +420,7 @@ def aura_agent(
             source_turn_id=turn_id,
             now=request_started_at,
         )
-    elif conditional_candidates:
+    elif not is_branch and conditional_candidates:
         logging.warning(
             "本轮识别到条件消息候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
             user_id,
@@ -357,7 +436,7 @@ def aura_agent(
         for item in conditional_messages_created
     ]
     emotion_state = turn_judgement["emotion"]
-    if not turn_judgement["risk_signal"].get("requires_safety_gate"):
+    if not is_branch and not turn_judgement["risk_signal"].get("requires_safety_gate"):
         capture_emotional_afterglow_sync(
             user_id,
             emotion_state,
@@ -436,24 +515,153 @@ def aura_agent(
                     yield memory_reference_event(query if isinstance(query, str) else None)
                     break
 
-        if metadata.get("langgraph_node") == "tools" and getattr(chunk, "name", None) == "save_memory_tool":
+        if stream_node_matches(metadata, "tools") and getattr(chunk, "name", None) == "save_memory_tool":
             memory_save_tool_called = True
 
         if (
             not memory_reference_reported
-            and metadata.get("langgraph_node") == "tools"
+            and stream_node_matches(metadata, "tools")
             and getattr(chunk, "name", None) == "search_memory_tool"
         ):
             memory_reference_reported = True
             yield memory_reference_event()
 
-        if chunk.content and metadata.get("langgraph_node") == "chat":
+        if chunk.content and stream_node_matches(metadata, "chat"):
             raw_chat_parts.append(str(chunk.content))
+
+    relationship_candidates = memory_candidate.get("relationship_threads")
+    relationship_item_candidates = memory_candidate.get("relationship_items")
+    relationship_chapter_candidate = memory_candidate.get("relationship_chapter")
+    pending_approval = None
+    if not is_branch:
+        pending_approval = queue_turn_approval_if_needed(
+            config=config,
+            user_id=user_id,
+            turn_id=turn_id,
+            client_message_id=client_message_id,
+            human_prompt=human_prompt,
+            memory_candidate=memory_candidate,
+            relationship_candidates=relationship_candidates,
+            relationship_item_candidates=relationship_item_candidates,
+            relationship_chapter_candidate=relationship_chapter_candidate,
+            memory_save_tool_called=memory_save_tool_called,
+            created_at=request_started_at,
+        )
+        if pending_approval is None:
+            persist_turn_effects(
+                user_id=user_id,
+                turn_id=turn_id,
+                client_message_id=client_message_id,
+                human_prompt=human_prompt,
+                memory_candidate=memory_candidate,
+                relationship_candidates=relationship_candidates,
+                relationship_item_candidates=relationship_item_candidates,
+                relationship_chapter_candidate=relationship_chapter_candidate,
+                memory_save_tool_called=memory_save_tool_called,
+            )
+
+    reply_batch = get_latest_reply_batch(config, turn_id)
+    relationship_actions = get_latest_relationship_actions(config, turn_id)
+    relationship_item_usages = get_latest_relationship_item_usages(config, turn_id)
+    if not is_branch and reply_batch and relationship_actions:
+        apply_reply_thread_actions_sync(
+            user_id,
+            relationship_actions,
+            relationship_context["items"],
+            turn_id=turn_id,
+        )
+    if not is_branch and reply_batch and relationship_item_usages:
+        mark_relationship_items_used_sync(
+            user_id,
+            relationship_context["knowledge_items"],
+            relationship_item_usages,
+            source_turn_id=turn_id,
+        )
+    if reply_batch:
+        live2d_state = get_latest_live2d_state(config, turn_id)
+        if live2d_state:
+            yield live2d_state_event(live2d_state)
+        if not is_branch and client_message_id:
+            trigger_keyword_messages_sync(
+                user_id,
+                human_prompt,
+                event_id=f"chat:{client_message_id}",
+                now=request_started_at,
+            )
+        if not is_branch:
+            schedule_second_thought_sync(
+                user_id,
+                human_prompt,
+                "\n".join(
+                    str(message.get("content") or "")
+                    for message in reply_batch.get("messages", [])
+                    if isinstance(message, dict)
+                ),
+                turn_judgement,
+                client_message_id,
+                turn_id,
+                now=request_started_at,
+            )
+        for message in reply_batch.get("messages", []):
+            yield assistant_message_event(
+                content=message["content"],
+                message_id=message["message_id"],
+                batch_id=message["batch_id"],
+                batch_index=message["batch_index"],
+                batch_total=message["batch_total"],
+                delay_ms=message["delay_ms"],
+                sent_at=message["sent_at"],
+            )
+        if pending_approval is not None:
+            yield approval_required_event(pending_approval)
+        if not is_branch:
+            mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
+    elif raw_chat_parts:
+        for content in parse_structured_reply("".join(raw_chat_parts)):
+            yield content_event(content)
+        if not is_branch:
+            mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
+
+    logging.info("Aura 对话结束 user_id=%s", user_id)
+
+
+def stream_node_matches(metadata: dict[str, Any], node_name: str) -> bool:
+    """兼容父图包裹子图后 LangGraph 的节点命名。"""
+
+    current = str(metadata.get("langgraph_node") or "")
+    return current == node_name or current.endswith(f":{node_name}")
+
+
+def get_latest_live2d_state(config: RunnableConfig, turn_id: str) -> dict[str, Any]:
+    """读取当前回合体验导演生成的受限 Live2D 状态。"""
+
+    if aura is None:
+        return {}
+    state = aura.get_state(config)
+    values = state.values if state and state.values else {}
+    if values.get("turn_id") != turn_id:
+        return {}
+    presence = values.get("live2d_state")
+    return dict(presence) if isinstance(presence, dict) else {}
+
+
+def persist_turn_effects(
+    *,
+    user_id: str,
+    turn_id: str,
+    client_message_id: str | None,
+    human_prompt: str,
+    memory_candidate: dict[str, Any],
+    relationship_candidates: Any,
+    relationship_item_candidates: Any,
+    relationship_chapter_candidate: Any,
+    memory_save_tool_called: bool,
+) -> None:
+    """提交已经无需人工审批的回合级辅助写入。"""
 
     if not memory_save_tool_called:
         save_memory_candidate_once(user_id, memory_candidate)
 
-    relationship_candidates = memory_candidate.get("relationship_threads")
     if relationship_candidates and client_message_id:
         capture_relationship_candidates_sync(
             user_id,
@@ -468,8 +676,6 @@ def aura_agent(
             user_id,
         )
 
-    relationship_item_candidates = memory_candidate.get("relationship_items")
-    relationship_chapter_candidate = memory_candidate.get("relationship_chapter")
     if (relationship_item_candidates or relationship_chapter_candidate) and client_message_id:
         capture_relationship_knowledge_sync(
             user_id,
@@ -484,61 +690,375 @@ def aura_agent(
             user_id,
         )
 
-    reply_batch = get_latest_reply_batch(config, turn_id)
-    relationship_actions = get_latest_relationship_actions(config, turn_id)
-    relationship_item_usages = get_latest_relationship_item_usages(config, turn_id)
-    if reply_batch and relationship_actions:
-        apply_reply_thread_actions_sync(
-            user_id,
-            relationship_actions,
-            relationship_context["items"],
-            turn_id=turn_id,
-        )
-    if reply_batch and relationship_item_usages:
-        mark_relationship_items_used_sync(
-            user_id,
-            relationship_context["knowledge_items"],
-            relationship_item_usages,
-            source_turn_id=turn_id,
-        )
-    if reply_batch:
-        if client_message_id:
-            trigger_keyword_messages_sync(
-                user_id,
-                human_prompt,
-                event_id=f"chat:{client_message_id}",
-                now=request_started_at,
-            )
-        schedule_second_thought_sync(
-            user_id,
-            human_prompt,
-            "\n".join(
-                str(message.get("content") or "")
-                for message in reply_batch.get("messages", [])
-                if isinstance(message, dict)
-            ),
-            turn_judgement,
-            client_message_id,
-            turn_id,
-            now=request_started_at,
-        )
-        for message in reply_batch.get("messages", []):
-            yield assistant_message_event(
-                content=message["content"],
-                message_id=message["message_id"],
-                batch_id=message["batch_id"],
-                batch_index=message["batch_index"],
-                batch_total=message["batch_total"],
-                delay_ms=message["delay_ms"],
-                sent_at=message["sent_at"],
-            )
-        mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
-    elif raw_chat_parts:
-        for content in parse_structured_reply("".join(raw_chat_parts)):
-            yield content_event(content)
-        mark_self_changelog_reacted_sync(self_changelog_context.entry_ids)
 
-    logging.info("Aura 对话结束 user_id=%s", user_id)
+def queue_turn_approval_if_needed(
+    *,
+    config: RunnableConfig,
+    user_id: str,
+    turn_id: str,
+    client_message_id: str | None,
+    human_prompt: str,
+    memory_candidate: dict[str, Any],
+    relationship_candidates: Any,
+    relationship_item_candidates: Any,
+    relationship_chapter_candidate: Any,
+    memory_save_tool_called: bool,
+    created_at: datetime,
+) -> dict[str, Any] | None:
+    """为长期记忆和关系定义变更创建可恢复的人工审批。"""
+
+    request = build_turn_approval_request(
+        user_id=user_id,
+        turn_id=turn_id,
+        client_message_id=client_message_id,
+        human_prompt=human_prompt,
+        memory_candidate=memory_candidate,
+        relationship_candidates=relationship_candidates,
+        relationship_item_candidates=relationship_item_candidates,
+        relationship_chapter_candidate=relationship_chapter_candidate,
+        memory_save_tool_called=memory_save_tool_called,
+        created_at=created_at,
+    )
+    if request is None:
+        return None
+
+    public = request["public"]
+    existing = pending_approvals_from_state(config)
+    if any(item.get("id") == public["id"] for item in existing):
+        return public
+
+    try:
+        started = start_approval(request, approval_config(user_id, public["id"]))
+    except Exception:
+        logging.exception("Aura 人工审批子图启动失败，回退到原有自动写入")
+        return None
+    if not started:
+        logging.warning("Aura 人工审批子图未进入暂停状态，回退到原有自动写入")
+        return None
+
+    try:
+        if aura is None:
+            return None
+        aura.update_state(config, {"pending_approvals": [*existing, public]})
+    except Exception:
+        logging.exception("Aura 待审批状态写入失败，回退到原有自动写入")
+        return None
+    return public
+
+
+def build_turn_approval_request(
+    *,
+    user_id: str,
+    turn_id: str,
+    client_message_id: str | None,
+    human_prompt: str,
+    memory_candidate: dict[str, Any],
+    relationship_candidates: Any,
+    relationship_item_candidates: Any,
+    relationship_chapter_candidate: Any,
+    memory_save_tool_called: bool,
+    created_at: datetime,
+) -> dict[str, Any] | None:
+    """将内部候选压缩成可展示摘要和不可展示的待执行效果。"""
+
+    if not turn_requires_human_approval(
+        memory_candidate,
+        relationship_item_candidates,
+        relationship_chapter_candidate,
+        memory_save_tool_called=memory_save_tool_called,
+    ):
+        return None
+
+    descriptions = approval_descriptions(
+        memory_candidate,
+        relationship_item_candidates,
+        relationship_chapter_candidate,
+        memory_save_tool_called=memory_save_tool_called,
+    )
+    public = {
+        "id": turn_id,
+        "kind": "memory_review",
+        "title": "要把这件事留下来吗？",
+        "summary": "、".join(descriptions) or "保存一条长期关系记录",
+        "createdAt": created_at.isoformat(),
+    }
+    return {
+        "user_id": user_id,
+        "public": public,
+        "effects": {
+            "turn_id": turn_id,
+            "client_message_id": client_message_id,
+            "human_prompt": human_prompt,
+            "memory_candidate": memory_candidate,
+            "relationship_candidates": relationship_candidates,
+            "relationship_item_candidates": relationship_item_candidates,
+            "relationship_chapter_candidate": relationship_chapter_candidate,
+            "memory_save_tool_called": memory_save_tool_called,
+        },
+    }
+
+
+def turn_requires_human_approval(
+    memory_candidate: dict[str, Any],
+    relationship_item_candidates: Any,
+    relationship_chapter_candidate: Any,
+    *,
+    memory_save_tool_called: bool,
+) -> bool:
+    """只拦截会改变长期关系模型的内容，避免每轮聊天弹窗。"""
+
+    if (
+        not memory_save_tool_called
+        and memory_candidate.get("save")
+        and memory_candidate.get("memory_scope") == "long"
+    ):
+        return True
+    if isinstance(relationship_chapter_candidate, dict):
+        return True
+    if not isinstance(relationship_item_candidates, list):
+        return False
+    sensitive_types = {"nickname", "codeword", "ritual", "interaction_rule", "boundary", "aura_stance"}
+    return any(
+        isinstance(item, dict) and item.get("item_type") in sensitive_types
+        for item in relationship_item_candidates
+    )
+
+
+def approval_descriptions(
+    memory_candidate: dict[str, Any],
+    relationship_item_candidates: Any,
+    relationship_chapter_candidate: Any,
+    *,
+    memory_save_tool_called: bool,
+) -> list[str]:
+    """生成不泄露内部候选字段的简短审批文案。"""
+
+    descriptions: list[str] = []
+    if (
+        not memory_save_tool_called
+        and memory_candidate.get("save")
+        and memory_candidate.get("memory_scope") == "long"
+    ):
+        title = str(memory_candidate.get("title") or "未命名").strip()[:80]
+        descriptions.append(f"长期记忆《{title or '未命名'}》")
+    if isinstance(relationship_chapter_candidate, dict):
+        title = str(relationship_chapter_candidate.get("title") or "未命名").strip()[:80]
+        descriptions.append(f"关系章节《{title or '未命名'}》")
+    if isinstance(relationship_item_candidates, list):
+        count = sum(
+            1
+            for item in relationship_item_candidates
+            if isinstance(item, dict)
+            and item.get("item_type") in {"nickname", "codeword", "ritual", "interaction_rule", "boundary", "aura_stance"}
+        )
+        if count:
+            descriptions.append(f"{count} 条互动或关系规则")
+    return descriptions
+
+
+def pending_approvals_from_state(config: RunnableConfig) -> list[dict[str, Any]]:
+    """读取主对话图中仍未决的公开审批摘要。"""
+
+    if aura is None:
+        return []
+    state = aura.get_state(config)
+    values = state.values if state and state.values else {}
+    raw = values.get("pending_approvals")
+    return [dict(item) for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def list_pending_approvals(user_id: str) -> list[dict[str, Any]]:
+    """供前端重连后重新加载未决审批。"""
+
+    return pending_approvals_from_state(
+        {"configurable": {"thread_id": user_id, "user_id": user_id}}
+    )
+
+
+def resolve_pending_approval(user_id: str, approval_id: str, approved: bool) -> dict[str, Any] | None:
+    """恢复审批子图，并在批准后提交先前冻结的副作用。"""
+
+    if aura is None:
+        return None
+    normalized_id = str(approval_id or "").strip()
+    if not normalized_id or len(normalized_id) > 128:
+        return None
+    try:
+        resolved = resume_approval(normalized_id, user_id, approved)
+    except Exception:
+        logging.exception("Aura 人工审批恢复失败 approval_id=%s", normalized_id)
+        return None
+    if resolved is None:
+        return None
+
+    request = resolved.get("request") if isinstance(resolved.get("request"), dict) else {}
+    decision = resolved.get("decision") if isinstance(resolved.get("decision"), dict) else {}
+    effects = request.get("effects") if isinstance(request.get("effects"), dict) else {}
+    public = request.get("public") if isinstance(request.get("public"), dict) else {"id": normalized_id}
+    was_approved = decision.get("approved") is True
+    if was_approved:
+        persist_turn_effects(
+            user_id=user_id,
+            turn_id=str(effects.get("turn_id") or normalized_id),
+            client_message_id=effects.get("client_message_id") if isinstance(effects.get("client_message_id"), str) else None,
+            human_prompt=str(effects.get("human_prompt") or ""),
+            memory_candidate=effects.get("memory_candidate") if isinstance(effects.get("memory_candidate"), dict) else {},
+            relationship_candidates=effects.get("relationship_candidates"),
+            relationship_item_candidates=effects.get("relationship_item_candidates"),
+            relationship_chapter_candidate=effects.get("relationship_chapter_candidate"),
+            memory_save_tool_called=effects.get("memory_save_tool_called") is True,
+        )
+
+    config: RunnableConfig = {"configurable": {"thread_id": user_id, "user_id": user_id}}
+    pending = [
+        item
+        for item in pending_approvals_from_state(config)
+        if item.get("id") != normalized_id
+    ]
+    try:
+        aura.update_state(config, {"pending_approvals": pending})
+    except Exception:
+        logging.exception("Aura 待审批状态清理失败 approval_id=%s", normalized_id)
+    return {"approval": public, "approved": was_approved}
+
+
+def normalize_branch_id(branch_id: str | None) -> str | None:
+    """校验前端提供的逻辑分支标识，避免它参与任意 checkpointer 键。"""
+
+    if branch_id is None:
+        return None
+    normalized = str(branch_id).strip()
+    return normalized if BRANCH_ID_PATTERN.fullmatch(normalized) else None
+
+
+def conversation_thread_id(user_id: str, branch_id: str | None = None) -> str:
+    """主会话沿用历史线程 ID；分支使用隔离且可追溯的线程 ID。"""
+
+    return user_id if branch_id is None else f"{user_id}:branch:{branch_id}"
+
+
+def conversation_config(user_id: str, branch_id: str | None = None) -> RunnableConfig:
+    """生成读取、分叉和删改对话历史共用的 checkpointer 配置。"""
+
+    normalized_branch_id = normalize_branch_id(branch_id)
+    if branch_id is not None and normalized_branch_id is None:
+        raise ValueError("对话分支 ID 无效")
+    return {
+        "configurable": {
+            "thread_id": conversation_thread_id(user_id, normalized_branch_id),
+            "user_id": user_id,
+            "allow_persistence": normalized_branch_id is None,
+        }
+    }
+
+
+def create_history_branch(
+    user_id: str,
+    source_message_id: str,
+    source_branch_id: str | None = None,
+) -> str | None:
+    """从一条已有消息截取历史，生成不影响主会话的 LangGraph 分支。"""
+
+    if aura is None:
+        raise RuntimeError("Aura 对话图尚未初始化")
+    source_id = str(source_message_id or "").strip()
+    if not source_id:
+        return None
+    source_config = conversation_config(user_id, source_branch_id)
+    state = aura.get_state(source_config)
+    messages = state.values.get("messages", []) if state and state.values else []
+    source_index = next(
+        (index for index, message in enumerate(messages) if getattr(message, "id", None) == source_id),
+        None,
+    )
+    if source_index is None:
+        return None
+    return create_branch_from_messages(user_id, list(messages[: source_index + 1]))
+
+
+def create_branch_from_messages(user_id: str, messages: list) -> str | None:
+    """向一个全新分支 checkpointer 线程写入已截取的聊天前缀。"""
+
+    if aura is None:
+        return None
+    branch_id = f"b-{uuid4().hex[:12]}"
+    if not messages:
+        return branch_id
+    try:
+        aura.update_state(
+            conversation_config(user_id, branch_id),
+            {
+                "messages": messages,
+                "user_id": user_id,
+                "pending_approvals": [],
+            },
+        )
+    except Exception:
+        logging.exception("Aura 对话分支创建失败 user_id=%s", user_id)
+        return None
+    return branch_id
+
+
+def retry_aura_agent(
+    user_id: str,
+    assistant_message_id: str,
+    source_branch_id: str | None = None,
+) -> Generator[Any, None, None]:
+    """从目标回复前的用户消息分叉，并在新分支重新生成回复。"""
+
+    if aura is None:
+        raise RuntimeError("Aura 对话图尚未初始化")
+    try:
+        source_config = conversation_config(user_id, source_branch_id)
+    except ValueError:
+        yield error_event("对话分支无效，无法重新生成。")
+        return
+    state = aura.get_state(source_config)
+    messages = state.values.get("messages", []) if state and state.values else []
+    target_index = next(
+        (
+            index
+            for index, message in enumerate(messages)
+            if getattr(message, "id", None) == assistant_message_id and getattr(message, "type", None) == "ai"
+        ),
+        None,
+    )
+    if target_index is None:
+        yield error_event("找不到要重新生成的回复。")
+        return
+
+    human_index = next(
+        (
+            index
+            for index in range(target_index - 1, -1, -1)
+            if getattr(messages[index], "type", None) == "human"
+        ),
+        None,
+    )
+    if human_index is None:
+        yield error_event("这条回复没有可重放的用户消息。")
+        return
+
+    human_message = messages[human_index]
+    branch_id = create_branch_from_messages(user_id, list(messages[:human_index]))
+    if branch_id is None:
+        yield error_event("新的对话分支没有创建成功。")
+        return
+    metadata = getattr(human_message, "additional_kwargs", {}) or {}
+    attachment_ids = [
+        str(item.get("id"))
+        for item in metadata.get("attachments", [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    retry_message_id = f"retry-{uuid4().hex[:20]}"
+    yield conversation_branch_event(branch_id, assistant_message_id)
+    yield from aura_agent(
+        message_content_to_text(getattr(human_message, "content", "")),
+        user_id,
+        client_message_id=retry_message_id,
+        attachment_ids=attachment_ids,
+        branch_id=branch_id,
+    )
 
 
 def add_current_turn_images(
@@ -944,11 +1464,12 @@ def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
         logging.exception("记忆候选保存失败 user_id=%s", user_id)
 
 
-def get_history(user_id: str) -> list:
+def get_history(user_id: str, branch_id: str | None = None) -> list:
     """从 LangGraph 状态导出供 API 使用的去重聊天历史。
 
     Args:
-        user_id: 要读取的 LangGraph 线程 ID。
+        user_id: 当前用户 ID。
+        branch_id: 可选对话分支；缺失时读取历史主会话。
 
     Returns:
         由用户和 Aura 公共消息字典组成的时间顺序列表。
@@ -960,11 +1481,7 @@ def get_history(user_id: str) -> list:
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
-    config: RunnableConfig = {
-        "configurable": {
-            "thread_id": user_id,
-        }
-    }
+    config = conversation_config(user_id, branch_id)
     state = aura.get_state(config)
     if not state or not state.values:
         return []
@@ -1197,7 +1714,7 @@ def append_external_history_turn(
     return reply_batch
 
 
-def delete_history_message(user_id: str, message_id: str) -> bool:
+def delete_history_message(user_id: str, message_id: str, branch_id: str | None = None) -> bool:
     """向 LangGraph 写入单条 RemoveMessage；目标不存在时返回 ``False``。"""
 
     if aura is None:
@@ -1207,11 +1724,7 @@ def delete_history_message(user_id: str, message_id: str) -> bool:
     if not normalized_message_id:
         return False
 
-    config: RunnableConfig = {
-        "configurable": {
-            "thread_id": user_id,
-        }
-    }
+    config = conversation_config(user_id, branch_id)
     state = aura.get_state(config)
     messages = state.values.get("messages", []) if state and state.values else []
 
@@ -1229,17 +1742,13 @@ def delete_history_message(user_id: str, message_id: str) -> bool:
     return True
 
 
-def clear_history(user_id: str) -> int:
+def clear_history(user_id: str, branch_id: str | None = None) -> int:
     """逻辑清空用户当前消息状态，并返回清理前的消息数量。"""
 
     if aura is None:
         raise RuntimeError("Aura 对话图尚未初始化")
 
-    config: RunnableConfig = {
-        "configurable": {
-            "thread_id": user_id,
-        }
-    }
+    config = conversation_config(user_id, branch_id)
     state = aura.get_state(config)
     messages = state.values.get("messages", []) if state and state.values else []
     removable_count = len(messages)
@@ -1395,13 +1904,21 @@ def format_location_context(city_adcode: str | None) -> str:
     )
 
 
-def public_history_attachments(value: Any) -> list[str]:
-    """从内部附件元数据中提取可对外返回的文件名列表。"""
+def public_history_attachments(value: Any) -> list[dict[str, Any]]:
+    """从内部附件元数据中筛选可安全渲染图片预览的公开字段。"""
 
     if not isinstance(value, list):
         return []
-    names: list[str] = []
+    attachments: list[dict[str, Any]] = []
     for item in value:
-        if isinstance(item, dict) and isinstance(item.get("fileName"), str):
-            names.append(item["fileName"])
-    return names
+        if not isinstance(item, dict) or not isinstance(item.get("fileName"), str):
+            continue
+        attachments.append(
+            {
+                "id": item.get("id"),
+                "fileName": item["fileName"],
+                "contentType": item.get("contentType"),
+                "size": item.get("size"),
+            }
+        )
+    return attachments
