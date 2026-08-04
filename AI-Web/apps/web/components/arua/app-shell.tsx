@@ -2,7 +2,7 @@
 
 import { CircleUserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { aruaNavItems, sharedUserAccount } from '@/components/arua/data'
+import { aruaNavItems } from '@/components/arua/data'
 import { RouteTransitionLink } from '@/components/arua/route-transition-link'
 import type { AruaShellProps } from '@/types/arua'
 import { useI18n } from '@/lib/i18n'
@@ -53,7 +53,7 @@ export function AruaAppShell({
               </p>
             </div> */}
 
-            <nav className="aura-scrollbar mt-4 grid grid-cols-3 gap-3 overflow-x-auto pb-1 lg:grid-cols-1 lg:pb-0">
+            <nav className="aura-scrollbar mt-4 grid grid-cols-4 gap-2 overflow-x-auto pb-1 lg:grid-cols-1 lg:gap-3 lg:pb-0">
               {aruaNavItems.map((item, index) => {
                 const Icon = item.icon
                 const isActive = item.key === active

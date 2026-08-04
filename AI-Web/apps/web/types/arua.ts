@@ -2,7 +2,7 @@ import type Link from 'next/link'
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
-export type AruaNavKey = 'chat' | 'memories' | 'settings'
+export type AruaNavKey = 'chat' | 'relationship' | 'memories' | 'settings'
 
 export type AruaNavItem = {
   key: AruaNavKey

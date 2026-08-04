@@ -21,7 +21,7 @@ from app.core.attachment_store import (
     load_attachment_data_urls,
     load_attachments,
 )
-from app.core.config import llm, structured_reply_llm
+from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED, llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
 from app.core.continuity.capsules import (
     capture_conditional_candidates_sync,
@@ -402,7 +402,7 @@ def aura_agent(
             now=request_started_at,
         )
     continuity_state = load_continuity_state_context_sync(user_id, now=request_started_at)
-    pet_context = load_pet_context_sync(user_id)
+    pet_context = load_pet_context_sync(user_id) if AURA_OPTIONAL_ACTIVITIES_ENABLED else ""
 
     turn_judgement = judge_turn(
         human_prompt,
@@ -412,7 +412,12 @@ def aura_agent(
     )
     conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
     conditional_messages_created: list[dict[str, Any]] = []
-    if not is_branch and conditional_candidates and client_message_id:
+    if (
+        AURA_OPTIONAL_ACTIVITIES_ENABLED
+        and not is_branch
+        and conditional_candidates
+        and client_message_id
+    ):
         conditional_messages_created = capture_conditional_candidates_sync(
             user_id,
             conditional_candidates,
@@ -420,7 +425,7 @@ def aura_agent(
             source_turn_id=turn_id,
             now=request_started_at,
         )
-    elif not is_branch and conditional_candidates:
+    elif AURA_OPTIONAL_ACTIVITIES_ENABLED and not is_branch and conditional_candidates:
         logging.warning(
             "本轮识别到条件消息候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
             user_id,
@@ -581,7 +586,7 @@ def aura_agent(
         live2d_state = get_latest_live2d_state(config, turn_id)
         if live2d_state:
             yield live2d_state_event(live2d_state)
-        if not is_branch and client_message_id:
+        if AURA_OPTIONAL_ACTIVITIES_ENABLED and not is_branch and client_message_id:
             trigger_keyword_messages_sync(
                 user_id,
                 human_prompt,

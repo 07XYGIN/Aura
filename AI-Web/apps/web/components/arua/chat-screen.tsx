@@ -4,18 +4,13 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEv
 import {
     Check,
     Copy,
-    GitBranch,
-    History,
     ImagePlus,
     Mic,
     Paperclip,
     RefreshCw,
-    RotateCcw,
     SendHorizontal,
     Square,
-    Star,
     ThumbsDown,
-    ThumbsUp,
     Trash2,
     X,
 } from 'lucide-react'
@@ -41,37 +36,16 @@ import { useUserStore } from '@/store/user'
 import { useI18n } from '@/lib/i18n'
 import {
     aura,
-    type AuraApproval,
-    type AuraEmotionReportPreview,
     type AuraHistoryMessage,
-    type AuraRelationshipChapter,
     type AuraReplyFeedbackCategory,
     type AuraUploadedAttachment,
     type AuraUploadAttachmentInput,
 } from '@/apis/aura'
 
-type EmotionPayload = {
-    user_emotion?: string
-    aura_mood?: string
-    label?: string
-    name?: string
-    type?: string
-    mood?: string
-    confidence?: number
-    score?: number
-    valence?: number
-    arousal?: number
-    [key: string]: unknown
-}
-
 type ChatStreamChunk = {
     content?: string
     event?: string
-    emotion?: EmotionPayload
     presence?: Live2DPresence
-    approval?: AuraApproval
-    branchId?: string
-    sourceMessageId?: string
     messageId?: string
     batchId?: string
     batchIndex?: number
@@ -80,7 +54,6 @@ type ChatStreamChunk = {
     sentAt?: string
 }
 
-const FEEDBACK_IDLE_DELAY_MS = 30_000
 const MAX_ATTACHMENTS_PER_MESSAGE = 4
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const ACCEPTED_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -168,35 +141,6 @@ const createSessionId = () => {
         hex.slice(16, 20).join(''),
         hex.slice(20, 32).join(''),
     ].join('-')
-}
-
-const parseJsonArray = (value?: string) => {
-    if (!value) {
-        return []
-    }
-
-    try {
-        const parsed = JSON.parse(value)
-        return Array.isArray(parsed) ? parsed.map(String) : []
-    } catch {
-        return []
-    }
-}
-
-const parseFullReport = (value?: string) => {
-    if (!value) {
-        return null
-    }
-
-    try {
-        return JSON.parse(value) as {
-            weeklyKeywords?: string[]
-            patternAnalysis?: string[]
-            auraObservation?: string
-        }
-    } catch {
-        return null
-    }
 }
 
 const readFileAsBase64 = (file: File) =>
@@ -295,43 +239,6 @@ const buildChatSseUrl = () => {
     return `${getPythonApiBaseUrl()}/api/send/sse/`
 }
 
-const getEmotionLabel = (emotion: EmotionPayload) => {
-    if (emotion.aura_mood || emotion.user_emotion) {
-        return [
-            emotion.aura_mood ? `Aura ${emotion.aura_mood}` : null,
-            emotion.user_emotion ? `You ${emotion.user_emotion}` : null,
-        ]
-            .filter(Boolean)
-            .join(' / ')
-    }
-
-    const label = emotion.label ?? emotion.name ?? emotion.type ?? emotion.mood
-
-    if (label) {
-        return label
-    }
-
-    return 'Emotion updated'
-}
-
-const getEmotionDetail = (emotion: EmotionPayload) => {
-    const confidence = emotion.confidence ?? emotion.score
-
-    if (typeof confidence === 'number') {
-        return `${Math.round(confidence * 100)}%`
-    }
-
-    if (typeof emotion.valence === 'number') {
-        return `Valence ${emotion.valence.toFixed(2)}`
-    }
-
-    if (typeof emotion.arousal === 'number') {
-        return `Arousal ${emotion.arousal.toFixed(2)}`
-    }
-
-    return null
-}
-
 export function AruaChatScreen() {
     const { locale, t } = useI18n()
     const inputId = useId()
@@ -342,35 +249,19 @@ export function AruaChatScreen() {
     const assistantDeliveryQueueRef = useRef<Promise<void>>(Promise.resolve())
     const pendingAssistantMessageIdRef = useRef<string | null>(null)
     const currentSessionIdRef = useRef(createSessionId())
-    const lastCompletedSessionIdRef = useRef<string | null>(null)
-    const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const activeBranchIdRef = useRef<string | null>(null)
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [message, setMessage] = useState('')
     const [isListening, setIsListening] = useState(false)
     const [isStreaming, setIsStreaming] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-    const [latestEmotion, setLatestEmotion] = useState<EmotionPayload | null>(null)
     const [latestPresence, setLatestPresence] = useState<Live2DPresence | null>(null)
-    const [activeBranchId, setActiveBranchId] = useState<string | null>(null)
-    const [pendingApprovals, setPendingApprovals] = useState<AuraApproval[]>([])
-    const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null)
     const [replyFeedbackMenuMessageId, setReplyFeedbackMenuMessageId] = useState<string | null>(
         null,
     )
     const [feedbackMessageIds, setFeedbackMessageIds] = useState<Set<string>>(() => new Set())
-    const [isTimelineOpen, setIsTimelineOpen] = useState(false)
-    const [isTimelineLoading, setIsTimelineLoading] = useState(false)
-    const [relationshipChapters, setRelationshipChapters] = useState<AuraRelationshipChapter[]>([])
     const [isAssistantTyping, setIsAssistantTyping] = useState(false)
     const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
     const [isClearingHistory, setIsClearingHistory] = useState(false)
-    const [feedbackPrompt, setFeedbackPrompt] = useState<{ sessionId: string } | null>(null)
-    const [feedbackScore, setFeedbackScore] = useState<number | null>(null)
-    const [feedbackComment, setFeedbackComment] = useState('')
-    const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
-    const [emotionReport, setEmotionReport] = useState<AuraEmotionReportPreview | null>(null)
-    const [isPurchasingReport, setIsPurchasingReport] = useState(false)
     const [cityAdcode, setCityAdcode] = useState<string | null>(() => readCachedCityAdcode())
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
     const token = useUserStore((state) => state.token)
@@ -379,15 +270,13 @@ export function AruaChatScreen() {
         async (options?: {
             showError?: boolean
             cancelled?: () => boolean
-            branchId?: string | null
         }) => {
             if (!token) {
                 return
             }
 
             try {
-                const branchId = options?.branchId ?? activeBranchIdRef.current
-                const response = await aura.getCurrentMessages(branchId)
+                const response = await aura.getCurrentMessages()
 
                 if (options?.cancelled?.()) {
                     return
@@ -415,19 +304,6 @@ export function AruaChatScreen() {
         },
         [t, token],
     )
-
-    const loadPendingApprovals = useCallback(async () => {
-        if (!token) {
-            return
-        }
-
-        try {
-            const response = await aura.getPendingApprovals()
-            setPendingApprovals(response.data?.items ?? [])
-        } catch {
-            // Approval controls are supplemental; normal chat remains available.
-        }
-    }, [token])
 
     useEffect(() => {
         if (!token) {
@@ -461,8 +337,7 @@ export function AruaChatScreen() {
                 })
             })
             .catch(() => undefined)
-        void loadPendingApprovals()
-    }, [getUserInfo, loadPendingApprovals, t, token])
+    }, [getUserInfo, t, token])
     useEffect(() => {
         if (!token) {
             return
@@ -484,24 +359,6 @@ export function AruaChatScreen() {
             behavior: 'smooth',
         })
     }, [messages])
-    const clearFeedbackTimer = useCallback(() => {
-        if (feedbackTimerRef.current) {
-            clearTimeout(feedbackTimerRef.current)
-            feedbackTimerRef.current = null
-        }
-    }, [])
-    const scheduleFeedbackPrompt = useCallback(
-        (sessionId: string) => {
-            clearFeedbackTimer()
-            feedbackTimerRef.current = setTimeout(() => {
-                setFeedbackScore(null)
-                setFeedbackComment('')
-                setFeedbackPrompt({ sessionId })
-                feedbackTimerRef.current = null
-            }, FEEDBACK_IDLE_DELAY_MS)
-        },
-        [clearFeedbackTimer],
-    )
     const enqueueAssistantMessage = useCallback((payload: ChatStreamChunk) => {
         const content = payload.content?.trim()
         if (!content) {
@@ -553,11 +410,9 @@ export function AruaChatScreen() {
                 isSendingRef.current = false
                 setIsStreaming(false)
                 setIsAssistantTyping(false)
-                lastCompletedSessionIdRef.current = currentSessionIdRef.current
-                scheduleFeedbackPrompt(currentSessionIdRef.current)
                 void loadHistoryMessages({ showError: false })
             })
-    }, [loadHistoryMessages, scheduleFeedbackPrompt])
+    }, [loadHistoryMessages])
     const { connect, disconnect } = useMemo(
         () =>
             UseSse(buildChatSseUrl(), {
@@ -580,30 +435,8 @@ export function AruaChatScreen() {
                         return
                     }
 
-                    if (parsed.event === 'emotion' && parsed.emotion) {
-                        setLatestEmotion(parsed.emotion)
-                    }
-
                     if (parsed.event === 'live2d_state' && parsed.presence) {
                         setLatestPresence(parsed.presence)
-                        return
-                    }
-
-                    if (parsed.event === 'approval_required' && parsed.approval) {
-                        const approval = parsed.approval
-                        setPendingApprovals((current) => {
-                            if (current.some((item) => item.id === approval.id)) {
-                                return current
-                            }
-                            return [...current, approval]
-                        })
-                        return
-                    }
-
-                    if (parsed.event === 'conversation_branch' && parsed.branchId) {
-                        activeBranchIdRef.current = parsed.branchId
-                        setActiveBranchId(parsed.branchId)
-                        void loadHistoryMessages({ showError: false, branchId: parsed.branchId })
                         return
                     }
 
@@ -660,10 +493,9 @@ export function AruaChatScreen() {
     )
     useEffect(() => {
         return () => {
-            clearFeedbackTimer()
             disconnect()
         }
-    }, [clearFeedbackTimer, disconnect])
+    }, [disconnect])
     useEffect(() => {
         if (!isStreaming) {
             disconnect()
@@ -697,10 +529,6 @@ export function AruaChatScreen() {
 
     const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
         setMessage(event.target.value)
-        if (event.target.value.trim()) {
-            clearFeedbackTimer()
-            setFeedbackPrompt(null)
-        }
     }
 
     const handleVoiceInput = () => {
@@ -841,11 +669,8 @@ export function AruaChatScreen() {
         pendingAssistantMessageIdRef.current = assistantMessageId
         assistantDeliveryQueueRef.current = Promise.resolve()
         setIsStreaming(true)
-        setLatestEmotion(null)
         setLatestPresence({ expression: 'thinking', motion: 'idle', intensity: 1 })
         setIsAssistantTyping(true)
-        clearFeedbackTimer()
-        setFeedbackPrompt(null)
 
         const shouldResolveCityAdcode = WEATHER_QUERY_PATTERN.test(trimmedMessage)
         const cityAdcodeForMessage = shouldResolveCityAdcode
@@ -904,68 +729,8 @@ export function AruaChatScreen() {
                 message: trimmedMessage,
                 attachmentIds: uploadedAttachments.map((file) => file.id),
                 cityAdcode: cityAdcodeForMessage || undefined,
-                branchId: activeBranchIdRef.current || undefined,
             }),
         })
-    }
-
-    const handleSubmitFeedback = async () => {
-        if (!feedbackPrompt || !feedbackScore || isSubmittingFeedback) {
-            return
-        }
-
-        setIsSubmittingFeedback(true)
-
-        try {
-            await aura.submitConversationFeedback({
-                sessionId: feedbackPrompt.sessionId,
-                score: feedbackScore,
-                comment: feedbackComment.trim() || undefined,
-            })
-            setFeedbackPrompt(null)
-            setFeedbackScore(null)
-            setFeedbackComment('')
-            currentSessionIdRef.current = createSessionId()
-        } catch {
-            toast.error('这次评分没有保存成功', {
-                description: t('chat.tryAgain'),
-                position: 'top-center',
-            })
-        } finally {
-            setIsSubmittingFeedback(false)
-        }
-    }
-
-    const handlePurchaseReport = async () => {
-        if (!emotionReport?.reportId || isPurchasingReport) {
-            return
-        }
-
-        setIsPurchasingReport(true)
-
-        try {
-            const response = await aura.purchaseEmotionReport(emotionReport.reportId)
-            if (response.data) {
-                setEmotionReport({
-                    eligible: true,
-                    chatTurns: emotionReport.chatTurns,
-                    roundsRemaining: 0,
-                    reportId: response.data.id,
-                    status: response.data.status,
-                    priceCents: response.data.priceCents,
-                    previewKeywords: response.data.previewKeywords,
-                    previewText: response.data.previewText,
-                    fullReport: response.data.fullReport,
-                })
-            }
-        } catch {
-            toast.error('报告暂时没有打开', {
-                description: t('chat.tryAgain'),
-                position: 'top-center',
-            })
-        } finally {
-            setIsPurchasingReport(false)
-        }
     }
 
     const handleReplyFeedback = async (
@@ -1030,87 +795,8 @@ export function AruaChatScreen() {
                 userId,
                 message: '',
                 retryMessageId: chatMessage.id,
-                branchId: activeBranchIdRef.current || undefined,
             }),
         })
-    }
-
-    const handleCreateBranch = async (chatMessage: ChatMessage) => {
-        if (
-            isStreaming ||
-            chatMessage.id.startsWith('local-') ||
-            chatMessage.id.startsWith('assistant-')
-        ) {
-            return
-        }
-
-        try {
-            const response = await aura.createConversationBranch(
-                chatMessage.id,
-                activeBranchIdRef.current,
-            )
-            const branchId = response.data?.branchId
-            if (!branchId) {
-                throw new Error('Missing branch id')
-            }
-            activeBranchIdRef.current = branchId
-            setActiveBranchId(branchId)
-            setLatestPresence(null)
-            await loadHistoryMessages({ showError: true, branchId })
-            toast.success('已从这里创建分支', { position: 'top-center' })
-        } catch {
-            toast.error('创建分支失败', {
-                description: t('chat.tryAgain'),
-                position: 'top-center',
-            })
-        }
-    }
-
-    const handleResolveApproval = async (approval: AuraApproval, approved: boolean) => {
-        if (resolvingApprovalId) {
-            return
-        }
-
-        setResolvingApprovalId(approval.id)
-        try {
-            await aura.resolveApproval(approval.id, approved)
-            setPendingApprovals((current) => current.filter((item) => item.id !== approval.id))
-        } catch {
-            toast.error('这条确认没有保存成功', {
-                description: t('chat.tryAgain'),
-                position: 'top-center',
-            })
-        } finally {
-            setResolvingApprovalId(null)
-        }
-    }
-
-    const handleToggleTimeline = async () => {
-        const opening = !isTimelineOpen
-        setIsTimelineOpen(opening)
-        if (!opening) {
-            return
-        }
-
-        setIsTimelineLoading(true)
-        try {
-            const response = await aura.getRelationshipChapters()
-            setRelationshipChapters(response.data?.items ?? [])
-        } catch {
-            toast.error('关系时间线暂时没有打开', {
-                description: t('chat.tryAgain'),
-                position: 'top-center',
-            })
-        } finally {
-            setIsTimelineLoading(false)
-        }
-    }
-
-    const handleReturnToMainConversation = () => {
-        activeBranchIdRef.current = null
-        setActiveBranchId(null)
-        setLatestPresence(null)
-        void loadHistoryMessages({ showError: true, branchId: null })
     }
 
     const handleCopyMessage = async (chatMessage: ChatMessage) => {
@@ -1143,7 +829,7 @@ export function AruaChatScreen() {
 
         try {
             if (!messageId.startsWith('local-') && !messageId.startsWith('assistant-')) {
-                await aura.deleteCurrentMessage(messageId, activeBranchIdRef.current)
+                await aura.deleteCurrentMessage(messageId)
             }
 
             setMessages((currentMessages) =>
@@ -1170,18 +856,13 @@ export function AruaChatScreen() {
         setIsClearingHistory(true)
 
         try {
-            await aura.clearCurrentMessages(activeBranchIdRef.current)
+            await aura.clearCurrentMessages()
             setMessages([])
-            setLatestEmotion(null)
             setLatestPresence(null)
-            setEmotionReport(null)
             setIsAssistantTyping(false)
             pendingAssistantMessageIdRef.current = null
             assistantDeliveryQueueRef.current = Promise.resolve()
-            clearFeedbackTimer()
-            setFeedbackPrompt(null)
             currentSessionIdRef.current = createSessionId()
-            lastCompletedSessionIdRef.current = null
             toast.success(t('chat.historyCleared'), {
                 position: 'top-center',
             })
@@ -1194,10 +875,6 @@ export function AruaChatScreen() {
             setIsClearingHistory(false)
         }
     }
-
-    const emotionDetail = latestEmotion ? getEmotionDetail(latestEmotion) : null
-    const reportKeywords = parseJsonArray(emotionReport?.previewKeywords)
-    const fullReport = parseFullReport(emotionReport?.fullReport)
 
     return (
         <AruaAppShell
@@ -1212,8 +889,16 @@ export function AruaChatScreen() {
                     <Live2DStage
                         className="h-[22rem] lg:h-full lg:min-h-[calc(100vh-2.5rem)]"
                         isActive={isStreaming || isAssistantTyping}
-                        emotionLabel={latestEmotion ? getEmotionLabel(latestEmotion) : null}
+                        emotionLabel={isStreaming || isAssistantTyping ? t('chat.replying') : t('chat.present')}
                         presence={latestPresence}
+                        labels={{
+                            presence: t('chat.presence'),
+                            subtitle: t('chat.presenceSubtitle'),
+                            ready: t('chat.present'),
+                            loading: t('chat.presenceLoading'),
+                            play: t('chat.presenceRespond'),
+                            unavailable: t('chat.presenceUnavailable'),
+                        }}
                     />
                 </aside>
 
@@ -1221,8 +906,7 @@ export function AruaChatScreen() {
                     <div
                         ref={messagesRef}
                         className={cn(
-                            'aura-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-5 sm:px-6 lg:px-8',
-                            pendingApprovals.length > 0 ? 'pb-80' : 'pb-56',
+                            'aura-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-56 sm:px-6 lg:px-8',
                         )}
                     >
                         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
@@ -1311,41 +995,6 @@ export function AruaChatScreen() {
                                                         type="button"
                                                         variant="ghost"
                                                         size="icon-xs"
-                                                        disabled={isStreaming}
-                                                        className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                                                        aria-label="从此处创建分支"
-                                                        title="从此处创建分支"
-                                                        onClick={() =>
-                                                            handleCreateBranch(chatMessage)
-                                                        }
-                                                    >
-                                                        <GitBranch className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon-xs"
-                                                        disabled={feedbackRecorded}
-                                                        className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                                                        aria-label="这条回复合适"
-                                                        title="这条回复合适"
-                                                        onClick={() =>
-                                                            handleReplyFeedback(
-                                                                chatMessage,
-                                                                'helpful',
-                                                            )
-                                                        }
-                                                    >
-                                                        {feedbackRecorded ? (
-                                                            <Check className="h-3.5 w-3.5" />
-                                                        ) : (
-                                                            <ThumbsUp className="h-3.5 w-3.5" />
-                                                        )}
-                                                    </Button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon-xs"
                                                         disabled={feedbackRecorded}
                                                         className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
                                                         aria-label="纠正回复风格"
@@ -1356,7 +1005,11 @@ export function AruaChatScreen() {
                                                             )
                                                         }
                                                     >
-                                                        <ThumbsDown className="h-3.5 w-3.5" />
+                                                        {feedbackRecorded ? (
+                                                            <Check className="h-3.5 w-3.5" />
+                                                        ) : (
+                                                            <ThumbsDown className="h-3.5 w-3.5" />
+                                                        )}
                                                     </Button>
                                                 </div>
                                                 {replyFeedbackMenuMessageId === chatMessage.id ? (
@@ -1442,111 +1095,7 @@ export function AruaChatScreen() {
                         </div>
                     </div>
 
-                    {isTimelineOpen ? (
-                        <aside className="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[var(--aura-border)] bg-[var(--aura-surface-solid)] shadow-2xl">
-                            <div className="flex items-center justify-between border-b border-[var(--aura-border)] px-5 py-4">
-                                <div>
-                                    <p className="text-sm font-semibold text-[var(--aura-text)]">
-                                        关系时间线
-                                    </p>
-                                    <p className="mt-1 text-xs text-[var(--aura-text-muted)]">
-                                        真实形成的重要章节
-                                    </p>
-                                </div>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-text)]"
-                                    aria-label="关闭关系时间线"
-                                    title="关闭"
-                                    onClick={() => setIsTimelineOpen(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                            <div className="aura-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                                {isTimelineLoading ? (
-                                    <p className="text-sm text-[var(--aura-text-muted)]">
-                                        正在整理……
-                                    </p>
-                                ) : relationshipChapters.length ? (
-                                    <ol className="space-y-5 border-l border-[var(--aura-border)] pl-4">
-                                        {relationshipChapters.map((chapter) => (
-                                            <li key={chapter.id} className="relative">
-                                                <span className="absolute top-1.5 -left-[21px] h-2.5 w-2.5 rounded-full bg-[var(--aura-primary)]" />
-                                                <div className="flex items-baseline justify-between gap-3">
-                                                    <h3 className="min-w-0 text-sm font-medium text-[var(--aura-text)]">
-                                                        {chapter.title}
-                                                    </h3>
-                                                    <span className="shrink-0 text-[11px] text-[var(--aura-text-muted)]">
-                                                        {chapter.status === 'current'
-                                                            ? '进行中'
-                                                            : `#${chapter.sequenceNo}`}
-                                                    </span>
-                                                </div>
-                                                <p className="mt-1 text-sm leading-6 text-[var(--aura-text-muted)]">
-                                                    {chapter.summary}
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ol>
-                                ) : (
-                                    <p className="text-sm leading-6 text-[var(--aura-text-muted)]">
-                                        还没有需要留在时间线里的章节。
-                                    </p>
-                                )}
-                            </div>
-                        </aside>
-                    ) : null}
-
                     <div className="absolute inset-x-0 bottom-0 flex flex-col items-center border-t border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-bg)_88%,transparent)] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-                        {pendingApprovals.length > 0 ? (
-                            <div className="aura-scrollbar max-h-36 w-full max-w-3xl overflow-y-auto pr-1">
-                                {pendingApprovals.map((approval) => (
-                                    <div
-                                        key={approval.id}
-                                        className="mb-3 flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 border border-[var(--aura-border)] bg-[var(--aura-surface-solid)] px-3 py-2.5"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="truncate text-sm font-medium text-[var(--aura-text)]">
-                                                {approval.title}
-                                            </p>
-                                            <p className="truncate text-xs text-[var(--aura-text-muted)]">
-                                                {approval.summary}
-                                            </p>
-                                        </div>
-                                        <div className="flex shrink-0 items-center gap-1.5">
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                disabled={resolvingApprovalId === approval.id}
-                                                className="gap-1.5 bg-[var(--aura-primary)] text-[#201733] hover:bg-[var(--aura-primary)]/90"
-                                                onClick={() =>
-                                                    handleResolveApproval(approval, true)
-                                                }
-                                            >
-                                                <Check className="h-3.5 w-3.5" />
-                                                保留
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={resolvingApprovalId === approval.id}
-                                                className="gap-1.5 text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)]"
-                                                onClick={() =>
-                                                    handleResolveApproval(approval, false)
-                                                }
-                                            >
-                                                <X className="h-3.5 w-3.5" />
-                                                不保留
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : null}
                         <div className="w-full max-w-3xl rounded-[1.25rem] border border-[var(--aura-border)] bg-[var(--aura-surface)] p-3 shadow-[0_22px_64px_-46px_var(--aura-glow)]">
                             {selectedFiles.length > 0 ? (
                                 <div className="mb-3 flex flex-wrap gap-2">
@@ -1632,59 +1181,6 @@ export function AruaChatScreen() {
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className={cn(
-                                            'rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]',
-                                            isTimelineOpen &&
-                                                'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]',
-                                        )}
-                                        aria-label="关系时间线"
-                                        title="关系时间线"
-                                        onClick={handleToggleTimeline}
-                                    >
-                                        <History className="h-4 w-4" />
-                                    </Button>
-                                    {activeBranchId ? (
-                                        <>
-                                            <span className="inline-flex h-9 items-center gap-1.5 border border-[var(--aura-border)] px-2 text-xs text-[var(--aura-text-muted)]">
-                                                <GitBranch className="h-3.5 w-3.5 text-[var(--aura-primary)]" />
-                                                分支
-                                            </span>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="rounded-full text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                                                aria-label="返回主会话"
-                                                title="返回主会话"
-                                                onClick={handleReturnToMainConversation}
-                                            >
-                                                <RotateCcw className="h-4 w-4" />
-                                            </Button>
-                                        </>
-                                    ) : null}
-                                    {latestEmotion ? (
-                                        <div
-                                            className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full bg-[var(--aura-surface-strong)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)] sm:max-w-[18rem]"
-                                            title={getEmotionLabel(latestEmotion)}
-                                        >
-                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--aura-primary)]" />
-                                            <span className="shrink-0 text-[var(--aura-text-soft)]">
-                                                {t('chat.emotion')}
-                                            </span>
-                                            <span className="min-w-0 truncate">
-                                                {getEmotionLabel(latestEmotion)}
-                                            </span>
-                                            {emotionDetail ? (
-                                                <span className="shrink-0 text-[var(--aura-text-muted)]/75">
-                                                    {emotionDetail}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
                                 </div>
 
                                 <Button

@@ -35,6 +35,14 @@ type Live2DStageProps = {
     isActive?: boolean
     emotionLabel?: string | null
     presence?: Live2DPresence | null
+    labels: {
+        presence: string
+        subtitle: string
+        ready: string
+        loading: string
+        play: string
+        unavailable: string
+    }
 }
 
 type PixiApplication = {
@@ -128,6 +136,7 @@ export function Live2DStage({
     isActive = false,
     emotionLabel,
     presence,
+    labels,
 }: Live2DStageProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -268,13 +277,13 @@ export function Live2DStage({
             <div className="pointer-events-none absolute inset-x-6 top-6 z-10 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <p className="text-xs font-medium tracking-[0.28em] text-[var(--aura-text-soft)] uppercase">
-                        Live2D
+                        {labels.presence}
                     </p>
                     <h2 className="mt-1 truncate text-2xl font-semibold text-[var(--aura-text)]">
                         Arua
                     </h2>
                     <p className="mt-1 truncate text-xs text-[var(--aura-text-muted)]">
-                        companion model / realtime presence
+                        {labels.subtitle}
                     </p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] px-3 py-1.5 text-xs text-[var(--aura-text-muted)]">
@@ -286,7 +295,7 @@ export function Live2DStage({
                                 : 'bg-[var(--aura-tertiary)]',
                         )}
                     />
-                    <span>{status === 'ready' ? 'online' : status}</span>
+                    <span>{status === 'ready' ? (emotionLabel ?? labels.ready) : labels.loading}</span>
                 </div>
             </div>
 
@@ -302,24 +311,16 @@ export function Live2DStage({
             <button
                 type="button"
                 className="absolute top-20 right-6 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] text-[var(--aura-text-muted)] shadow-[0_14px_34px_-26px_var(--aura-glow)] transition hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
-                aria-label="播放当前表情"
-                title="播放当前表情"
+                aria-label={labels.play}
+                title={labels.play}
                 onClick={() => triggerPresence()}
             >
                 <Sparkles className="h-4 w-4" />
             </button>
 
-            <div className="pointer-events-none absolute inset-x-8 bottom-8 z-10">
-                <div className="max-w-sm rounded-[1.25rem] border border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_82%,transparent)] px-4 py-3 text-sm text-[var(--aura-text-muted)] shadow-[0_22px_58px_-42px_var(--aura-glow)] backdrop-blur-xl">
-                    <span className="text-[var(--aura-text)]">Arua</span>
-                    <span className="mx-2 text-[var(--aura-text-soft)]">/</span>
-                    <span>{emotionLabel ?? (isActive ? 'replying' : 'listening')}</span>
-                </div>
-            </div>
-
             {status === 'error' ? (
                 <div className="absolute inset-0 flex items-center justify-center px-8 text-center text-sm leading-6 text-[var(--aura-text-muted)]">
-                    Live2D runtime is unavailable. Chat remains ready.
+                    {labels.unavailable}
                 </div>
             ) : null}
         </div>

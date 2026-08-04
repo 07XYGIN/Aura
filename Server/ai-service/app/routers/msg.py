@@ -21,6 +21,7 @@ from app.core.agent.protocol import (
 )
 from app.core.emotion import derive_emotion_state
 from app.core.auth_store import get_current_user_id
+from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED
 from app.core.continuity.capsules import trigger_keyword_messages
 from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
 from app.core.games.bash.service import BashGameServiceError
@@ -509,7 +510,7 @@ async def send_message(
             },
         )
     focus_response: FocusChatResponse | None = None
-    if msg.branch_id is None:
+    if AURA_OPTIONAL_ACTIVITIES_ENABLED and msg.branch_id is None:
         try:
             async with AsyncSessionLocal() as session:
                 focus_response = await try_handle_focus_chat_message(
@@ -544,7 +545,7 @@ async def send_message(
         )
 
     game_response: BashChatResponse | None = None
-    if msg.branch_id is None:
+    if AURA_OPTIONAL_ACTIVITIES_ENABLED and msg.branch_id is None:
         try:
             async with AsyncSessionLocal() as session:
                 game_response = await try_handle_bash_chat_message(
@@ -579,7 +580,7 @@ async def send_message(
         )
 
     pet_response: PetChatResponse | None = None
-    if msg.branch_id is None:
+    if AURA_OPTIONAL_ACTIVITIES_ENABLED and msg.branch_id is None:
         try:
             async with AsyncSessionLocal() as session:
                 pet_response = await try_handle_pet_chat_message(

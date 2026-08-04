@@ -12,31 +12,6 @@ export type AuraMemoryRetention = {
   paywall: boolean
 }
 
-export type AuraEmotionReportPreview = {
-  eligible: boolean
-  chatTurns: number
-  roundsRemaining: number
-  reportId?: string
-  status?: 'preview' | 'paid'
-  priceCents?: number
-  previewKeywords?: string
-  previewText?: string
-  fullReport?: string
-}
-
-export type AuraEmotionInsightReport = {
-  id: string
-  userId: string
-  status: 'preview' | 'paid'
-  priceCents: number
-  previewKeywords: string
-  previewText: string
-  fullReport: string
-  paidAt?: string
-  createdAt?: string
-  updatedAt?: string
-}
-
 export type AuraUploadAttachmentInput = {
   fileName: string
   contentType: string
@@ -60,14 +35,6 @@ export type AuraReplyFeedbackCategory =
   | 'too_clingy'
   | 'too_many_questions'
   | 'wrong_context'
-
-export type AuraApproval = {
-  id: string
-  kind: string
-  title: string
-  summary: string
-  createdAt?: string
-}
 
 export type AuraRelationshipChapter = {
   id: string
@@ -149,31 +116,11 @@ export const aura = {
       },
     )
   },
-  createConversationBranch: (messageId: string, branchId?: string | null) =>
-    pythonRequest<{ branchId: string; sourceMessageId: string }>(
-      `/api/history/${encodeURIComponent(requireCurrentUserId())}/branches`,
-      {
-        method: 'POST',
-        body: { messageId, branchId: branchId || undefined },
-      },
-    ),
   submitReplyFeedback: (messageId: string, category: AuraReplyFeedbackCategory) =>
     pythonRequest<{ stored: boolean; category: AuraReplyFeedbackCategory }>('/api/feedback/reply', {
       method: 'POST',
       body: { messageId, category },
     }),
-  getPendingApprovals: () =>
-    pythonRequest<{ items: AuraApproval[] }>('/api/approvals', {
-      method: 'GET',
-    }),
-  resolveApproval: (approvalId: string, approved: boolean) =>
-    pythonRequest<{ approval: AuraApproval; approved: boolean }>(
-      `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
-      {
-        method: 'POST',
-        body: { approved },
-      },
-    ),
   getRelationshipChapters: () =>
     pythonRequest<{ items: AuraRelationshipChapter[] }>('/api/continuity/chapters', {
       method: 'GET',
@@ -209,29 +156,6 @@ export const aura = {
       `/api/memory/list?userId=${encodeURIComponent(requireCurrentUserId())}&scope=${scope}`,
       {
         method: 'DELETE',
-      },
-    ),
-  submitConversationFeedback: (payload: { sessionId: string; score: number; comment?: string }) =>
-    pythonRequest('/api/aura/conversation-feedback', {
-      method: 'POST',
-      body: { ...payload, userId: requireCurrentUserId() },
-    }),
-  recordBehaviorEvent: (payload: {
-    sessionId?: string
-    messageId?: string
-    eventType: string
-    metadata?: string
-  }) =>
-    pythonRequest('/api/aura/behavior-events', {
-      method: 'POST',
-      body: { ...payload, userId: requireCurrentUserId() },
-    }),
-  purchaseEmotionReport: (reportId: string) =>
-    pythonRequest<AuraEmotionInsightReport>(
-      `/api/aura/emotion-report/${encodeURIComponent(reportId)}/purchase`,
-      {
-        method: 'POST',
-        body: { userId: requireCurrentUserId() },
       },
     ),
 }

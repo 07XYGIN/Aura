@@ -47,9 +47,23 @@ def int_env(name: str, default: int, minimum: int) -> int:
     return max(minimum, parsed)
 
 
+def bool_env(name: str, default: bool = False) -> bool:
+    """读取布尔环境变量，无法识别时使用默认值。"""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 AURA_TIMEZONE = os.getenv("AURA_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
 AURA_CITY_ADCODE = os.getenv("AURA_CITY_ADCODE", "").strip() or None
+AURA_OPTIONAL_ACTIVITIES_ENABLED = bool_env("AURA_OPTIONAL_ACTIVITIES_ENABLED", False)
 AURA_CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

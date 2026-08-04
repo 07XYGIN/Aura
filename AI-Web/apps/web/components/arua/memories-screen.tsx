@@ -1,22 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { BrainCircuit, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { BrainCircuit, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { aura, type AuraMemoryItem } from '@/apis/aura'
 import { AruaAppShell } from '@/components/arua/app-shell'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { useI18n } from '@/lib/i18n'
 
 const PAGE_SIZE = 50
-type MemoryScope = 'long' | 'mid' | 'all'
-
-const memoryScopes: Array<{ key: MemoryScope; label: string }> = [
-  { key: 'long', label: '长期' },
-  { key: 'mid', label: '中期' },
-  { key: 'all', label: '全部' },
-]
 
 const getMemoryTitle = (memory: AuraMemoryItem, fallback: string) => {
   const title = memory.metadata?.title
@@ -32,25 +25,33 @@ const getMemoryContent = (memory: AuraMemoryItem) => {
   return memory.page_content ?? ''
 }
 
-const getMemoryTime = (memory: AuraMemoryItem) => {
+const getMemoryTime = (memory: AuraMemoryItem, locale: string) => {
   const createTime = memory.metadata?.create_time
-  return typeof createTime === 'string' ? createTime : null
+  if (typeof createTime !== 'string') return null
+
+  const date = new Date(createTime)
+  if (Number.isNaN(date.getTime())) return null
+
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
 }
 
 export function AruaMemoriesScreen() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const [memories, setMemories] = useState<AuraMemoryItem[]>([])
   const [total, setTotal] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null)
   const [isClearing, setIsClearing] = useState(false)
-  const [memoryScope, setMemoryScope] = useState<MemoryScope>('long')
 
   const loadMemories = useCallback(async () => {
     setIsLoading(true)
 
     try {
-      const response = await aura.getMemories(1, PAGE_SIZE, memoryScope)
+      const response = await aura.getMemories(1, PAGE_SIZE, 'all')
       const memoryPage = response.data
       setMemories(memoryPage?.items ?? [])
       setTotal(memoryPage?.total ?? 0)
@@ -62,7 +63,7 @@ export function AruaMemoriesScreen() {
     } finally {
       setIsLoading(false)
     }
-  }, [memoryScope, t])
+  }, [t])
 
   useEffect(() => {
     loadMemories()
@@ -99,10 +100,14 @@ export function AruaMemoriesScreen() {
       return
     }
 
+    if (!window.confirm(t('memories.clearConfirm'))) {
+      return
+    }
+
     setIsClearing(true)
 
     try {
-      await aura.clearMemories(memoryScope)
+      await aura.clearMemories('all')
       setMemories([])
       setTotal(0)
       toast.success(t('memories.cleared'), {
@@ -130,7 +135,7 @@ export function AruaMemoriesScreen() {
       }
     >
       <div className="mx-auto w-full max-w-7xl space-y-8">
-        <Card className="rounded-[2rem] border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0 shadow-[0_28px_72px_-54px_var(--aura-glow)]">
+        <Card className="rounded-lg border-[var(--aura-border)] bg-[color-mix(in_srgb,var(--aura-surface-solid)_86%,transparent)] py-0 shadow-[0_28px_72px_-54px_var(--aura-glow)]">
           <CardContent className="p-6 sm:p-8">
             <div className="flex flex-col gap-4 border-b border-[var(--aura-border)] pb-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -142,40 +147,28 @@ export function AruaMemoriesScreen() {
                 </h4>
               </div>
               <div className="flex flex-wrap gap-2">
-                <div className="flex rounded-full border border-[var(--aura-border)] bg-[var(--aura-surface)] p-1">
-                  {memoryScopes.map((scope) => (
-                    <button
-                      key={scope.key}
-                      type="button"
-                      className={[
-                        'rounded-full px-3 py-1.5 text-xs transition',
-                        memoryScope === scope.key
-                          ? 'bg-[var(--aura-primary-soft)] text-[var(--aura-primary)]'
-                          : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]',
-                      ].join(' ')}
-                      onClick={() => setMemoryScope(scope.key)}
-                    >
-                      {scope.label}
-                    </button>
-                  ))}
-                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  size="lg"
+                  size="icon"
                   disabled={isLoading}
-                  className="rounded-full border-[var(--aura-border)] bg-transparent px-5 text-xs tracking-[0.24em] text-[var(--aura-text)] uppercase disabled:opacity-60"
+                  className="rounded-full border-[var(--aura-border)] bg-transparent text-[var(--aura-text)] disabled:opacity-60"
+                  aria-label={t('memories.refresh')}
+                  title={t('memories.refresh')}
                   onClick={loadMemories}
                 >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {t('memories.refresh')}
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   size="lg"
                   disabled={isLoading || isClearing || memories.length === 0}
-                  className="rounded-full px-5 text-xs tracking-[0.24em] text-[var(--aura-text-muted)] uppercase hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
+                  className="rounded-full px-5 text-xs text-[var(--aura-text-muted)] hover:bg-[var(--aura-surface-strong)] hover:text-[var(--aura-primary)]"
                   onClick={handleClearMemories}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -194,12 +187,12 @@ export function AruaMemoriesScreen() {
                 {memories.map((memory) => {
                   const title = getMemoryTitle(memory, t('memories.untitled'))
                   const content = getMemoryContent(memory)
-                  const createTime = getMemoryTime(memory)
+                  const createTime = getMemoryTime(memory, locale)
 
                   return (
                     <article
                       key={memory.id}
-                      className="group/memory rounded-2xl border border-[var(--aura-border)] bg-[var(--aura-surface)] p-4 shadow-[0_18px_42px_-38px_var(--aura-glow)]"
+                      className="group/memory rounded-lg border border-[var(--aura-border)] bg-[var(--aura-surface)] p-4 shadow-[0_18px_42px_-38px_var(--aura-glow)]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -230,9 +223,6 @@ export function AruaMemoriesScreen() {
                       </div>
                       <p className="mt-3 line-clamp-4 text-sm leading-7 text-[var(--aura-text-muted)]">
                         {content}
-                      </p>
-                      <p className="mt-3 truncate text-xs text-[var(--aura-text-soft)]">
-                        {memory.id}
                       </p>
                     </article>
                   )
