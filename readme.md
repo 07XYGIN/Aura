@@ -17,8 +17,6 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 
 ### 服务端
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.x-6DB33F?logo=springboot&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E?logo=nestjs&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.127+-009688?logo=fastapi&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 
@@ -38,7 +36,9 @@
 
 ## 📖 简介
 
-**Aura** 是一个 AI 陪伴聊天项目，采用前后端分层与多服务协作架构，覆盖 AI 对话、用户认证、管理后台、PC Web、Next.js Web、移动端和 BFF 聚合层。项目横跨 Java、Python、Node.js、Vue、React 与 Flutter 多个技术方向。
+**Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，前端覆盖 Vue3 管理后台、Vue3 PC 客户端、Next.js Web 工作台与 Flutter 移动端。
+
+历史上的 Java Core Service 与 NestJS BFF 已弃用，保留在仓库中仅用于代码追溯，不再作为当前开发、联调或部署入口。
 
 ---
 
@@ -47,81 +47,89 @@
 ### 🤖 AI 对话
 - 基于 LangGraph 的多轮对话编排，支持工具调用与对话状态管理
 - 通过 Server-Sent Events（SSE）返回流式响应
-- 使用 Ollama/Qwen 作为本地对话模型，并预留记忆提取小模型
-- 长期记忆通过 pgvector 进行语义检索，按用户隔离存储
+- 使用本地模型与外部模型组合承载对话、判断和记忆相关任务
+- 长期记忆通过 PostgreSQL + pgvector 进行语义检索，并按用户隔离存储
 - 天气查询、记忆保存、记忆搜索等工具已接入 Agent 流程
+
+### 🧠 记忆与陪伴能力
+- 支持聊天历史、长期记忆、语义检索和记忆清理
+- 支持情绪状态识别、互动目标判断与上下文注入
+- 支持主动消息调度、附件、位置和自我更新管理等扩展能力
 
 ### 🗂️ 管理后台（Admin）
 - Vue3 + Element Plus 管理后台基础界面
 - 登录、注册、用户信息页面与 Pinia 状态管理
-- 面向后续用户、会话、消息和配置管理扩展
+- 面向用户、会话、消息、记忆和配置管理继续扩展
 
 ### 🖥️ Web / PC 客户端
-- `apps/PC`：Vue3 PC 聊天端，包含登录、注册、聊天、记忆、设置等页面
-- `apps/web`：Next.js 16 + React 19 的新版 Aura 工作台，包含聊天、登录、记忆和设置界面
+- `AI-Web/apps/PC`：Vue3 PC 聊天端，包含登录、注册、聊天、记忆、设置等页面
+- `AI-Web/apps/web`：Next.js 16 + React 19 的新版 Aura 工作台，包含聊天、登录、记忆和设置界面
 - 支持主题切换、路由过渡、请求封装和基础 UI 组件
 
 ### 📱 移动端
 - Flutter 移动端工程位于仓库根目录 `app/`
 - Android 工程已生成，Web 平台保留用于快速调试 UI
-- 默认模板屏幕保留，后续接入聊天、认证与历史记录页面
 - 聊天界面、认证和后端联动仍在接入中
-
-### 🧩 BFF 聚合层
-- NestJS BFF 工程已搭建，并已删除默认模板 Controller / Service
-- 计划承接鉴权、请求聚合、响应裁剪和 SSE 代理
 
 ---
 
 ## 🏗️ 技术架构
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │                      客户端层                           │
 │  Admin(Vue3)  PC(Vue3)  Web(Next/React)  Mobile(Flutter)│
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
-│                    NestJS BFF 层                         │
-│            请求聚合 · 鉴权承接 · 响应裁剪 · SSE 代理       │
+│                  FastAPI AI Service                     │
+│    AI 对话 · SSE 流式响应 · 记忆检索 · 工具调用 · 调度    │
 └───────────────┬───────────────────────────┬────────────┘
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│        Spring Boot            │ │        FastAPI          │
-│   用户认证 / 用户资料 / JWT    │ │   AI 对话 / 记忆 / 工具  │
-│   Redis 会话令牌 / MyBatis     │ │   LangGraph 编排 / SSE   │
+│        LangGraph Agent       │ │     Aura / Memory       │
+│   prompt · judges · tools    │ │   retrieval · schedule  │
 └───────────────┬──────────────┘ └──────────┬─────────────┘
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│       PostgreSQL + Redis      │ │   PostgreSQL + pgvector │
-│       用户数据 / 令牌缓存      │ │   对话检查点 / 记忆向量   │
-└──────────────────────────────┘ └────────────────────────┘
+│      LLM / Embedding Models   │ │ PostgreSQL + pgvector   │
+│      chat · judge · vector    │ │ checkpoints · memories  │
+└──────────────────────────────┘ └──────────┬─────────────┘
+                                             │
+                                  ┌──────────▼─────────────┐
+                                  │          Redis          │
+                                  │   cache · runtime state │
+                                  └────────────────────────┘
 ```
 
 ---
 
 ## 📁 仓库结构
 
-```
+```text
 AI-Web/                       # 前端 Monorepo（pnpm workspace）
 ├── apps/
 │   ├── admin/                # Vue3 管理后台
 │   ├── PC/                   # Vue3 PC 聊天端
 │   ├── web/                  # Next.js + React 新版 Web 工作台
-│   └── ...
+│   ├── mobile/               # Monorepo 内保留的移动端目录
+│   └── bff/                  # 已弃用：历史 NestJS BFF
 └── package/
     ├── Types/                # 共享 TypeScript 类型包
     └── ...
 
 Server/                       # 后端服务
-├── core-service/             # Spring Boot 用户认证与业务服务
-├── ai-service/               # FastAPI + LangGraph AI 服务
+├── ai-service/               # 当前主线：FastAPI + LangGraph AI 服务
+├── core-service/             # 已弃用：历史 Java Core Service
 └── ...
 
 app/                          # Flutter 移动端
 ├── lib/                      # Dart 应用代码
 ├── android/                  # Android 原生工程
 └── web/                      # Flutter Web 调试入口
+
+tools/                        # 项目辅助脚本
+main.sql                      # 数据库初始化 / 参考 SQL
 ```
 
 ---
@@ -132,7 +140,6 @@ app/                          # Flutter 移动端
 - Node.js 18+
 - pnpm 10+
 - Flutter 3.44+ / Dart 3.12+
-- Java 17+
 - Python 3.12+ 与 uv
 - PostgreSQL 16+
 - Redis 7+
@@ -145,26 +152,19 @@ uv sync
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 启动核心后端服务
-```bash
-cd Server/core-service
-./mvnw spring-boot:run
-```
+服务默认运行在：
 
-Windows PowerShell：
-```powershell
-cd Server/core-service
-.\mvnw.cmd spring-boot:run
+```text
+http://127.0.0.1:8000
 ```
 
 ### 启动前端工作区
 ```bash
 cd AI-Web
 pnpm install
-pnpm dev:admin              # Vue3 管理后台
-pnpm --filter @ai-web/pc dev # Vue3 PC 聊天端
-pnpm dev:web                # Next.js Web 工作台
-pnpm dev:bff                # NestJS BFF
+pnpm dev:admin               # Vue3 管理后台
+pnpm --filter @ai-web/pc dev  # Vue3 PC 聊天端
+pnpm dev:web                 # Next.js Web 工作台
 ```
 
 ### 启动移动端
@@ -182,16 +182,7 @@ flutter run
 
 ---
 
-## 🗺️ 里程碑
+## 🧾 说明
 
-### ✅ 已完成
-- [x] 前端 pnpm Monorepo 与多应用目录搭建
-- [x] Spring Boot 用户注册、登录、JWT 鉴权与 Redis 令牌缓存
-- [x] 用户信息查询、更新、注销等基础接口
-- [x] FastAPI 服务、统一异常处理、CORS 与路由组织
-- [x] LangGraph Agent、SSE 流式响应与 PostgreSQL 检查点
-- [x] 记忆保存、记忆检索、天气查询工具接入
-- [x] Vue3 Admin 基础登录/注册/用户页
-- [x] Vue3 PC 聊天端基础页面
-- [x] Next.js Web 工作台基础页面
-- [x] Flutter 移动端基础工程搭建
+- `AI-Web/apps/bff` 已弃用，不再作为统一 API 聚合层维护。
+- `Server/core-service` 已弃用，不再作为当前认证或业务服务入口维护。

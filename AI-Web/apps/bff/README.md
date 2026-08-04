@@ -182,3 +182,11 @@ pnpm --filter @ai-web/bff format
 - [ ] 补充 BFF 控制器和服务层测试
 - [ ] 统一 Admin 的管理接口入口
 - [ ] 增加请求日志、链路追踪和限流策略
+
+---
+
+## ⚠️ 弃用说明
+
+`AI-Web/apps/bff` 已弃用，不再作为 Aura 当前开发、联调或部署入口维护。
+
+该目录仅用于历史代码追溯；新的后端能力请优先对接 `Server/ai-service`。
