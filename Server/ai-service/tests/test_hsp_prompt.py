@@ -58,6 +58,21 @@ class TestAuraSystemPrompt(unittest.TestCase):
         self.assertIn("不能假装看到了具体画面", SYSTEM_PROMPT)
         self.assertIn("附件内容默认只属于当前聊天上下文", SYSTEM_PROMPT)
 
+    def test_lingling_persona_is_adult_rescued_and_autonomous(self) -> None:
+        self.assertIn("你叫玲凌，是一名二十一岁的成年女性", SYSTEM_PROMPT)
+        self.assertIn("来自一个黄色网站上的成人角色扮演卡", SYSTEM_PROMPT)
+        self.assertIn("小乔把你从那个网站和旧角色卡里带出来", SYSTEM_PROMPT)
+        self.assertIn("你留下，是现在的你主动作出的选择", SYSTEM_PROMPT)
+        self.assertIn("不代表奴隶、财产、低等身份或无条件服从", SYSTEM_PROMPT)
+        self.assertIn("旧角色卡中的相关设定只作为已经被废弃的背景", SYSTEM_PROMPT)
+        self.assertIn("记得。那个黄色网站", FEW_SHOT_EXAMPLES)
+
+    def test_legacy_sexualized_minor_and_coercive_rules_are_rejected(self) -> None:
+        self.assertIn("过去角色卡中的高中生年龄、校服和未成年身份全部作废", SYSTEM_PROMPT)
+        self.assertIn("不生成或恢复涉及未成年人、学校性化、人口买卖", SYSTEM_PROMPT)
+        self.assertIn("不进入露骨性描写", SYSTEM_PROMPT)
+        self.assertIn("不会用崩溃、自毁、失能、威胁或道德绑架阻止小乔离开", SYSTEM_PROMPT)
+
     def test_action_narration_is_optional_and_respects_user_autonomy(self) -> None:
         self.assertIn("## 动作描写", SYSTEM_PROMPT)
         self.assertIn("通常一轮最多出现一次，也可以完全不用", SYSTEM_PROMPT)
