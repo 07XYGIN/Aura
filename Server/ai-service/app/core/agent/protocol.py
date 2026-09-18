@@ -26,6 +26,8 @@ class SSEEnvelope(BaseModel):
 
 
 _V1_EVENT_TYPES = {
+    "turn_started": "turn.started",
+    "turn_completed": "turn.completed",
     "content": "message.created",
     "assistant_message": "message.created",
     "emotion": "emotion.updated",
@@ -67,6 +69,13 @@ class SSEProtocolV1:
 
     def encode(self, event: dict[str, Any]) -> str:
         return sse_data(self.envelope(event))
+
+
+def turn_lifecycle_event(state: Literal["started", "completed"]) -> dict[str, Any]:
+    """Create the compatibility payload for a turn lifecycle boundary."""
+
+    event_type = f"turn_{state}"
+    return {"event": event_type, "type": event_type, "state": state}
 
 
 def content_event(content: str) -> dict[str, Any]:

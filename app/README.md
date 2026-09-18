@@ -3,7 +3,7 @@
 <div align="center">
 
 *Aura Mobile App 是 Aura 的 Flutter 移动端客户端工程，面向 Android 交付并保留 Web 调试入口。*
-*它会复用 BFF 聚合层的统一 API，让移动端接入同一套认证、聊天、记忆和 Aura 业务能力。*
+*它会直连 FastAPI 统一 API，让移动端接入同一套认证、聊天、记忆和 Aura 业务能力。*
 
 ---
 
@@ -21,7 +21,7 @@
 
 **Aura Mobile App** 位于仓库根目录 `app/`，是 Aura 的移动端客户端工程。该工程独立于 `AI-Web` pnpm monorepo，使用 Flutter 构建，当前以 Android 端为主要交付目标，并保留 Web 运行入口用于本地界面联调。
 
-移动端后续通过 `AI-Web/apps/bff` 消费统一 API，不直接依赖 Java Core Service 或 Python AI Service 的内部地址。
+移动端后续通过公开的 FastAPI API 消费能力，不依赖已移除的历史中间层。
 
 ---
 
@@ -34,9 +34,7 @@
 - 当前保留 Flutter 默认模板屏幕，后续替换为 Aura 移动端首页
 
 ### 🔗 服务依赖
-- `AI-Web/apps/bff` 提供统一 API、认证代理和 SSE 转发
-- `Server/core-service` 提供用户认证、资料和 Aura 核心业务能力
-- `Server/ai-service` 提供 AI 对话、流式响应、记忆和工具调用
+- `Server/ai-service` 提供统一 API、认证、资料、AI 对话、流式响应、记忆和工具调用
 - `AI-Web/apps/web`、`AI-Web/apps/PC`、`AI-Web/apps/admin` 继续承载 Web、PC 与管理端
 
 ### 🧰 本地配置
@@ -56,14 +54,9 @@
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
-│                    NestJS BFF 层                         │
-│             统一 API · token 代理 · SSE 转发              │
-└───────────────┬───────────────────────────┬────────────┘
-                │                           │
-┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│        Spring Boot Core       │ │      FastAPI AI Service │
-│  用户认证 / 用户资料 / Aura    │ │  对话 / 记忆 / 工具 / SSE│
-└──────────────────────────────┘ └────────────────────────┘
+│                 FastAPI AI Service                     │
+│       认证 · 用户资料 · 对话 · 记忆 · 工具 · SSE          │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -143,6 +136,6 @@ flutter build web
 ### 🔜 规划中
 - [ ] 替换当前初始界面为 Aura 移动端首页
 - [ ] 接入登录、注册与 token 存储
-- [ ] 接入 BFF 对话接口和 SSE 流式响应
+- [ ] 接入 FastAPI 对话接口和 SSE 流式响应
 - [ ] 接入历史会话与长期记忆列表
 - [ ] 完成本地主题、请求封装与缓存能力

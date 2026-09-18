@@ -34,10 +34,14 @@ class BashSseTest(unittest.IsolatedAsyncioTestCase):
             ):
                 frames.append(frame)
 
-        state = json.loads(frames[0].removeprefix("data: ").strip())
-        content = json.loads(frames[1].removeprefix("data: ").strip())
+        started = json.loads(frames[0].removeprefix("data: ").strip())
+        state = json.loads(frames[1].removeprefix("data: ").strip())
+        content = json.loads(frames[2].removeprefix("data: ").strip())
+        completed = json.loads(frames[-2].removeprefix("data: ").strip())
+        self.assertEqual(started["type"], "turn.started")
         self.assertEqual(state["event"], "bash_game_state")
         self.assertEqual(content["event"], "content")
+        self.assertEqual(completed["type"], "turn.completed")
         self.assertEqual(frames[-1], "data: [DONE]\n\n")
 
     async def test_idempotent_replay_does_not_append_duplicate_history(self) -> None:
@@ -66,7 +70,7 @@ class BashSseTest(unittest.IsolatedAsyncioTestCase):
             ]
 
         append_history.assert_not_called()
-        content = json.loads(frames[1].removeprefix("data: ").strip())
+        content = json.loads(frames[2].removeprefix("data: ").strip())
         self.assertEqual(content["content"], "这一步我已经记下了。")
         self.assertEqual(frames[-1], "data: [DONE]\n\n")
 

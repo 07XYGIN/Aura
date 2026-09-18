@@ -12,7 +12,7 @@ class RelationshipEvalTests(unittest.TestCase):
         scenarios = load_eval_scenarios(FIXTURE)
         report = run_eval_suite(scenarios)
 
-        self.assertGreaterEqual(report.total, 20)
+        self.assertGreaterEqual(report.total, 40)
         self.assertEqual(report.failed, 0)
         self.assertIn("grounding", report.categories)
         self.assertIn("boundary", report.categories)
@@ -36,4 +36,3 @@ class RelationshipEvalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

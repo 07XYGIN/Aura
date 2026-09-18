@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.core.agent.models import InteractionMode, TurnPlan
-from app.core.agent.protocol import SSEProtocolV1, error_event
+from app.core.agent.protocol import SSEProtocolV1, error_event, turn_lifecycle_event
 from app.core.emotion import derive_emotion_state
 
 
@@ -112,6 +112,8 @@ class ConversationStreamRuntime:
 
         def produce() -> None:
             try:
+                if not put(protocol.encode(turn_lifecycle_event("started"))):
+                    return
                 if plan.interaction.mode == InteractionMode.RETRY:
                     events = retry_aura_agent(
                         request.user_id,
@@ -141,6 +143,7 @@ class ConversationStreamRuntime:
                     round((time.perf_counter() - started_at) * 1000),
                 )
                 if not stop_event.is_set():
+                    put(protocol.encode(turn_lifecycle_event("completed")))
                     put("data: [DONE]\n\n")
                     put(_SSE_DONE)
                 release_once()
@@ -158,4 +161,3 @@ class ConversationStreamRuntime:
 
 
 conversation_stream_runtime = ConversationStreamRuntime()
-

@@ -2,6 +2,17 @@
 
 根目录 `main.sql` 是当前 ORM 对应的一次性新库基线。日期 SQL 文件仍是已有数据库和按版本升级时的迁移链。
 
+## Alembic 接管点
+
+`20260918_0001` 是当前完整结构的 Alembic 基线标记，不重复执行历史 DDL：
+
+1. 新库先执行根目录 `main.sql`，再运行 schema guard；
+2. 已有库先执行到本文件列出的最后一条日期迁移，再运行 schema guard；
+3. guard 通过后执行 `uv run alembic stamp 20260918_0001`；
+4. 从下一次结构变化开始只新增 Alembic revision，并使用 `uv run alembic upgrade head`。
+
+不要在未核对结构的数据库上直接 stamp。日期 SQL 到此冻结，只保留为历史升级链。
+
 ## 新数据库
 
 1. 在项目根目录执行 `main.sql`。

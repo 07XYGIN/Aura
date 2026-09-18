@@ -28,7 +28,7 @@
 
 **Aura AI Service** 位于 `Server/ai-service/`，是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，默认使用 DeepSeek 处理对话和判断任务，使用本地 Ollama Embedding 生成记忆向量，并通过 Server-Sent Events（SSE）向客户端输出回复事件。
 
-服务同时提供聊天历史读取、长期记忆写入与语义检索、附件、位置、自我更新管理和主动消息调度能力。Web、PC 与根目录 `app/` Flutter 移动端后续都通过 `AI-Web/apps/bff` 消费这些能力。
+服务同时提供认证、聊天历史、长期记忆、附件、位置、自我更新和主动消息能力。Web、PC 与移动端直接消费这一个后端入口。
 
 ---
 
@@ -79,13 +79,8 @@
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
-│                    NestJS BFF 层                         │
-│              userId 注入 · SSE 代理 · API 聚合            │
-└──────────────────────────┬─────────────────────────────┘
-                           │ /api/send/sse/  /api/memory/*
-┌──────────────────────────▼─────────────────────────────┐
 │                    FastAPI AI Service                   │
-│       Router · Middleware · Exception Handler · Scheduler│
+│     Router · Turn Orchestrator · Domain · Scheduler      │
 └───────────────┬───────────────────────────┬────────────┘
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
@@ -112,6 +107,7 @@ ai-service/
 │   ├── check_mojibake.py           # 中文乱码扫描脚本
 │   └── check_db_schema.py          # ORM 与 PostgreSQL 结构一致性检查
 ├── docs/
+│   ├── architecture.md             # 模块边界、SSE v1 与依赖方向
 │   └── database-schema.md          # 当前保留表与删除表说明
 ├── sql/
 │   ├── README.md                   # 当前基线与历史 SQL 使用说明
@@ -230,4 +226,4 @@ data: [DONE]
 ### 🔜 规划中
 - [ ] 补充核心 Agent、记忆和管理端接口测试
 - [ ] 完善主动消息调度的可观测性与配置化开关
-- [ ] 将更多 Aura 管理能力统一沉淀到 BFF 聚合层
+- [x] 移除历史 BFF / Java Core，FastAPI 成为唯一后端真相源

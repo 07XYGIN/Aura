@@ -34,8 +34,8 @@ class PetSseTest(unittest.IsolatedAsyncioTestCase):
                     client_message_id="turn-feed",
                 )
             ]
-        state = json.loads(frames[0].removeprefix("data: ").strip())
-        content = json.loads(frames[1].removeprefix("data: ").strip())
+        state = json.loads(frames[1].removeprefix("data: ").strip())
+        content = json.loads(frames[2].removeprefix("data: ").strip())
         self.assertEqual(state["event"], "pet_state")
         self.assertEqual(content["event"], "content")
         self.assertEqual(frames[-1], "data: [DONE]\n\n")

@@ -3,7 +3,7 @@
 <div align="center">
 
 *Aura Web 是 Aura 的 Next.js 用户工作台，承载聊天、记忆、设置和认证等核心使用场景。*
-*它通过 BFF 聚合层接入后端能力，并以流式 UI 呈现 Aura 的实时陪伴体验。*
+*它直接接入 FastAPI 后端能力，并以流式 UI 呈现 Aura 的实时陪伴体验。*
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## 📖 简介
 
-**Aura Web** 位于 `AI-Web/apps/web/`，是 Aura 项目的 Next.js + React 用户端。它面向 AI 陪伴、聊天、记忆、设置和认证流程，并通过 `AI-Web/apps/bff` 访问统一后端 API。
+**Aura Web** 位于 `AI-Web/apps/web/`，是 Aura 项目的 Next.js + React 用户端。它面向 AI 陪伴、聊天、记忆、设置和认证流程，并直接访问 FastAPI AI Service。
 
 移动端已迁移为仓库根目录 `app/` 下的 Flutter 工程，不再属于 `AI-Web` pnpm workspace。
 
@@ -34,7 +34,7 @@
 
 ### 💬 AI 聊天工作台
 - 提供 Aura 聊天主界面和应用外壳
-- 通过 BFF `/api/chat/sse` 接入 AI 流式对话
+- 通过 FastAPI `/api/send/sse/` 接入 AI 流式对话
 - 支持 SSE 文本分片增量渲染
 - 展示情绪状态、记忆候选和关系变化等 metadata
 - 支持附件选择与语音输入入口
@@ -65,16 +65,11 @@
 │                     Web Runtime                         │
 │       Zustand token · request.ts · current-user          │
 └──────────────────────────┬─────────────────────────────┘
-                           │ NEXT_PUBLIC_BFF_URL
+                           │ NEXT_PUBLIC_AI_SERVICE_URL
 ┌──────────────────────────▼─────────────────────────────┐
-│                    NestJS BFF 层                         │
-│              /api/chat/sse · /api/user/* · /api/aura/*   │
-└───────────────┬───────────────────────────┬────────────┘
-                │                           │
-┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│        Spring Boot Core       │ │      FastAPI AI Service │
-│       认证 / 用户 / Aura       │ │       对话 / 记忆 / SSE  │
-└──────────────────────────────┘ └────────────────────────┘
+│                 FastAPI AI Service                     │
+│       认证 · 用户 · 对话 · 记忆 · 主动消息 · SSE          │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -95,7 +90,7 @@ apps/web/
 │   ├── login/                      # 登录表单组件
 │   └── ui/                         # shadcn/ui 基础组件
 ├── lib/
-│   ├── request.ts                  # BFF 请求封装
+│   ├── python-request.ts           # FastAPI 请求封装
 │   ├── auth-token.ts               # token 工具
 │   ├── current-user.ts             # 当前用户工具
 │   └── utils.ts                    # 通用工具函数
@@ -110,20 +105,19 @@ apps/web/
 ### 环境要求
 - Node.js 18+
 - pnpm 10+
-- BFF 默认运行在 `http://127.0.0.1:3001`
+- FastAPI 默认运行在 `http://127.0.0.1:8000`
 
 ### 配置环境变量
-本地联调 BFF 时可配置：
+本地联调 FastAPI 时可配置：
 
 ```dotenv
-NEXT_PUBLIC_BFF_URL=http://127.0.0.1:3001
-NEXT_PUBLIC_API_URL=http://127.0.0.1:3001
+NEXT_PUBLIC_AI_SERVICE_URL=http://127.0.0.1:8000
 ```
 
-聊天页优先读取 `NEXT_PUBLIC_BFF_URL`，缺省时使用 `NEXT_PUBLIC_API_URL`，最终请求：
+聊天页读取 `NEXT_PUBLIC_AI_SERVICE_URL`，缺省时使用本地 8000 端口，最终请求：
 
 ```text
-POST /api/chat/sse
+POST /api/send/sse/
 ```
 
 ### 启动 Web 工作台
@@ -157,7 +151,7 @@ pnpm --filter @ai-web/web build
 ### ✅ 已完成
 - [x] Next.js 16 + React 19 工作台工程搭建
 - [x] 登录 / 注册页面和 Zustand token 存储
-- [x] BFF SSE 流式对话接入
+- [x] FastAPI SSE 流式对话接入
 - [x] 聊天流式文本增量渲染
 - [x] 情绪状态、记忆候选和关系变化 metadata 展示
 - [x] 记忆页、设置页、主题切换和路由过渡

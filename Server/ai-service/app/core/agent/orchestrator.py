@@ -23,6 +23,7 @@ from app.core.agent.protocol import (
     content_event,
     focus_state_event,
     pet_state_event,
+    turn_lifecycle_event,
 )
 from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED
 from app.core.continuity.capsules import trigger_keyword_messages
@@ -83,6 +84,7 @@ class TurnOrchestrator:
         if result is None:
             raise ValueError("activity turn is missing activity_result")
         protocol = SSEProtocolV1(plan.request.client_message_id)
+        yield protocol.encode(turn_lifecycle_event("started"))
         state_event = self._activity_state_event(result)
         if state_event is not None:
             yield protocol.encode(state_event)
@@ -125,6 +127,7 @@ class TurnOrchestrator:
         else:
             for content in result.messages:
                 yield protocol.encode(content_event(content))
+        yield protocol.encode(turn_lifecycle_event("completed"))
         yield "data: [DONE]\n\n"
 
     @staticmethod
@@ -157,4 +160,3 @@ class TurnOrchestrator:
                 source,
                 request.user_id,
             )
-

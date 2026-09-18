@@ -3,7 +3,7 @@
 <div align="center">
 
 *Aura PC 是 Aura 的 Vue 3 桌面端聊天客户端，承担聊天、记忆、设置和登录注册等核心使用场景。*
-*它通过 BFF 接入统一认证与 SSE 对话链路，提供更接近桌面工作台的陪伴体验。*
+*它直连 FastAPI 的统一认证与 SSE 对话链路，提供更接近桌面工作台的陪伴体验。*
 
 ---
 
@@ -25,7 +25,7 @@
 
 ## 📖 简介
 
-**Aura PC** 位于 `AI-Web/apps/PC/`，是 Aura 项目的 Vue 3 + Vite 桌面端客户端。它包含聊天、记忆、设置、用户、登录和注册等页面，并通过 `AI-Web/apps/bff` 统一访问后端 API。
+**Aura PC** 位于 `AI-Web/apps/PC/`，是 Aura 项目的 Vue 3 + Vite 桌面端客户端。它包含聊天、记忆、设置、用户、登录和注册等页面，并直接访问 FastAPI AI Service。
 
 移动端已迁移为仓库根目录 `app/` 下的 Flutter 工程，不再属于 `AI-Web` pnpm workspace。
 
@@ -36,7 +36,7 @@
 ### 💬 聊天客户端
 - 提供左侧导航与桌面端主布局
 - 提供聊天页面与 SSE 客户端封装
-- 默认通过 `VITE_BFF_URL` 请求 `/api/chat/sse`
+- 默认通过 `VITE_AI_SERVICE_URL` 请求 `/api/send/sse/`
 - 支持历史消息读取和消息渲染
 - 集成 Markdown、代码高亮和 Mermaid 渲染依赖
 
@@ -66,16 +66,11 @@
 │                    Client Runtime                       │
 │        Pinia token · request.ts · useSse.ts              │
 └──────────────────────────┬─────────────────────────────┘
-                           │ VITE_BFF_URL
+                           │ VITE_AI_SERVICE_URL
 ┌──────────────────────────▼─────────────────────────────┐
-│                    NestJS BFF 层                         │
-│              /api/chat/sse · /api/user/* · /api/aura/*   │
-└───────────────┬───────────────────────────┬────────────┘
-                │                           │
-┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│        Spring Boot Core       │ │      FastAPI AI Service │
-│       认证 / 用户 / Aura       │ │       对话 / 记忆 / SSE  │
-└──────────────────────────────┘ └────────────────────────┘
+│                 FastAPI AI Service                     │
+│       认证 · 用户 · 对话 · 记忆 · 主动消息 · SSE          │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -107,11 +102,11 @@ apps/PC/
 ### 环境要求
 - Node.js 18+
 - pnpm 10+
-- BFF 默认运行在 `http://127.0.0.1:3001`
+- FastAPI 默认运行在 `http://127.0.0.1:8000`
 
 ### 配置环境变量
 ```dotenv
-VITE_BFF_URL=http://127.0.0.1:3001
+VITE_AI_SERVICE_URL=http://127.0.0.1:8000
 ```
 
 ### 启动 PC 客户端
@@ -139,13 +134,13 @@ pnpm --filter @ai-web/pc format
 - [x] Vue 3 + Vite + Tailwind CSS PC 客户端工程
 - [x] 左侧导航、主布局、聊天、记忆、设置、登录和注册页面
 - [x] Pinia token 状态、Axios 请求封装和 401 跳转登录
-- [x] BFF `/api/chat/sse` 默认请求链路
+- [x] FastAPI `/api/send/sse/` 默认请求链路
 - [x] SSE 客户端工具、Markdown、代码高亮和 Mermaid 依赖接入
 - [x] shadcn-vue 风格通用 UI 组件目录
 
 ### 🔜 规划中
-- [ ] 打通完整 AI Service SSE 聊天闭环
-- [ ] 接入真实记忆列表和删除接口
+- [x] 打通完整 AI Service SSE 聊天闭环
+- [x] 接入真实记忆列表和删除接口
 - [ ] 统一登录态、错误提示和空状态
 - [ ] 优化聊天消息渲染和 Markdown 展示
 - [ ] 补充基础页面测试

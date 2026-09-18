@@ -38,7 +38,7 @@
 
 **Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，前端覆盖 Vue3 管理后台、Vue3 PC 客户端、Next.js Web 工作台与 Flutter 移动端。
 
-历史上的 Java Core Service 与 NestJS BFF 已弃用，保留在仓库中仅用于代码追溯，不再作为当前开发、联调或部署入口。
+历史上的 Java Core Service 与 NestJS BFF 已从主线移除；认证、业务 API、对话编排与持久化统一由 FastAPI 模块化单体承担。
 
 ---
 
@@ -112,16 +112,13 @@ AI-Web/                       # 前端 Monorepo（pnpm workspace）
 │   ├── admin/                # Vue3 管理后台
 │   ├── PC/                   # Vue3 PC 聊天端
 │   ├── web/                  # Next.js + React 新版 Web 工作台
-│   ├── mobile/               # Monorepo 内保留的移动端目录
-│   └── bff/                  # 已弃用：历史 NestJS BFF
+│   └── mobile/               # Monorepo 内保留的移动端目录
 └── package/
     ├── Types/                # 共享 TypeScript 类型包
     └── ...
 
 Server/                       # 后端服务
-├── ai-service/               # 当前主线：FastAPI + LangGraph AI 服务
-├── core-service/             # 已弃用：历史 Java Core Service
-└── ...
+└── ai-service/               # FastAPI 模块化单体 + LangGraph
 
 app/                          # Flutter 移动端
 ├── lib/                      # Dart 应用代码
@@ -184,5 +181,5 @@ flutter run
 
 ## 🧾 说明
 
-- `AI-Web/apps/bff` 已弃用，不再作为统一 API 聚合层维护。
-- `Server/core-service` 已弃用，不再作为当前认证或业务服务入口维护。
+- 所有客户端通过 `NEXT_PUBLIC_AI_SERVICE_URL` / `VITE_AI_SERVICE_URL` 直连 FastAPI。
+- 聊天事件使用版本化 SSE v1，同时保留一版旧 `event` 字段兼容窗口。
