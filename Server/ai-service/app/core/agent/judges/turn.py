@@ -8,6 +8,7 @@ from typing import Any
 from langsmith import traceable
 
 from app.core.emotion import derive_emotion_state
+from app.core.agent.models import TurnJudgement
 
 from .emotion import judge_emotion_state
 from .memory import judge_memory_candidate, memory_candidate
@@ -61,13 +62,13 @@ def judge_turn(
         )
     response_mode = choose_response_mode(emotion, interaction, risk_signal)
 
-    return {
+    return TurnJudgement.model_validate({
         "emotion": emotion,
         "interaction": interaction,
         "memory_candidate": candidate,
         "risk_signal": risk_signal,
         "response_mode": response_mode,
-    }
+    }).model_dump(mode="json")
 
 
 def build_interaction_context(emotion: dict[str, Any]) -> dict[str, Any]:
@@ -134,6 +135,32 @@ def choose_response_mode(
     return "natural_chat"
 
 
+def apply_aura_impulse_to_response_mode(
+    turn_judgement: dict[str, Any],
+    aura_impulse: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """让最终回复模式同时考虑用户互动与玲凌自身倾向。
+
+    风险、支持与修复模式永远保持优先；只有原本为自然聊天且出现明确的主动亲密
+    倾向时才切换为亲密回应。普通回访仍保持自然聊天，避免每次关心都被写成调情。
+    """
+
+    result = dict(turn_judgement or {})
+    impulse = aura_impulse if isinstance(aura_impulse, dict) else {}
+    current_mode = str(result.get("response_mode") or "natural_chat")
+    desire = str(impulse.get("desire") or "none")
+    initiative = str(impulse.get("initiative") or "none")
+    if (
+        current_mode == "natural_chat"
+        and initiative in {"medium", "high"}
+        and desire in {"express_missing", "seek_attention", "show_jealousy", "stay_close"}
+    ):
+        result["response_mode"] = "warm_affection"
+    result["aura_impulse_desire"] = desire
+    result["aura_initiative"] = initiative
+    return result
+
+
 def normalize_turn_judgement(value: dict[str, Any] | None, message: str) -> dict[str, Any]:
     """补齐上游缺失或无效的回合判断字段。"""
 
@@ -164,13 +191,13 @@ def normalize_turn_judgement(value: dict[str, Any] | None, message: str) -> dict
     if response_mode not in RESPONSE_MODE_LABELS:
         response_mode = choose_response_mode(emotion, interaction, risk_signal)
 
-    return {
+    return TurnJudgement.model_validate({
         "emotion": emotion,
         "interaction": interaction,
         "memory_candidate": candidate,
         "risk_signal": risk_signal,
         "response_mode": response_mode,
-    }
+    }).model_dump(mode="json")
 
 
 def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
@@ -212,6 +239,8 @@ def format_turn_judgement_context(turn_judgement: dict[str, Any] | None) -> str:
         f"- 互动状态：{interaction_summary}\n"
         f"- 记忆判断：{memory_summary}\n"
         f"- 风险信号：{risk_summary}\n"
+        f"- 玲凌主动倾向：{turn_judgement.get('aura_initiative') or 'none'} / "
+        f"{turn_judgement.get('aura_impulse_desire') or 'none'}\n"
         f"- 条件消息：{conditional_summary}。只有显示已保存时才能确认创建成功；不要复述密封正文或口令"
     )
 

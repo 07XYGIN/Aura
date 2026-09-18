@@ -566,6 +566,117 @@ class RelationshipChapter(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
+class AuraInternalState(Base, TimestampMixin):
+    """玲凌跨对话持续的自身情绪、依恋语气和联系倾向。"""
+
+    __tablename__ = "aura_internal_state"
+    __table_args__ = (
+        CheckConstraint(
+            "mood IN ('calm', 'warm', 'playful', 'concerned', 'unsettled', 'tired')",
+            name="chk_aura_internal_state_mood",
+        ),
+        CheckConstraint(
+            "attachment_tone IN ('guarded', 'steady', 'close', 'tender')",
+            name="chk_aura_internal_state_attachment_tone",
+        ),
+        CheckConstraint(
+            "missing_user IN ('none', 'slight', 'clear')",
+            name="chk_aura_internal_state_missing_user",
+        ),
+        CheckConstraint(
+            "desire_for_contact IN ('none', 'low', 'medium', 'high')",
+            name="chk_aura_internal_state_desire_for_contact",
+        ),
+        CheckConstraint(
+            "playfulness IN ('none', 'low', 'medium', 'high')",
+            name="chk_aura_internal_state_playfulness",
+        ),
+        CheckConstraint(
+            "jealousy IN ('none', 'low', 'medium')",
+            name="chk_aura_internal_state_jealousy",
+        ),
+        CheckConstraint(
+            "vulnerability IN ('low', 'medium', 'high')",
+            name="chk_aura_internal_state_vulnerability",
+        ),
+        CheckConstraint("version >= 1", name="chk_aura_internal_state_version"),
+        UniqueConstraint("user_id", name="uq_aura_internal_state_user"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    mood: Mapped[str] = mapped_column(String(24), nullable=False, default="calm", server_default="calm")
+    attachment_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="steady", server_default="steady")
+    missing_user: Mapped[str] = mapped_column(String(16), nullable=False, default="none", server_default="none")
+    desire_for_contact: Mapped[str] = mapped_column(String(16), nullable=False, default="low", server_default="low")
+    playfulness: Mapped[str] = mapped_column(String(16), nullable=False, default="low", server_default="low")
+    jealousy: Mapped[str] = mapped_column(String(16), nullable=False, default="none", server_default="none")
+    vulnerability: Mapped[str] = mapped_column(String(16), nullable=False, default="low", server_default="low")
+    unresolved_feeling: Mapped[str | None] = mapped_column(Text)
+    current_desire: Mapped[str] = mapped_column(String(64), nullable=False, default="none", server_default="none")
+    last_meaningful_interaction: Mapped[str | None] = mapped_column(Text)
+    last_user_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_proactive_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class RelationshipDynamics(Base, TimestampMixin):
+    """保存关系所处阶段和近期气氛，不把关系压缩成单一分数。"""
+
+    __tablename__ = "relationship_dynamics"
+    __table_args__ = (
+        CheckConstraint(
+            "relationship_stage IN ('early_closeness', 'ambiguous', 'early_romance', "
+            "'established_romance', 'temporary_distance', 'conflict', 'repair', 'stable')",
+            name="chk_relationship_dynamics_stage",
+        ),
+        CheckConstraint(
+            "current_tone IN ('neutral', 'warm', 'playful', 'tender', 'tense', 'distant', 'repairing')",
+            name="chk_relationship_dynamics_tone",
+        ),
+        CheckConstraint(
+            "recent_closeness IN ('low', 'medium', 'high')",
+            name="chk_relationship_dynamics_closeness",
+        ),
+        CheckConstraint("stage_evidence_count >= 0", name="chk_relationship_dynamics_evidence"),
+        CheckConstraint("version >= 1", name="chk_relationship_dynamics_version"),
+        UniqueConstraint("user_id", name="uq_relationship_dynamics_user"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    relationship_stage: Mapped[str] = mapped_column(String(32), nullable=False, default="ambiguous", server_default="ambiguous")
+    current_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="warm", server_default="warm")
+    recent_closeness: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", server_default="medium")
+    unresolved_tension: Mapped[str | None] = mapped_column(Text)
+    recent_positive_moment: Mapped[str | None] = mapped_column(Text)
+    recent_distance: Mapped[str | None] = mapped_column(Text)
+    current_expectation: Mapped[str | None] = mapped_column(Text)
+    stage_evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_stage_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
 class AuraDailyState(Base, TimestampMixin):
     """Aura 在一个本地自然日内保持一致的轻量设定生活状态。"""
 
@@ -1095,6 +1206,15 @@ Index(
     "idx_relationship_chapter_user_sequence",
     RelationshipChapter.user_id,
     RelationshipChapter.sequence_no.desc(),
+)
+Index(
+    "idx_aura_internal_state_last_seen",
+    AuraInternalState.last_user_seen_at,
+)
+Index(
+    "idx_relationship_dynamics_stage",
+    RelationshipDynamics.relationship_stage,
+    RelationshipDynamics.updated_at.desc(),
 )
 Index(
     "idx_aura_daily_state_user_date",

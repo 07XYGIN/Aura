@@ -7,7 +7,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.judges.turn import detect_risk_signal, judge_turn
+from app.core.agent.judges.turn import (
+    apply_aura_impulse_to_response_mode,
+    detect_risk_signal,
+    judge_turn,
+)
 
 
 class TurnJudgeTest(unittest.TestCase):
@@ -78,6 +82,22 @@ class TurnJudgeTest(unittest.TestCase):
         self.assertEqual(result["level"], "high")
         self.assertEqual(result["risk_type"], "self_harm")
         self.assertTrue(result["requires_safety_gate"])
+
+    def test_aura_impulse_can_add_affection_without_user_affection_signal(self):
+        result = apply_aura_impulse_to_response_mode(
+            {"response_mode": "natural_chat"},
+            {"initiative": "medium", "desire": "express_missing"},
+        )
+
+        self.assertEqual(result["response_mode"], "warm_affection")
+
+    def test_aura_impulse_never_overrides_crisis_support(self):
+        result = apply_aura_impulse_to_response_mode(
+            {"response_mode": "crisis_support"},
+            {"initiative": "high", "desire": "express_missing"},
+        )
+
+        self.assertEqual(result["response_mode"], "crisis_support")
 
 
 if __name__ == "__main__":

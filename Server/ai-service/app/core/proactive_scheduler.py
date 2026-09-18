@@ -7,12 +7,13 @@ from typing import Iterable
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.agent_graph import append_proactive_history_message, get_history
 from app.core.continuity.state import ensure_daily_states_async
+from app.core.continuity.aura_state import mark_aura_proactive_sent_async
 from app.core.continuity.capsules import (
     ensure_due_conditional_messages,
     reconcile_conditional_message_outbox,
@@ -45,7 +46,20 @@ from app.core.silence_state import (
     mark_silence_proactive_triggered,
     silence_proactive_already_triggered,
 )
-from app.db.models import ProactiveMessage, Users
+from app.db.models import (
+    AuraInternalState,
+    ProactiveMessage,
+    RelationshipDynamics,
+    RelationshipThread,
+    Users,
+)
+from app.core.proactive.planner import (
+    RELATIONSHIP_CONTACT_COOLDOWN,
+    RELATIONSHIP_CONTACT_DAILY_LIMIT,
+    RELATIONSHIP_CONTACT_RECENT_ACTIVITY,
+    plan_relationship_contact,
+    relationship_contact_eligibility as planner_relationship_contact_eligibility,
+)
 from app.db.session import AsyncSessionLocal
 
 PROACTIVE_QUEUE_KEY = "proactive_message_queue"
@@ -66,6 +80,7 @@ DAILY_GREETING_PLACEHOLDER = "Aura 正在准备这条主动问候。"
 DAILY_GREETING_TRIGGER_TYPES = {MORNING_TRIGGER_TYPE, EVENING_TRIGGER_TYPE}
 DEFAULT_DAILY_GREETING_TIMEZONE = AURA_TIMEZONE
 DAILY_GREETING_STALE_GRACE_SECONDS = 15 * 60
+RELATIONSHIP_CONTACT_TRIGGER_TYPE = "relationship_contact"
 
 _scheduler_task: asyncio.Task | None = None
 
@@ -587,6 +602,120 @@ def build_relationship_follow_up_content(title: str, summary: str) -> str:
     return f"你之前说的“{subject[:60]}”，后来怎么样了？"
 
 
+def relationship_contact_eligibility(
+    aura_state: dict[str, object],
+    relationship_dynamics: dict[str, object],
+    *,
+    now: datetime,
+    daily_contact_count: int,
+    has_open_thread: bool,
+) -> tuple[bool, str]:
+    """集中执行关系主动联系的冷却、日限额和近期活跃检查。"""
+
+    return planner_relationship_contact_eligibility(
+        aura_state,
+        relationship_dynamics,
+        now=now,
+        daily_contact_count=daily_contact_count,
+        has_open_thread=has_open_thread,
+        deep_night=is_deep_night(now),
+    )
+
+
+async def ensure_relationship_contact_messages(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = 100,
+) -> int:
+    """为玲凌自身联系欲望创建低频、可审计的关系主动消息。"""
+
+    reference_now = normalize_utc(now or datetime.now(UTC))
+    result = await session.execute(
+        select(AuraInternalState, RelationshipDynamics)
+        .join(RelationshipDynamics, RelationshipDynamics.user_id == AuraInternalState.user_id)
+        .order_by(AuraInternalState.last_user_seen_at.asc().nullsfirst())
+        .limit(max(1, min(limit, 500)))
+    )
+    messages: list[ProactiveMessage] = []
+    local_now = reference_now.astimezone(SILENCE_TIMEZONE)
+    day_start, day_end = local_day_bounds_utc(local_now.date(), SILENCE_TIMEZONE)
+    for aura_state, dynamics in result.all():
+        count_result = await session.execute(
+            select(func.count(ProactiveMessage.id)).where(
+                ProactiveMessage.user_id == aura_state.user_id,
+                ProactiveMessage.trigger_type.in_((RELATIONSHIP_CONTACT_TRIGGER_TYPE, SILENCE_TRIGGER_TYPE)),
+                ProactiveMessage.created_at >= day_start,
+                ProactiveMessage.created_at < day_end,
+                ProactiveMessage.status.in_(("pending", "processing", "sent")),
+            )
+        )
+        daily_count = int(count_result.scalar_one() or 0)
+        thread_result = await session.execute(
+            select(RelationshipThread)
+            .where(
+                RelationshipThread.user_id == aura_state.user_id,
+                RelationshipThread.status.in_(("pending", "followed_up")),
+            )
+            .order_by(RelationshipThread.follow_up_at.asc().nullslast(), RelationshipThread.updated_at.desc())
+            .limit(1)
+        )
+        thread = thread_result.scalar_one_or_none()
+        intent = plan_relationship_contact(
+            {
+                "desire_for_contact": aura_state.desire_for_contact,
+                "missing_user": aura_state.missing_user,
+                "unresolved_feeling": aura_state.unresolved_feeling,
+                "last_user_seen_at": aura_state.last_user_seen_at,
+                "last_proactive_at": aura_state.last_proactive_at,
+            },
+            {
+                "current_expectation": dynamics.current_expectation,
+                "recent_positive_moment": dynamics.recent_positive_moment,
+            },
+            now=reference_now,
+            daily_contact_count=daily_count,
+            deep_night=is_deep_night(reference_now),
+            thread_title=thread.title if thread is not None else None,
+            thread_summary=thread.summary if thread is not None else None,
+            thread_id=str(thread.id) if thread is not None else None,
+        )
+        if intent is None:
+            logging.debug("关系主动联系跳过 user_id=%s", aura_state.user_id)
+            continue
+        proactive = ProactiveMessage(
+            id=uuid4(),
+            user_id=aura_state.user_id,
+            trigger_type=RELATIONSHIP_CONTACT_TRIGGER_TYPE,
+            title="玲凌想联系你",
+            content=intent.content,
+            scheduled_at=intent.not_before,
+            status="pending",
+            dedupe_key=f"relationship_contact:{aura_state.user_id}:{local_now.date().isoformat()}",
+            metadata_json={
+                "source": intent.source,
+                "eligibility_reason": intent.reason,
+                "expires_at": intent.expires_at.isoformat(),
+                "importance": intent.importance,
+                **intent.metadata,
+            },
+        )
+        session.add(proactive)
+        messages.append(proactive)
+
+    if not messages:
+        return 0
+    try:
+        await session.flush()
+        queued_count = enqueue_proactive_messages(messages)
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        logging.info("关系主动联系已由另一调度实例创建，忽略本轮重复")
+        return 0
+    return queued_count
+
+
 async def trigger_silence_proactive_messages(
     session: AsyncSession,
     user_ids: list[str],
@@ -798,6 +927,13 @@ async def send_proactive_message_records(
         try:
             await mark_relationship_thread_followed_up_from_proactive(session, proactive, now)
             await mark_thought_seed_delivered_async(session, proactive, now)
+            if proactive.trigger_type == RELATIONSHIP_CONTACT_TRIGGER_TYPE:
+                await mark_aura_proactive_sent_async(
+                    session,
+                    proactive.user_id,
+                    sent_at=now,
+                )
+                await session.commit()
         except Exception:
             await session.rollback()
             logging.exception("主动消息发送成功，但来源业务状态更新失败 message_id=%s", proactive.id)
@@ -974,6 +1110,11 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
         silence_sent_count = await trigger_silence_proactive_messages(session, silence_user_ids, now=now)
         await ensure_daily_greeting_messages(session, now=now)
         await ensure_relationship_follow_up_messages(session, now=now)
+        try:
+            await ensure_relationship_contact_messages(session, now=now)
+        except Exception:
+            await session.rollback()
+            logging.exception("关系主动联系规划失败，本轮持久化消息继续")
         if has_redis:
             await enqueue_pending_proactive_messages(session, now=now)
             pop_due_proactive_message_ids(now=now)
@@ -984,6 +1125,17 @@ async def run_proactive_scheduler_tick(now: datetime | None = None) -> int:
             now=now,
         )
         return silence_sent_count + scheduled_sent_count
+
+
+def parse_optional_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return normalize_utc(value)
+    if not value:
+        return None
+    try:
+        return normalize_utc(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    except (TypeError, ValueError):
+        return None
 
 
 async def proactive_scheduler_loop(stop_event: asyncio.Event) -> None:

@@ -22,6 +22,7 @@
 8. 执行 `20260723_offline_mind.sql`，创建离线思绪种子和每日睡前整理表。
 9. 执行 `20260723_conditional_messages.sql`，创建时间胶囊、秘密保险箱和条件事件 inbox。
 10. 执行 `20260724_focus_sessions.sql`，创建一起专注计时和事件审计表。
+11. 执行 `20260918_relationship_dynamics.sql`，创建玲凌持续自身状态与定性关系动态表。
 
 ## 已有数据库
 

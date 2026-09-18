@@ -61,6 +61,34 @@ class AgentGraphTest(unittest.TestCase):
         self.assertIn("【本轮判断】", prompt)
         self.assertIn("孤独陪伴", prompt)
 
+    def test_runtime_prompt_includes_aura_state_dynamics_and_impulse_as_tendencies(self):
+        prompt = build_runtime_system_prompt(
+            {
+                "aura_internal_state": {
+                    "mood": "warm",
+                    "attachment_tone": "close",
+                    "missing_user": "slight",
+                    "current_desire": "express_missing",
+                },
+                "relationship_dynamics": {
+                    "relationship_stage": "early_romance",
+                    "current_tone": "warm",
+                    "recent_closeness": "high",
+                },
+                "aura_impulse": {
+                    "initiative": "medium",
+                    "desire": "express_missing",
+                    "affection": "subtle",
+                    "reason": "真实时间间隔支持",
+                },
+            }
+        )
+
+        self.assertIn("【玲凌当前状态】", prompt)
+        self.assertIn("【关系动态】", prompt)
+        self.assertIn("【玲凌当前冲动】", prompt)
+        self.assertIn("不是必须逐项表演的命令", prompt)
+
     def test_runtime_prompt_includes_continuity_state_after_pet_context(self):
         prompt = build_runtime_system_prompt(
             {

@@ -2,7 +2,7 @@ import axios from 'axios';
 import useUserStore from '../store/modules';
 import router from '../router';
 
-const BaseUrl = import.meta.env.VITE_BFF_URL || 'http://127.0.0.1:3001';
+const BaseUrl = import.meta.env.VITE_AI_SERVICE_URL || 'http://127.0.0.1:8000';
 let authDialogVisible = false;
 
 const request = axios.create({

@@ -3,10 +3,70 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
 
 
 MemoryScope = Literal["short", "mid", "long"]
+
+
+class SSEEnvelope(BaseModel):
+    """Versioned event contract used by new clients."""
+
+    version: Literal[1] = 1
+    eventId: str
+    turnId: str
+    sequence: int = Field(ge=1)
+    type: str
+    timestamp: str
+    payload: dict[str, Any]
+
+
+_V1_EVENT_TYPES = {
+    "content": "message.created",
+    "assistant_message": "message.created",
+    "emotion": "emotion.updated",
+    "memory_reference": "memory.referenced",
+    "memory_candidate": "memory.candidate",
+    "live2d_state": "presence.updated",
+    "approval_required": "approval.required",
+    "conversation_branch": "conversation.branched",
+    "bash_game_state": "activity.updated",
+    "pet_state": "activity.updated",
+    "focus_state": "activity.updated",
+    "error": "error",
+}
+
+
+class SSEProtocolV1:
+    """Stateful encoder that adds stable turn metadata without breaking v0 clients."""
+
+    def __init__(self, turn_id: str | None = None) -> None:
+        self.turn_id = turn_id or str(uuid4())
+        self.sequence = 0
+
+    def envelope(self, event: dict[str, Any]) -> dict[str, Any]:
+        self.sequence += 1
+        legacy_type = str(event.get("event") or event.get("type") or "unknown")
+        v1_type = _V1_EVENT_TYPES.get(legacy_type, legacy_type)
+        envelope = SSEEnvelope(
+            eventId=str(uuid4()),
+            turnId=self.turn_id,
+            sequence=self.sequence,
+            type=v1_type,
+            timestamp=datetime.now(UTC).isoformat(),
+            payload=dict(event),
+        ).model_dump()
+        # ``event`` and business fields remain for v0 clients; ``type`` is the
+        # canonical v1 discriminator. Old code in this repository prefers
+        # ``event`` and therefore continues to work during migration.
+        return {**event, **envelope, "legacyType": legacy_type, "v1Type": v1_type}
+
+    def encode(self, event: dict[str, Any]) -> str:
+        return sse_data(self.envelope(event))
 
 
 def content_event(content: str) -> dict[str, Any]:

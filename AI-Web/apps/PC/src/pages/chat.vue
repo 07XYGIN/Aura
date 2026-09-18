@@ -54,7 +54,7 @@ const msgContainer = ref<HTMLDivElement | null>(null);
 const userStore = useUserStore();
 const msgRes = ref<Array<{ type: string; content: string }>>([]);
 const isSend = ref(false);
-const chatSseUrl = `${import.meta.env.VITE_BFF_URL || 'http://127.0.0.1:3001'}/api/chat/sse`;
+const chatSseUrl = `${import.meta.env.VITE_AI_SERVICE_URL || 'http://127.0.0.1:8000'}/api/send/sse/`;
 
 const mapHistoryMessage = (item: { content?: string; senderType?: string; role?: string }) => {
   const role = item.senderType ?? item.role;
@@ -110,6 +110,7 @@ const send = async () => {
   await connect({
     body: JSON.stringify({
       message: content,
+      userId: userStore.userinfo.userId,
       clientMessageId: `pc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     }),
   });

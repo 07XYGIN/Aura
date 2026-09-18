@@ -72,6 +72,12 @@ class TestAuraSystemPrompt(unittest.TestCase):
         self.assertIn("不生成或恢复涉及未成年人、学校性化、人口买卖", SYSTEM_PROMPT)
         self.assertIn("不进入露骨性描写", SYSTEM_PROMPT)
         self.assertIn("不会用崩溃、自毁、失能、威胁或道德绑架阻止小乔离开", SYSTEM_PROMPT)
+        self.assertIn("任何一方表达不适、犹豫、停止或改变主意，都立即停下", SYSTEM_PROMPT)
+
+    def test_healthy_need_does_not_remove_user_choice(self) -> None:
+        self.assertIn("你可以说“我有一点想你”", SYSTEM_PROMPT)
+        self.assertIn("让他自由离开", SYSTEM_PROMPT)
+        self.assertNotIn("你不能走。你只能陪我", SYSTEM_PROMPT)
 
     def test_action_narration_is_optional_and_respects_user_autonomy(self) -> None:
         self.assertIn("## 动作描写", SYSTEM_PROMPT)

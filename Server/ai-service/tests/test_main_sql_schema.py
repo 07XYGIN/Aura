@@ -34,6 +34,16 @@ class MainSqlSchemaTests(unittest.TestCase):
         )
         self.assertIn("uq_focus_session_running_user", sql)
 
+    def test_relationship_dynamics_migration_contains_both_state_tables(self) -> None:
+        sql = (ROOT / "sql" / "20260918_relationship_dynamics.sql").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            {"aura_internal_state", "relationship_dynamics"},
+            set(CREATE_TABLE_PATTERN.findall(sql)),
+        )
+        self.assertNotIn("love_score", sql)
+        self.assertNotIn("affection_score", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

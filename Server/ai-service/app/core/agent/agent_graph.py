@@ -23,6 +23,12 @@ from app.core.attachment_store import (
 )
 from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED, llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
+from app.core.continuity.aura_state import (
+    format_aura_internal_state_prompt,
+    format_relationship_dynamics_prompt,
+    observe_relationship_state_sync,
+    project_without_database,
+)
 from app.core.continuity.capsules import (
     capture_conditional_candidates_sync,
     trigger_keyword_messages_sync,
@@ -68,7 +74,17 @@ from .structured_reply import (
     try_parse_structured_reply_payload,
 )
 from .self_changelog import load_self_changelog_context_sync, mark_self_changelog_reacted_sync
-from .judges.turn import format_turn_judgement_context, judge_turn, normalize_turn_judgement
+from .judges.impulse import (
+    format_aura_impulse_context,
+    judge_aura_impulse,
+    normalize_aura_impulse,
+)
+from .judges.turn import (
+    apply_aura_impulse_to_response_mode,
+    format_turn_judgement_context,
+    judge_turn,
+    normalize_turn_judgement,
+)
 from .tools.registry import CHAT_TOOLS
 from app.core.memory.service import save_memory
 from app.core.pet.context import load_pet_context_sync
@@ -100,6 +116,10 @@ class AuraState(TypedDict, total=False):
     last_reply_batch: dict[str, Any]
     pet_context: str
     relationship_context: str
+    relationship_snapshot: dict[str, Any]
+    relationship_dynamics: dict[str, Any]
+    aura_internal_state: dict[str, Any]
+    aura_impulse: dict[str, Any]
     relationship_actions: dict[str, Any]
     relationship_item_usages: dict[str, Any]
     continuity_state_context: str
@@ -138,6 +158,30 @@ def turn_judge(state: AuraState) -> AuraState:
     return {
         "emotion": turn_judgement["emotion"],
         "turn_judgement": turn_judgement,
+    }
+
+
+@traceable(name="aura_impulse_judge_node")
+def aura_impulse_judge(state: AuraState) -> AuraState:
+    """在用户回合判断之后，生成玲凌自身的行动倾向并合并回复模式。"""
+
+    query = latest_human_text(state.get("messages", []))
+    impulse = judge_aura_impulse(
+        query,
+        state.get("messages", [])[:-1],
+        state.get("turn_judgement"),
+        state.get("relationship_snapshot"),
+        state.get("aura_internal_state"),
+        state.get("time_context"),
+        state.get("relationship_dynamics"),
+    )
+    impulse = normalize_aura_impulse(impulse)
+    return {
+        "aura_impulse": impulse,
+        "turn_judgement": apply_aura_impulse_to_response_mode(
+            state.get("turn_judgement") or {},
+            impulse,
+        ),
     }
 
 
@@ -240,6 +284,9 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             format_location_context(state.get("city_adcode")),
             "【情绪上下文】\n" + format_emotion_context(state.get("emotion")),
             "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
+            format_aura_internal_state_prompt(state.get("aura_internal_state")),
+            format_relationship_dynamics_prompt(state.get("relationship_dynamics")),
+            "【玲凌当前冲动】\n" + format_aura_impulse_context(state.get("aura_impulse")),
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
             state.get("relationship_context") or "",
@@ -270,9 +317,11 @@ def build_intent_subgraph() -> CompiledStateGraph:
     workflow = StateGraph(AuraState)
     workflow.add_node("prepare_context", prepare_context)
     workflow.add_node("turn_judge", turn_judge)
+    workflow.add_node("aura_impulse_judge", aura_impulse_judge)
     workflow.set_entry_point("prepare_context")
     workflow.add_edge("prepare_context", "turn_judge")
-    workflow.add_edge("turn_judge", END)
+    workflow.add_edge("turn_judge", "aura_impulse_judge")
+    workflow.add_edge("aura_impulse_judge", END)
     return workflow.compile()
 
 
@@ -410,6 +459,22 @@ def aura_agent(
         recent_messages=previous_messages,
         relationship_context=relationship_context["judge_context"],
     )
+    if is_branch:
+        relationship_state = project_without_database(
+            human_prompt,
+            turn_judgement,
+            relationship_context,
+            now=request_started_at,
+        )
+    else:
+        relationship_state = observe_relationship_state_sync(
+            user_id,
+            human_prompt,
+            turn_judgement,
+            relationship_context,
+            source_message_id=client_message_id,
+            now=request_started_at,
+        )
     conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
     conditional_messages_created: list[dict[str, Any]] = []
     if (
@@ -483,6 +548,10 @@ def aura_agent(
         "request_started_at": request_started_at.isoformat(),
         "pet_context": pet_context,
         "relationship_context": relationship_context["prompt_context"],
+        "relationship_snapshot": relationship_context,
+        "relationship_dynamics": relationship_state["relationship_dynamics"],
+        "aura_internal_state": relationship_state["aura_internal_state"],
+        "aura_impulse": {},
         "relationship_actions": {"turn_id": turn_id, "items": []},
         "relationship_item_usages": {"turn_id": turn_id, "items": []},
         "continuity_state_context": "\n\n".join(

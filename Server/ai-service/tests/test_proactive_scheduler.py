@@ -52,6 +52,44 @@ class FakeRedis:
 
 
 class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
+    def test_relationship_contact_enforces_recent_activity_cooldown_and_daily_limit(self):
+        now = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
+        base_state = {
+            "desire_for_contact": "high",
+            "missing_user": "clear",
+            "unresolved_feeling": None,
+            "last_user_seen_at": now - timedelta(hours=12),
+            "last_proactive_at": None,
+        }
+        dynamics = {"current_expectation": "想知道用户今天过得怎么样"}
+
+        eligible, reason = proactive_scheduler.relationship_contact_eligibility(
+            base_state,
+            dynamics,
+            now=now,
+            daily_contact_count=0,
+            has_open_thread=False,
+        )
+        self.assertTrue(eligible)
+        self.assertEqual(reason, "eligible")
+
+        for changes, daily_count, expected_reason in (
+            ({"last_user_seen_at": now - timedelta(hours=1)}, 0, "recent_user_activity"),
+            ({"last_proactive_at": now - timedelta(hours=2)}, 0, "cooldown"),
+            ({}, 1, "daily_limit"),
+        ):
+            with self.subTest(expected_reason=expected_reason):
+                candidate = {**base_state, **changes}
+                allowed, blocked_reason = proactive_scheduler.relationship_contact_eligibility(
+                    candidate,
+                    dynamics,
+                    now=now,
+                    daily_contact_count=daily_count,
+                    has_open_thread=False,
+                )
+                self.assertFalse(allowed)
+                self.assertEqual(blocked_reason, expected_reason)
+
     def test_enqueue_and_pop_due_message_ids(self):
         redis = FakeRedis()
         now = datetime(2026, 7, 4, 10, 0, tzinfo=UTC)
@@ -525,6 +563,10 @@ class ProactiveSchedulerTest(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "app.core.proactive_scheduler.ensure_relationship_follow_up_messages",
+                AsyncMock(return_value=0),
+            ),
+            patch(
+                "app.core.proactive_scheduler.ensure_relationship_contact_messages",
                 AsyncMock(return_value=0),
             ),
             patch(

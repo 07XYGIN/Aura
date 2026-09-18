@@ -19,7 +19,7 @@ const redirectToLogin = (message = '登录已过期或非法，请重新登录')
 
 async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
   const { method = 'GET', body, ...rest } = options
-  const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
+  const baseUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? 'http://localhost:8000'
   const token = useUserStore.getState().token
 
   let res: Response
