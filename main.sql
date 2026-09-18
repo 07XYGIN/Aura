@@ -279,13 +279,13 @@ CREATE TABLE IF NOT EXISTS relationship_dynamics (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     relationship_stage varchar(32) NOT NULL DEFAULT 'ambiguous',
-    current_tone varchar(24) NOT NULL DEFAULT 'warm',
+    relationship_phase varchar(16) NOT NULL DEFAULT 'normal',
+    relationship_tone varchar(24) NOT NULL DEFAULT 'warm',
     recent_closeness varchar(16) NOT NULL DEFAULT 'medium',
     unresolved_tension text,
     recent_positive_moment text,
     recent_distance text,
     current_expectation text,
-    stage_evidence_count integer NOT NULL DEFAULT 0,
     last_stage_change_at timestamptz,
     version integer NOT NULL DEFAULT 1,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -293,18 +293,66 @@ CREATE TABLE IF NOT EXISTS relationship_dynamics (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT chk_relationship_dynamics_stage CHECK (
         relationship_stage IN ('early_closeness', 'ambiguous', 'early_romance',
-                               'established_romance', 'temporary_distance', 'conflict',
-                               'repair', 'stable')
+                               'established_romance')
+    ),
+    CONSTRAINT chk_relationship_dynamics_phase CHECK (
+        relationship_phase IN ('normal', 'distant', 'conflict', 'repair')
     ),
     CONSTRAINT chk_relationship_dynamics_tone CHECK (
-        current_tone IN ('neutral', 'warm', 'playful', 'tender', 'tense', 'distant', 'repairing')
+        relationship_tone IN ('steady', 'warm', 'playful', 'tender', 'guarded')
     ),
     CONSTRAINT chk_relationship_dynamics_closeness CHECK (
         recent_closeness IN ('low', 'medium', 'high')
     ),
-    CONSTRAINT chk_relationship_dynamics_evidence CHECK (stage_evidence_count >= 0),
     CONSTRAINT chk_relationship_dynamics_version CHECK (version >= 1),
     CONSTRAINT uq_relationship_dynamics_user UNIQUE (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS relationship_event (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_type varchar(40) NOT NULL,
+    actor varchar(16) NOT NULL,
+    target varchar(16) NOT NULL,
+    importance varchar(16) NOT NULL DEFAULT 'medium',
+    summary text,
+    source_turn_id varchar(128) NOT NULL,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT chk_relationship_event_type CHECK (
+        event_type IN ('affection_expressed', 'aura_expressed_missing',
+                       'important_disclosure', 'conflict_started', 'boundary_crossed',
+                       'apology', 'repair_completed', 'promise_created', 'promise_fulfilled',
+                       'shared_moment', 'relationship_milestone', 'distance_period',
+                       'return_after_absence')
+    ),
+    CONSTRAINT chk_relationship_event_actor CHECK (actor IN ('user', 'aura', 'system')),
+    CONSTRAINT chk_relationship_event_target CHECK (target IN ('user', 'aura', 'relationship')),
+    CONSTRAINT chk_relationship_event_importance CHECK (importance IN ('low', 'medium', 'high')),
+    CONSTRAINT uq_relationship_event_turn_type UNIQUE (user_id, source_turn_id, event_type)
+);
+
+CREATE TABLE IF NOT EXISTS affect_state (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind varchar(24) NOT NULL,
+    intensity varchar(16) NOT NULL,
+    started_at timestamptz NOT NULL,
+    last_reinforced_at timestamptz NOT NULL,
+    decay_after timestamptz NOT NULL,
+    source_event_id uuid REFERENCES relationship_event(id) ON DELETE SET NULL,
+    resolved boolean NOT NULL DEFAULT false,
+    resolved_at timestamptz,
+    version integer NOT NULL DEFAULT 1,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT chk_affect_state_kind CHECK (kind IN ('jealousy', 'hurt', 'longing', 'unsettled')),
+    CONSTRAINT chk_affect_state_intensity CHECK (intensity IN ('low', 'medium', 'high')),
+    CONSTRAINT chk_affect_state_version CHECK (version >= 1),
+    CONSTRAINT uq_affect_state_user_kind UNIQUE (user_id, kind)
 );
 
 CREATE TABLE IF NOT EXISTS aura_daily_state (
@@ -481,6 +529,10 @@ CREATE INDEX IF NOT EXISTS idx_aura_internal_state_last_seen
     ON aura_internal_state (last_user_seen_at);
 CREATE INDEX IF NOT EXISTS idx_relationship_dynamics_stage
     ON relationship_dynamics (relationship_stage, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_relationship_event_user_occurred
+    ON relationship_event (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_affect_state_user_decay
+    ON affect_state (user_id, resolved, decay_after);
 
 CREATE INDEX IF NOT EXISTS idx_aura_daily_state_user_date
     ON aura_daily_state (user_id, local_date DESC);

@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的十八张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
 
 ## 业务模型表
 
@@ -15,6 +15,10 @@
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
 | `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
 | `relationship_chapter` | 由真实重要关系事件形成的低频时间线章节 | `app/core/continuity/` |
+| `aura_internal_state` | 玲凌持续的依恋、联系欲望和当前表达倾向投影 | `app/core/continuity/aura_state.py` |
+| `relationship_dynamics` | 独立保存关系阶段、当前状况和关系语气 | `app/core/continuity/aura_state.py` |
+| `relationship_event` | 示爱、冲突、修复、承诺、离开与返回等不可变关系事实 | `app/core/continuity/aura_state.py` |
+| `affect_state` | 醋意、受伤、想念等可强化、衰减和解决的情绪余韵 | `app/core/continuity/aura_state.py` |
 | `aura_daily_state` | Aura 每个自然日唯一、一天内一致的设定生活状态 | `app/core/continuity/state.py` |
 | `emotional_afterglow` | 有限时间自然衰减的情绪余温，只调整后续语气 | `app/core/continuity/state.py` |
 | `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
@@ -53,7 +57,6 @@
 - `memory_relation`
 - `notification_plan`
 - `prompt_version`
-- `relationship_event`
 - `relationship_state`
 - `safety_event`
 - `user_behavior_event`
@@ -70,6 +73,17 @@
 需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
 稳定关系知识以 `relationship_item` 为可更新投影，低频关系阶段以 `relationship_chapter` 为时间线；
 两者都显式区分小乔、Aura、共同视角以及现实、共同历史、想象、愿望和承诺，不使用关系积分。
+
+## Relationship Engine v2
+
+`relationship_dynamics` 把长期 `relationship_stage`、短期 `relationship_phase` 和表达层
+`relationship_tone` 分开。疏远、冲突和修复只改变 phase，不会抹掉已经形成的恋爱阶段。
+阶段迁移来自明确的 `relationship_event`，不再使用累计示爱次数。
+
+`relationship_event` 以 `(user_id, source_turn_id, event_type)` 保证同一回合重放不会重复写入。
+`affect_state` 按 `(user_id, kind)` 保存当前权威投影；相关事件会强化强度，时间推进会进入
+`fading` 并最终解决，明确安抚或修复也可以提前解决。旧版同名遗留表已在 20260722 清理；
+当前表是由 Alembic revision `20260918_0003` 建立的新事件模型。
 
 ## 关系知识与章节
 

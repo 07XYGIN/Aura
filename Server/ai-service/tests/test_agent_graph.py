@@ -72,7 +72,8 @@ class AgentGraphTest(unittest.TestCase):
                 },
                 "relationship_dynamics": {
                     "relationship_stage": "early_romance",
-                    "current_tone": "warm",
+                    "relationship_phase": "normal",
+                    "relationship_tone": "warm",
                     "recent_closeness": "high",
                 },
                 "aura_impulse": {

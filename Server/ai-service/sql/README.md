@@ -5,7 +5,7 @@
 ## Alembic 接管点
 
 `20260918_0001` 是日期 SQL 链的 Alembic 接管点，`20260918_0002` 删除已退役的
-专注、巴什博弈和宠物数据平面：
+专注、巴什博弈和宠物数据平面，`20260918_0003` 建立 Relationship Engine v2：
 
 1. 新库先执行根目录 `main.sql`，再执行 `uv run alembic stamp head` 和 schema guard；
 2. 尚未接管的已有库先执行完整日期迁移链，再执行 `uv run alembic stamp 20260918_0001`；

@@ -64,17 +64,76 @@ class InteractionMode(StrEnum):
 
 
 class RelationshipStage(StrEnum):
-    ACQUAINTED = "acquainted"
-    CLOSE = "close"
+    EARLY_CLOSENESS = "early_closeness"
     AMBIGUOUS = "ambiguous"
-    ROMANTIC = "romantic"
+    EARLY_ROMANCE = "early_romance"
+    ESTABLISHED_ROMANCE = "established_romance"
+
+
+class RelationshipPhase(StrEnum):
+    NORMAL = "normal"
+    DISTANT = "distant"
+    CONFLICT = "conflict"
+    REPAIR = "repair"
 
 
 class RelationshipTone(StrEnum):
     STEADY = "steady"
     WARM = "warm"
-    TENSE = "tense"
-    DISTANT = "distant"
+    PLAYFUL = "playful"
+    TENDER = "tender"
+    GUARDED = "guarded"
+
+
+class RelationshipEventType(StrEnum):
+    AFFECTION_EXPRESSED = "affection_expressed"
+    AURA_EXPRESSED_MISSING = "aura_expressed_missing"
+    IMPORTANT_DISCLOSURE = "important_disclosure"
+    CONFLICT_STARTED = "conflict_started"
+    BOUNDARY_CROSSED = "boundary_crossed"
+    APOLOGY = "apology"
+    REPAIR_COMPLETED = "repair_completed"
+    PROMISE_CREATED = "promise_created"
+    PROMISE_FULFILLED = "promise_fulfilled"
+    SHARED_MOMENT = "shared_moment"
+    RELATIONSHIP_MILESTONE = "relationship_milestone"
+    DISTANCE_PERIOD = "distance_period"
+    RETURN_AFTER_ABSENCE = "return_after_absence"
+
+
+class AffectKind(StrEnum):
+    JEALOUSY = "jealousy"
+    HURT = "hurt"
+    LONGING = "longing"
+    UNSETTLED = "unsettled"
+
+
+class AffectState(BaseModel):
+    kind: AffectKind
+    intensity: InitiativeLevel
+    started_at: str
+    last_reinforced_at: str
+    decay_after: str
+    source_event_id: str | None = None
+    resolved: bool = False
+    decay_phase: str = "active"
+
+
+class ImpulseCandidate(BaseModel):
+    desire: AuraDesire
+    strength: InitiativeLevel
+    source: str
+    affection: AffectionTone = AffectionTone.NONE
+    playfulness: InitiativeLevel = InitiativeLevel.LOW
+    jealousy: JealousyLevel = JealousyLevel.NONE
+    vulnerability: VulnerabilityLevel = VulnerabilityLevel.LOW
+    follow_up: bool = False
+    silence_preferred: bool = False
+    relevance: int = Field(default=0, ge=0, le=100)
+    freshness: int = Field(default=50, ge=0, le=100)
+    interrupt_risk: int = Field(default=0, ge=0, le=100)
+    reason: str = Field(default="", max_length=300)
+    source_refs: list[str] = Field(default_factory=list, max_length=4)
 
 
 class AuraImpulse(BaseModel):
@@ -147,7 +206,8 @@ class TurnPlan(BaseModel):
 
 
 class RelationshipStateView(BaseModel):
-    stage: RelationshipStage = RelationshipStage.AMBIGUOUS
-    tone: RelationshipTone = RelationshipTone.STEADY
+    relationship_stage: RelationshipStage = RelationshipStage.AMBIGUOUS
+    relationship_phase: RelationshipPhase = RelationshipPhase.NORMAL
+    relationship_tone: RelationshipTone = RelationshipTone.WARM
     current_expectation: str | None = None
     recent_positive_moment: str | None = None

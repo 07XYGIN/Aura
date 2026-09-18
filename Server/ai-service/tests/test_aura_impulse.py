@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.agent.judges.impulse import judge_aura_impulse
+from app.core.agent.judges.impulse import (
+    collect_impulse_candidates,
+    judge_aura_impulse,
+    resolve_impulse_candidates,
+)
 
 
 class AuraImpulseTest(unittest.TestCase):
@@ -60,6 +64,54 @@ class AuraImpulseTest(unittest.TestCase):
         self.assertEqual(result["desire"], "none")
         self.assertEqual(result["source_refs"], [])
         self.assertNotIn("火锅", result["reason"])
+
+    def test_candidate_resolver_can_choose_none(self):
+        result = resolve_impulse_candidates(
+            [
+                {
+                    "strength": "low",
+                    "desire": "tease",
+                    "affection": "subtle",
+                    "relevance": 10,
+                    "freshness": 10,
+                    "interrupt_risk": 90,
+                    "reason": "不适合当前对话",
+                }
+            ]
+        )
+
+        self.assertEqual(result["desire"], "none")
+
+    def test_due_thread_and_affect_are_both_candidates_before_resolution(self):
+        candidates = collect_impulse_candidates(
+            "我下班了",
+            [],
+            {"risk_signal": {"requires_safety_gate": False}, "emotion": {}},
+            {
+                "items": [
+                    {
+                        "ref": "T1",
+                        "title": "下班前上线",
+                        "summary": "用户说下班前完成上线",
+                        "is_due": True,
+                    }
+                ],
+                "knowledge_items": [],
+            },
+            {
+                "current_desire": "show_jealousy",
+                "missing_user": "none",
+                "jealousy": "low",
+                "vulnerability": "medium",
+                "active_affects": [{"kind": "jealousy", "decay_phase": "active"}],
+            },
+            {},
+        )
+
+        self.assertEqual(
+            {item["source"] for item in candidates},
+            {"relationship_thread", "current_affect"},
+        )
 
 
 if __name__ == "__main__":

@@ -11,7 +11,10 @@ FastAPI router → TurnOrchestrator → LangGraph conversation
                        │
                        ├── ActivityRegistry → external activity handlers
                        ├── PromptBuilder → prompts/v1/*.md
-                       ├── AuraInternalState + RelationshipDynamics
+                       ├── RelationshipEvent → state transition
+                       ├── AffectState → decay / reinforce / resolve
+                       ├── RelationshipDynamics → stage / phase / tone
+                       ├── Impulse candidates → resolver → 0..1 impulse
                        └── typed SSE envelope → clients
 
 ProactiveScheduler → ProactivePlanner → ProactiveMessage outbox → history
@@ -43,5 +46,5 @@ pnpm --filter @ai-web/web build
 ```
 
 数据库以 `main.sql` 为新库引导、日期 SQL 为 Alembic 接管前的存量升级链，并由
-ORM/schema guard 校验。结构通过校验后 stamp `20260918_0001`；后续变化只允许新增
-Alembic revision，不再扩展日期 SQL 链。
+ORM/schema guard 校验。旧日期链结构通过核对后 stamp `20260918_0001`，再升级到 Alembic
+head；后续变化只允许新增 Alembic revision，不再扩展日期 SQL 链。

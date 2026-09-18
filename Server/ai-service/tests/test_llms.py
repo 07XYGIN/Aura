@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core import llms
-from app.core.owned_llms import DEEPSEEK, QWEN_3_7_PLUS
+from app.core.owned_llms import DEEPSEEK, QWEN_3_8_MAX
 
 
 class LlmSamplingConfigTest(unittest.TestCase):
@@ -38,7 +38,7 @@ class LlmSamplingConfigTest(unittest.TestCase):
     def test_qwen_uses_json_mode_without_thinking(self):
         with patch.object(llms, "ChatOpenAI") as chat_openai:
             llms.create_llm(
-                QWEN_3_7_PLUS,
+                QWEN_3_8_MAX,
                 temperature=0,
                 top_p=0.2,
                 json_mode=True,
@@ -46,14 +46,14 @@ class LlmSamplingConfigTest(unittest.TestCase):
             )
 
         kwargs = chat_openai.call_args.kwargs
-        self.assertEqual(kwargs["model"], "qwen3.7-plus")
+        self.assertEqual(kwargs["model"], "qwen3.8-max")
         self.assertEqual(kwargs["model_kwargs"], {"response_format": {"type": "json_object"}})
         self.assertEqual(kwargs["extra_body"], {"enable_thinking": False})
 
     def test_qwen_chat_keeps_tool_calling_outside_strict_json_mode(self):
         with patch.object(llms, "ChatOpenAI") as chat_openai:
             llms.create_llm(
-                QWEN_3_7_PLUS,
+                QWEN_3_8_MAX,
                 temperature=0.7,
                 top_p=0.85,
                 streaming=True,
@@ -64,10 +64,10 @@ class LlmSamplingConfigTest(unittest.TestCase):
         self.assertEqual(kwargs["extra_body"], {"enable_thinking": False})
 
     def test_aura_defaults_to_qwen_for_every_task(self):
-        self.assertIs(llms.CHAT_MODEL, QWEN_3_7_PLUS)
-        self.assertIs(llms.STRUCTURED_REPLY_MODEL, QWEN_3_7_PLUS)
-        self.assertIs(llms.MEMORY_JUDGE_MODEL, QWEN_3_7_PLUS)
-        self.assertIs(llms.EMOTION_JUDGE_MODEL, QWEN_3_7_PLUS)
+        self.assertIs(llms.CHAT_MODEL, QWEN_3_8_MAX)
+        self.assertIs(llms.STRUCTURED_REPLY_MODEL, QWEN_3_8_MAX)
+        self.assertIs(llms.MEMORY_JUDGE_MODEL, QWEN_3_8_MAX)
+        self.assertIs(llms.EMOTION_JUDGE_MODEL, QWEN_3_8_MAX)
 
 
 if __name__ == "__main__":

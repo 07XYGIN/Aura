@@ -8,17 +8,17 @@ from app.core.owned_llms import (
     DEEPSEEK_FLASH,
     ERGOUZI_GROK_4_5,
     LONGCAT,
-    QWEN_3_7_PLUS,
+    QWEN_3_8_MAX,
 )
 
 load_dotenv()
 
 
 # Aura uses one stable provider for visible chat and background judgements.
-CHAT_MODEL = QWEN_3_7_PLUS
-STRUCTURED_REPLY_MODEL = QWEN_3_7_PLUS
-MEMORY_JUDGE_MODEL = QWEN_3_7_PLUS
-EMOTION_JUDGE_MODEL = QWEN_3_7_PLUS
+CHAT_MODEL = QWEN_3_8_MAX
+STRUCTURED_REPLY_MODEL = QWEN_3_8_MAX
+MEMORY_JUDGE_MODEL = QWEN_3_8_MAX
+EMOTION_JUDGE_MODEL = QWEN_3_8_MAX
 """
 CHAT_MODEL：主对话模型
 structured_reply_llm：把回复整理成 Aura 需要的 JSON 消息数组

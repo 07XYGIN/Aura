@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from app.db.models import (
     Base,
     AuraDailyState,
+    AffectState,
     AuraInternalState,
     AuraSleepCycle,
     AuraThoughtSeed,
@@ -25,6 +26,7 @@ from app.db.models import (
     ProactiveMessage,
     RelationshipChapter,
     RelationshipDynamics,
+    RelationshipEvent,
     RelationshipItem,
     RelationshipThread,
     RelationshipThreadEvent,
@@ -48,6 +50,8 @@ class DbModelsTest(unittest.TestCase):
                 "relationship_chapter",
                 "aura_internal_state",
                 "relationship_dynamics",
+                "relationship_event",
+                "affect_state",
                 "aura_daily_state",
                 "emotional_afterglow",
                 "shared_scene",
@@ -88,6 +92,8 @@ class DbModelsTest(unittest.TestCase):
                 "idx_relationship_chapter_user_sequence",
                 "idx_aura_internal_state_last_seen",
                 "idx_relationship_dynamics_stage",
+                "idx_relationship_event_user_occurred",
+                "idx_affect_state_user_decay",
                 "idx_aura_daily_state_user_date",
                 "idx_emotional_afterglow_user_expires",
                 "uq_shared_scene_active_user",
@@ -341,6 +347,57 @@ class DbModelsTest(unittest.TestCase):
             user_fk = next(iter(model.__table__.c.user_id.foreign_keys))
             self.assertEqual(user_fk.target_fullname, "users.id")
             self.assertEqual(user_fk.ondelete, "CASCADE")
+
+    def test_relationship_engine_v2_separates_state_and_persists_events(self):
+        dynamics_constraints = {
+            constraint.name for constraint in RelationshipDynamics.__table__.constraints
+        }
+        event_constraints = {
+            constraint.name for constraint in RelationshipEvent.__table__.constraints
+        }
+        affect_constraints = {
+            constraint.name for constraint in AffectState.__table__.constraints
+        }
+
+        self.assertIn("relationship_stage", RelationshipDynamics.__table__.c)
+        self.assertIn("relationship_phase", RelationshipDynamics.__table__.c)
+        self.assertIn("relationship_tone", RelationshipDynamics.__table__.c)
+        self.assertNotIn("current_tone", RelationshipDynamics.__table__.c)
+        self.assertNotIn("stage_evidence_count", RelationshipDynamics.__table__.c)
+        self.assertTrue(
+            {
+                "chk_relationship_dynamics_stage",
+                "chk_relationship_dynamics_phase",
+                "chk_relationship_dynamics_tone",
+                "chk_relationship_dynamics_closeness",
+                "chk_relationship_dynamics_version",
+                "uq_relationship_dynamics_user",
+            }.issubset(dynamics_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_relationship_event_type",
+                "chk_relationship_event_actor",
+                "chk_relationship_event_target",
+                "chk_relationship_event_importance",
+                "uq_relationship_event_turn_type",
+            }.issubset(event_constraints)
+        )
+        self.assertTrue(
+            {
+                "chk_affect_state_kind",
+                "chk_affect_state_intensity",
+                "chk_affect_state_version",
+                "uq_affect_state_user_kind",
+            }.issubset(affect_constraints)
+        )
+        event_user_fk = next(iter(RelationshipEvent.__table__.c.user_id.foreign_keys))
+        affect_user_fk = next(iter(AffectState.__table__.c.user_id.foreign_keys))
+        affect_source_fk = next(iter(AffectState.__table__.c.source_event_id.foreign_keys))
+        self.assertEqual(event_user_fk.target_fullname, "users.id")
+        self.assertEqual(affect_user_fk.target_fullname, "users.id")
+        self.assertEqual(affect_source_fk.target_fullname, "relationship_event.id")
+        self.assertEqual(affect_source_fk.ondelete, "SET NULL")
 
     def test_offline_mind_models_have_lifecycle_and_daily_idempotency(self):
         """思绪种子必须有终态，睡前整理必须按用户自然日唯一。"""

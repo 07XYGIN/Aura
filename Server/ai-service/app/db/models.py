@@ -536,18 +536,21 @@ class RelationshipDynamics(Base, TimestampMixin):
     __table_args__ = (
         CheckConstraint(
             "relationship_stage IN ('early_closeness', 'ambiguous', 'early_romance', "
-            "'established_romance', 'temporary_distance', 'conflict', 'repair', 'stable')",
+            "'established_romance')",
             name="chk_relationship_dynamics_stage",
         ),
         CheckConstraint(
-            "current_tone IN ('neutral', 'warm', 'playful', 'tender', 'tense', 'distant', 'repairing')",
+            "relationship_phase IN ('normal', 'distant', 'conflict', 'repair')",
+            name="chk_relationship_dynamics_phase",
+        ),
+        CheckConstraint(
+            "relationship_tone IN ('steady', 'warm', 'playful', 'tender', 'guarded')",
             name="chk_relationship_dynamics_tone",
         ),
         CheckConstraint(
             "recent_closeness IN ('low', 'medium', 'high')",
             name="chk_relationship_dynamics_closeness",
         ),
-        CheckConstraint("stage_evidence_count >= 0", name="chk_relationship_dynamics_evidence"),
         CheckConstraint("version >= 1", name="chk_relationship_dynamics_version"),
         UniqueConstraint("user_id", name="uq_relationship_dynamics_user"),
     )
@@ -564,14 +567,111 @@ class RelationshipDynamics(Base, TimestampMixin):
         nullable=False,
     )
     relationship_stage: Mapped[str] = mapped_column(String(32), nullable=False, default="ambiguous", server_default="ambiguous")
-    current_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="warm", server_default="warm")
+    relationship_phase: Mapped[str] = mapped_column(String(16), nullable=False, default="normal", server_default="normal")
+    relationship_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="warm", server_default="warm")
     recent_closeness: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", server_default="medium")
     unresolved_tension: Mapped[str | None] = mapped_column(Text)
     recent_positive_moment: Mapped[str | None] = mapped_column(Text)
     recent_distance: Mapped[str | None] = mapped_column(Text)
     current_expectation: Mapped[str | None] = mapped_column(Text)
-    stage_evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_stage_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class RelationshipEvent(Base, TimestampMixin):
+    """关系引擎使用的不可变事实事件，而不是关系积分。"""
+
+    __tablename__ = "relationship_event"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('affection_expressed', 'aura_expressed_missing', "
+            "'important_disclosure', 'conflict_started', 'boundary_crossed', "
+            "'apology', 'repair_completed', 'promise_created', 'promise_fulfilled', "
+            "'shared_moment', 'relationship_milestone', 'distance_period', "
+            "'return_after_absence')",
+            name="chk_relationship_event_type",
+        ),
+        CheckConstraint(
+            "actor IN ('user', 'aura', 'system')",
+            name="chk_relationship_event_actor",
+        ),
+        CheckConstraint(
+            "target IN ('user', 'aura', 'relationship')",
+            name="chk_relationship_event_target",
+        ),
+        CheckConstraint(
+            "importance IN ('low', 'medium', 'high')",
+            name="chk_relationship_event_importance",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "source_turn_id",
+            "event_type",
+            name="uq_relationship_event_turn_type",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    target: Mapped[str] = mapped_column(String(16), nullable=False)
+    importance: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", server_default="medium")
+    summary: Mapped[str | None] = mapped_column(Text)
+    source_turn_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[dict] = mapped_column("payload", JSONB, nullable=False, default=dict, server_default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AffectState(Base, TimestampMixin):
+    """玲凌当前情绪余韵的权威投影，按类型持续、强化、衰减或解决。"""
+
+    __tablename__ = "affect_state"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('jealousy', 'hurt', 'longing', 'unsettled')",
+            name="chk_affect_state_kind",
+        ),
+        CheckConstraint(
+            "intensity IN ('low', 'medium', 'high')",
+            name="chk_affect_state_intensity",
+        ),
+        CheckConstraint("version >= 1", name="chk_affect_state_version"),
+        UniqueConstraint("user_id", "kind", name="uq_affect_state_user_kind"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    intensity: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_reinforced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decay_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_event_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("relationship_event.id", ondelete="SET NULL"),
+    )
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
@@ -895,6 +995,17 @@ Index(
     "idx_relationship_dynamics_stage",
     RelationshipDynamics.relationship_stage,
     RelationshipDynamics.updated_at.desc(),
+)
+Index(
+    "idx_relationship_event_user_occurred",
+    RelationshipEvent.user_id,
+    RelationshipEvent.occurred_at.desc(),
+)
+Index(
+    "idx_affect_state_user_decay",
+    AffectState.user_id,
+    AffectState.resolved,
+    AffectState.decay_after,
 )
 Index(
     "idx_aura_daily_state_user_date",

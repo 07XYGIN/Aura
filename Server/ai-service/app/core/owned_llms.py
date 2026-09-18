@@ -16,10 +16,10 @@ DEEPSEEK_FLASH = {
     "model": "deepseek-v4-flash",
 }
 
-QWEN_3_7_PLUS = {
+QWEN_3_8_MAX = {
     "api_key_env": "DASHSCOPE_API_KEY",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen3.7-plus",
+    "model": "qwen3.8-max",
     "provider": "qwen",
     "supports_json_mode": True,
 }

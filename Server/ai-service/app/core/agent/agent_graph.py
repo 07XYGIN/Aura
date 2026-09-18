@@ -467,7 +467,7 @@ def aura_agent(
             human_prompt,
             turn_judgement,
             relationship_context,
-            source_message_id=client_message_id,
+            source_message_id=client_message_id or turn_id,
             now=request_started_at,
         )
     conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
