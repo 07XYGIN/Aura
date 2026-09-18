@@ -89,16 +89,15 @@ class AgentGraphTest(unittest.TestCase):
         self.assertIn("【玲凌当前冲动】", prompt)
         self.assertIn("不是必须逐项表演的命令", prompt)
 
-    def test_runtime_prompt_includes_continuity_state_after_pet_context(self):
+    def test_runtime_prompt_includes_continuity_state(self):
         prompt = build_runtime_system_prompt(
             {
-                "pet_context": "【共同宠物】\n今天有一条真实宠物事件。",
                 "continuity_state_context": "【连续状态】\n今天在家里书桌画草图。",
             }
         )
 
         self.assertIn("【连续状态】", prompt)
-        self.assertGreater(prompt.find("【连续状态】"), prompt.find("【共同宠物】"))
+        self.assertNotIn("【共同宠物】", prompt)
 
     def test_runtime_prompt_includes_few_shot_examples(self):
         prompt = build_runtime_system_prompt({})

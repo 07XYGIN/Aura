@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.agent_graph import append_external_history_turn, aura_agent, retry_aura_agent
+from app.core.agent.agent_graph import aura_agent, retry_aura_agent
 from app.core.agent.models import (
-    ActivityResult,
     InteractionMode,
     InteractionState,
     TurnPlan,
@@ -19,10 +18,6 @@ from app.core.agent.models import (
 )
 from app.core.agent.orchestrator import TurnOrchestrator
 from app.core.auth_store import get_current_user_id
-from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED
-from app.core.focus.chat import FocusChatResponse, try_handle_focus_chat_message
-from app.core.games.bash.chat import BashChatResponse, try_handle_bash_chat_message
-from app.core.pet.chat import PetChatResponse, try_handle_pet_chat_message
 from app.core.silence_state import schedule_user_message_activity_record
 from app.interfaces.conversation_stream import conversation_stream_runtime
 from app.schemas.request import MessageRequest
@@ -87,90 +82,6 @@ async def event_generator(
         yield frame
 
 
-def _legacy_activity_result(
-    activity: str,
-    response: FocusChatResponse | BashChatResponse | PetChatResponse,
-) -> ActivityResult:
-    snapshot = response.snapshot or {}
-    entity_name = {"focus": "focus", "bash_game": "game", "pet": "pet"}[activity]
-    entity = snapshot.get(entity_name) or {}
-    metadata: dict[str, Any] = {f"{activity}_action": response.action}
-    if isinstance(entity, dict):
-        metadata[f"{activity}_id"] = entity.get("id")
-        metadata[f"{activity}_version"] = entity.get("version")
-    return ActivityResult(
-        activity=activity,
-        action=response.action,
-        snapshot=response.snapshot,
-        messages=response.messages,
-        source_metadata=metadata,
-    )
-
-
-async def _legacy_activity_stream(
-    activity: str,
-    response: FocusChatResponse | BashChatResponse | PetChatResponse,
-    *,
-    message: str,
-    user_id: str,
-    client_message_id: str | None,
-) -> AsyncIterator[str]:
-    request = TurnRequest(
-        user_id=user_id,
-        message=message,
-        client_message_id=client_message_id,
-    )
-    plan = TurnPlan(
-        request=request,
-        interaction=InteractionState(mode=InteractionMode.ACTIVITY, activity=activity),
-        activity_result=_legacy_activity_result(activity, response),
-    )
-    async for frame in TurnOrchestrator().stream_activity(plan):
-        yield frame
-
-
-async def bash_game_event_generator(
-    response: BashChatResponse,
-    *,
-    message: str,
-    user_id: str,
-    client_message_id: str | None,
-) -> AsyncIterator[str]:
-    async for frame in _legacy_activity_stream(
-        "bash_game", response, message=message, user_id=user_id,
-        client_message_id=client_message_id,
-    ):
-        yield frame
-
-
-async def pet_event_generator(
-    response: PetChatResponse,
-    *,
-    message: str,
-    user_id: str,
-    client_message_id: str | None,
-) -> AsyncIterator[str]:
-    async for frame in _legacy_activity_stream(
-        "pet", response, message=message, user_id=user_id,
-        client_message_id=client_message_id,
-    ):
-        yield frame
-
-
-async def focus_event_generator(
-    response: FocusChatResponse,
-    *,
-    message: str,
-    user_id: str,
-    client_message_id: str | None,
-) -> AsyncIterator[str]:
-    async for frame in _legacy_activity_stream(
-        "focus", response, message=message, user_id=user_id,
-        client_message_id=client_message_id,
-    ):
-        yield frame
-
-
 @router.post("/send/sse/")
 async def send_message(
     msg: MessageRequest,
@@ -193,7 +104,7 @@ async def send_message(
         branch_id=msg.branch_id,
         retry_message_id=msg.retry_message_id,
     )
-    orchestrator = TurnOrchestrator(activities_enabled=AURA_OPTIONAL_ACTIVITIES_ENABLED)
+    orchestrator = TurnOrchestrator()
     plan = await orchestrator.prepare(request)
     schedule_user_message_activity_record(current_user_id)
 

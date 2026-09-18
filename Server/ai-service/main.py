@@ -10,7 +10,6 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from app.core.agent import agent_graph, approval
 from app.core.config import (
     AURA_CORS_ORIGINS,
-    AURA_OPTIONAL_ACTIVITIES_ENABLED,
     SYNC_DATABASE_URL,
 )
 from app.core.exceptions import (
@@ -28,13 +27,11 @@ from app.routers import (
     continuity,
     continuity_state,
     feedback,
-    games,
     history,
     location,
     memory,
     msg,
     offline_mind,
-    pet,
     relationship_knowledge,
     user,
 )
@@ -84,6 +81,7 @@ def create_app() -> FastAPI:
     routers: list[APIRouter] = [
         admin.router,
         approvals.router,
+        capsules.router,
         continuity.router,
         continuity_state.router,
         feedback.router,
@@ -96,8 +94,6 @@ def create_app() -> FastAPI:
         location.router,
         user.router,
     ]
-    if AURA_OPTIONAL_ACTIVITIES_ENABLED:
-        routers.extend([games.router, pet.router, capsules.router])
     for router in routers:
         app.include_router(router)
 

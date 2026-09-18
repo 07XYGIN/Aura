@@ -25,18 +25,13 @@ class ContinuityStateTest(unittest.TestCase):
         user_id = uuid4()
         target_date = date(2026, 7, 23)
 
-        first = generate_daily_state_values(user_id, target_date, pet_name="年糕")
-        replay = generate_daily_state_values(user_id, target_date, pet_name="年糕")
+        first = generate_daily_state_values(user_id, target_date)
+        replay = generate_daily_state_values(user_id, target_date)
 
         self.assertEqual(first, replay)
         self.assertEqual(first["local_date"], target_date)
-        self.assertIn("年糕", first["pet_event"])
+        self.assertNotIn("pet_event", first)
         self.assertEqual(first["metadata"]["simulation_boundary"], "in_character_life")
-
-    def test_daily_state_does_not_invent_pet_when_none_exists(self) -> None:
-        state = generate_daily_state_values(uuid4(), date(2026, 7, 23))
-
-        self.assertIsNone(state["pet_event"])
 
     def test_current_repair_creates_longer_unsettled_afterglow(self) -> None:
         now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
@@ -158,9 +153,8 @@ class ContinuityStateTest(unittest.TestCase):
 class ContinuityStateAsyncTest(unittest.IsolatedAsyncioTestCase):
     """验证后台每日状态创建使用数据库幂等结果决定是否计数。"""
 
-    async def test_scheduler_creates_daily_state_and_pet_event_once(self) -> None:
+    async def test_scheduler_creates_daily_state_once(self) -> None:
         user_id = uuid4()
-        pet = SimpleNamespace(id=uuid4(), name="年糕")
 
         def scalar_result(value):
             return SimpleNamespace(scalar_one_or_none=lambda: value)
@@ -173,9 +167,7 @@ class ContinuityStateAsyncTest(unittest.IsolatedAsyncioTestCase):
                 side_effect=[
                     user_result,
                     scalar_result(None),
-                    scalar_result(pet),
                     scalar_result(uuid4()),
-                    SimpleNamespace(),
                 ]
             ),
             commit=AsyncMock(),
@@ -187,7 +179,7 @@ class ContinuityStateAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(created, 1)
-        self.assertEqual(session.execute.await_count, 5)
+        self.assertEqual(session.execute.await_count, 3)
         session.commit.assert_awaited_once()
 
 

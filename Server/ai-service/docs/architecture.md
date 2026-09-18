@@ -9,7 +9,7 @@ Web / PC / Admin / Mobile
             ▼
 FastAPI router → TurnOrchestrator → LangGraph conversation
                        │
-                       ├── ActivityRegistry → focus / bash_game / pet
+                       ├── ActivityRegistry → external activity handlers
                        ├── PromptBuilder → prompts/v1/*.md
                        ├── AuraInternalState + RelationshipDynamics
                        └── typed SSE envelope → clients

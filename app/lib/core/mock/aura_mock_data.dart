@@ -62,7 +62,7 @@ class AuraMockData {
       ),
       MemoryItem(
         id: 'morning-routine',
-        title: '早晨的专注建议',
+        title: '早晨的节奏建议',
         category: 'ROUTINE',
         dateLabel: '2023.11.08',
         scope: MemoryScope.midTerm,

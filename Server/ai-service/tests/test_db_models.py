@@ -17,18 +17,12 @@ from app.db.models import (
     AuraInternalState,
     AuraSleepCycle,
     AuraThoughtSeed,
-    BashGameMove,
-    BashGameSession,
-    CompanionPet,
     ConditionalMessage,
     ConditionalMessageEvent,
     EmotionalAfterglow,
-    FocusSession,
-    FocusSessionEvent,
     LangchainPgCollection,
     LangchainPgEmbedding,
     ProactiveMessage,
-    PetEvent,
     RelationshipChapter,
     RelationshipDynamics,
     RelationshipItem,
@@ -48,8 +42,6 @@ class DbModelsTest(unittest.TestCase):
                 "proactive_message",
                 "conditional_message",
                 "conditional_message_event",
-                "focus_session",
-                "focus_session_event",
                 "relationship_thread",
                 "relationship_thread_event",
                 "relationship_item",
@@ -61,10 +53,6 @@ class DbModelsTest(unittest.TestCase):
                 "shared_scene",
                 "aura_thought_seed",
                 "aura_sleep_cycle",
-                "bash_game_session",
-                "bash_game_move",
-                "companion_pet",
-                "pet_event",
                 "langchain_pg_collection",
                 "langchain_pg_embedding",
             },
@@ -93,10 +81,6 @@ class DbModelsTest(unittest.TestCase):
                 "idx_conditional_message_time_due",
                 "idx_conditional_message_user_status",
                 "idx_conditional_message_event_user_time",
-                "uq_focus_session_running_user",
-                "idx_focus_session_user_created",
-                "idx_focus_session_due",
-                "idx_focus_session_event_session_time",
                 "idx_relationship_thread_user_status_follow_up",
                 "idx_relationship_thread_event_thread_occurred",
                 "idx_relationship_item_user_type_status",
@@ -111,10 +95,6 @@ class DbModelsTest(unittest.TestCase):
                 "idx_aura_thought_seed_status_eligible",
                 "idx_aura_thought_seed_user_created",
                 "idx_aura_sleep_cycle_user_date",
-                "uq_bash_game_active_user",
-                "idx_bash_game_user_created",
-                "idx_bash_move_session_created",
-                "idx_pet_event_pet_occurred",
                 "ix_cmetadata_gin",
             },
             index_names,
@@ -236,49 +216,6 @@ class DbModelsTest(unittest.TestCase):
         )
         event_user_fk = list(event_table.c.user_id.foreign_keys)[0]
         self.assertEqual(event_user_fk.ondelete, "CASCADE")
-
-    def test_focus_models_preserve_single_running_session_and_event_history(self):
-        focus_constraints = {constraint.name for constraint in FocusSession.__table__.constraints}
-        event_constraints = {constraint.name for constraint in FocusSessionEvent.__table__.constraints}
-
-        self.assertTrue(
-            {
-                "chk_focus_session_status",
-                "chk_focus_session_duration",
-                "chk_focus_session_remaining",
-                "chk_focus_session_version",
-                "uq_focus_session_user_request",
-            }.issubset(focus_constraints)
-        )
-        self.assertTrue(
-            {
-                "chk_focus_session_event_sequence",
-                "chk_focus_session_event_actor",
-                "chk_focus_session_event_type",
-                "uq_focus_session_event_sequence",
-                "uq_focus_session_event_action",
-            }.issubset(event_constraints)
-        )
-        active_index = next(
-            index for index in FocusSession.__table__.indexes if index.name == "uq_focus_session_running_user"
-        )
-        self.assertTrue(active_index.unique)
-        outbox_fk = next(iter(FocusSession.__table__.c.outbox_message_id.foreign_keys))
-        event_fk = next(iter(FocusSessionEvent.__table__.c.session_id.foreign_keys))
-        self.assertEqual(outbox_fk.target_fullname, "proactive_message.id")
-        self.assertTrue(outbox_fk.deferrable)
-        self.assertEqual(event_fk.target_fullname, "focus_session.id")
-        self.assertEqual(event_fk.ondelete, "CASCADE")
-
-    def test_bash_models_preserve_user_ownership_and_move_history(self):
-        """游戏会话应归属用户，行动应随会话级联删除。"""
-
-        game_user_fk = list(BashGameSession.__table__.c.user_id.foreign_keys)
-        move_session_fk = list(BashGameMove.__table__.c.session_id.foreign_keys)
-        self.assertEqual(game_user_fk[0].target_fullname, "users.id")
-        self.assertEqual(game_user_fk[0].ondelete, "CASCADE")
-        self.assertEqual(move_session_fk[0].target_fullname, "bash_game_session.id")
-        self.assertEqual(move_session_fk[0].ondelete, "CASCADE")
 
     def test_relationship_thread_models_preserve_ownership_and_event_history(self):
         """关系线程应归属唯一用户，状态事件应随根线程级联删除。"""
@@ -429,17 +366,6 @@ class DbModelsTest(unittest.TestCase):
             user_fk = next(iter(model.__table__.c.user_id.foreign_keys))
             self.assertEqual(user_fk.target_fullname, "users.id")
             self.assertEqual(user_fk.ondelete, "CASCADE")
-
-    def test_pet_models_preserve_single_ownership_and_event_history(self):
-        """共同宠物应归属用户，事件应随宠物级联删除。"""
-
-        pet_user_fk = list(CompanionPet.__table__.c.user_id.foreign_keys)
-        event_pet_fk = list(PetEvent.__table__.c.pet_id.foreign_keys)
-        self.assertEqual(pet_user_fk[0].target_fullname, "users.id")
-        self.assertEqual(pet_user_fk[0].ondelete, "CASCADE")
-        self.assertEqual(event_pet_fk[0].target_fullname, "companion_pet.id")
-        self.assertEqual(event_pet_fk[0].ondelete, "CASCADE")
-
 
 if __name__ == "__main__":
     unittest.main()

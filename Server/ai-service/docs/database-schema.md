@@ -1,6 +1,6 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的二十二张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的十八张业务表。
 
 ## 业务模型表
 
@@ -9,8 +9,6 @@
 | `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
 | `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
 | `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
-| `focus_session` | 一起专注的当前计时、暂停、结束问询和用户汇报状态 | `app/core/focus/service.py` |
-| `focus_session_event` | 一起专注每次状态变化的不可变审计事件 | `app/core/focus/service.py` |
 | `conditional_message` | 时间胶囊与秘密保险箱的密封正文、触发条件和交付状态 | `app/core/continuity/capsules.py` |
 | `conditional_message_event` | 关键词、项目、GitHub 和口令事件的幂等 inbox | `app/core/continuity/capsules.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
@@ -22,10 +20,6 @@
 | `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
 | `aura_thought_seed` | 有真实来源、未必展示的离线思绪、第二念头和惊喜候选 | `app/core/continuity/mind.py` |
 | `aura_sleep_cycle` | 每天一次的关系线索、边界与向量记忆整理结果 | `app/core/continuity/mind.py` |
-| `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
-| `bash_game_move` | 巴什博弈每一步不可变行动历史 | `app/core/games/bash/service.py` |
-| `companion_pet` | 小乔与 Aura 共同宠物的当前状态 | `app/core/pet/service.py` |
-| `pet_event` | 宠物领养、照顾、改名和成长事件 | `app/core/pet/service.py` |
 | `langchain_pg_collection` | 长期/中期向量记忆集合 | `app/core/memory/service.py` |
 | `langchain_pg_embedding` | 向量记忆正文、向量和 metadata | `app/core/memory/service.py` |
 
@@ -67,6 +61,11 @@
 - `user_memory_entitlement`
 - `user_profile`
 
+专注、巴什博弈和宠物功能的数据表由 Alembic revision `20260918_0002`
+删除：`focus_session_event`、`focus_session`、`bash_game_move`、
+`bash_game_session`、`pet_event`、`companion_pet`。该 revision 同时移除
+`aura_daily_state.pet_event` 字段。
+
 聊天历史以 LangGraph checkpoint 为唯一事实源；语义记忆以 LangChain PGVector 表为事实源；
 需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
 稳定关系知识以 `relationship_item` 为可更新投影，低频关系阶段以 `relationship_chapter` 为时间线；
@@ -84,8 +83,7 @@
 ## 连续状态
 
 `aura_daily_state` 按 `(user_id, local_date)` 唯一，一天内不会重新随机。它是明确标记的 Aura
-设定内生活模拟，不是现实世界外部事实；如果已经共同领养宠物，当天小事会同时形成一条幂等
-`pet_event`，成为可核验的宠物经历。
+设定内生活模拟，不是现实世界外部事实。
 
 `emotional_afterglow` 每个用户只有一条当前投影。强度按固定时间线性衰减，过期后不再进入提示词；
 它不是关系积分或心理诊断，中性消息不会粗暴清空仍有意义的余温。

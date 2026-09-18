@@ -4,12 +4,13 @@
 
 ## Alembic 接管点
 
-`20260918_0001` 是当前完整结构的 Alembic 基线标记，不重复执行历史 DDL：
+`20260918_0001` 是日期 SQL 链的 Alembic 接管点，`20260918_0002` 删除已退役的
+专注、巴什博弈和宠物数据平面：
 
-1. 新库先执行根目录 `main.sql`，再运行 schema guard；
-2. 已有库先执行到本文件列出的最后一条日期迁移，再运行 schema guard；
-3. guard 通过后执行 `uv run alembic stamp 20260918_0001`；
-4. 从下一次结构变化开始只新增 Alembic revision，并使用 `uv run alembic upgrade head`。
+1. 新库先执行根目录 `main.sql`，再执行 `uv run alembic stamp head` 和 schema guard；
+2. 尚未接管的已有库先执行完整日期迁移链，再执行 `uv run alembic stamp 20260918_0001`；
+3. 已有库执行 `uv run alembic upgrade head` 删除退役数据表，最后运行 schema guard；
+4. 后续结构变化只新增 Alembic revision，不再扩展日期 SQL 链。
 
 不要在未核对结构的数据库上直接 stamp。日期 SQL 到此冻结，只保留为历史升级链。
 
@@ -24,21 +25,21 @@
 ## 日期迁移链
 
 1. 执行 `20260722_single_user_schema_cleanup.sql`，创建基础业务/记忆表并清理历史遗留结构。
-2. 执行 `20260723_bash_game.sql`，创建巴什博弈会话和行动表。
-3. 执行 `20260723_companion_pet.sql`，创建共同宠物和宠物事件表。
+2. 执行 `20260723_bash_game.sql`（历史步骤，接管后由 `20260918_0002` 删除）。
+3. 执行 `20260723_companion_pet.sql`（历史步骤，接管后由 `20260918_0002` 删除）。
 4. 执行 `20260723_relationship_continuity.sql`，创建关系线程当前状态和事件历史表。
 5. 执行 `20260723_proactive_delivery.sql`，为主动消息增加幂等键、稳定投递 ID、领取租约和失败重试状态。
 6. 执行 `20260723_relationship_items.sql`，创建双视角关系物件、私人语言、Aura 立场、纠偏规则和关系章节表。
 7. 执行 `20260723_continuity_state.sql`，创建每日生活、情绪余温和共同想象场景表。
 8. 执行 `20260723_offline_mind.sql`，创建离线思绪种子和每日睡前整理表。
 9. 执行 `20260723_conditional_messages.sql`，创建时间胶囊、秘密保险箱和条件事件 inbox。
-10. 执行 `20260724_focus_sessions.sql`，创建一起专注计时和事件审计表。
+10. 执行 `20260724_focus_sessions.sql`（历史步骤，接管后由 `20260918_0002` 删除）。
 11. 执行 `20260918_relationship_dynamics.sql`，创建玲凌持续自身状态与定性关系动态表。
 
 ## 已有数据库
 
-先执行 `20260722_single_user_schema_cleanup.sql`，再执行尚未应用的日期增量。迁移会保留当前功能数据，
-移除未使用的旧表和 `proactive_message.notification_plan_id`，并补齐当前索引与约束。脚本可以重复执行。
+先执行 `20260722_single_user_schema_cleanup.sql`，再执行尚未应用的日期增量，并按上面的接管步骤
+升级到 Alembic head。`20260918_0002` 会永久删除三个退役功能的表和数据。
 `20260723_proactive_delivery.sql` 会为历史主动消息回填稳定的 `delivery_message_id` 和零值尝试次数，
 随后再设置默认值与非空约束；不会删除已有主动消息。
 `20260723_relationship_items.sql` 会为已经执行过早期草稿的开发库补齐置信度、可变立场和章节幂等键，

@@ -21,7 +21,7 @@ from app.core.attachment_store import (
     load_attachment_data_urls,
     load_attachments,
 )
-from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED, llm, structured_reply_llm
+from app.core.config import llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
 from app.core.continuity.aura_state import (
     format_aura_internal_state_prompt,
@@ -87,7 +87,6 @@ from .judges.turn import (
 )
 from .tools.registry import CHAT_TOOLS
 from app.core.memory.service import save_memory
-from app.core.pet.context import load_pet_context_sync
 
 SHORT_TERM_MESSAGE_WINDOW = 24
 AURA_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -114,7 +113,6 @@ class AuraState(TypedDict, total=False):
     turn_id: str
     request_started_at: str
     last_reply_batch: dict[str, Any]
-    pet_context: str
     relationship_context: str
     relationship_snapshot: dict[str, Any]
     relationship_dynamics: dict[str, Any]
@@ -290,7 +288,6 @@ def build_runtime_system_prompt(state: AuraState) -> str:
             "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
             state.get("relationship_context") or "",
-            state.get("pet_context") or "",
             state.get("continuity_state_context") or "",
             STRUCTURED_REPLY_PROMPT.strip(),
         )
@@ -451,8 +448,6 @@ def aura_agent(
             now=request_started_at,
         )
     continuity_state = load_continuity_state_context_sync(user_id, now=request_started_at)
-    pet_context = load_pet_context_sync(user_id) if AURA_OPTIONAL_ACTIVITIES_ENABLED else ""
-
     turn_judgement = judge_turn(
         human_prompt,
         emotion_state,
@@ -477,12 +472,7 @@ def aura_agent(
         )
     conditional_candidates = turn_judgement["memory_candidate"].get("conditional_messages") or []
     conditional_messages_created: list[dict[str, Any]] = []
-    if (
-        AURA_OPTIONAL_ACTIVITIES_ENABLED
-        and not is_branch
-        and conditional_candidates
-        and client_message_id
-    ):
+    if not is_branch and conditional_candidates and client_message_id:
         conditional_messages_created = capture_conditional_candidates_sync(
             user_id,
             conditional_candidates,
@@ -490,7 +480,7 @@ def aura_agent(
             source_turn_id=turn_id,
             now=request_started_at,
         )
-    elif AURA_OPTIONAL_ACTIVITIES_ENABLED and not is_branch and conditional_candidates:
+    elif not is_branch and conditional_candidates:
         logging.warning(
             "本轮识别到条件消息候选，但缺少稳定 clientMessageId，已跳过持久化 user_id=%s",
             user_id,
@@ -546,7 +536,6 @@ def aura_agent(
         },
         "turn_id": turn_id,
         "request_started_at": request_started_at.isoformat(),
-        "pet_context": pet_context,
         "relationship_context": relationship_context["prompt_context"],
         "relationship_snapshot": relationship_context,
         "relationship_dynamics": relationship_state["relationship_dynamics"],
@@ -655,7 +644,7 @@ def aura_agent(
         live2d_state = get_latest_live2d_state(config, turn_id)
         if live2d_state:
             yield live2d_state_event(live2d_state)
-        if AURA_OPTIONAL_ACTIVITIES_ENABLED and not is_branch and client_message_id:
+        if not is_branch and client_message_id:
             trigger_keyword_messages_sync(
                 user_id,
                 human_prompt,
@@ -1702,7 +1691,7 @@ def append_external_history_turn(
         user_id: LangGraph 线程 ID。
         human_content: 用户触发领域动作的原始文本。
         aura_contents: 已由领域规则确认、需要展示的 Aura 消息列表。
-        source: 消息来源标识，例如 ``bash_game``；用于历史审计和后续过滤。
+        source: 消息来源标识；用于历史审计和后续过滤。
         turn_id: 可选回合 ID；未提供时生成带来源前缀的新 ID。
         client_message_id: 客户端消息 ID，用于历史去重和请求关联。
         source_metadata: 需要附加到双方消息的只读领域元数据。

@@ -18,14 +18,11 @@ from app.core.agent.models import (
 )
 from app.core.agent.protocol import (
     SSEProtocolV1,
+    activity_state_event,
     assistant_message_event,
-    bash_game_state_event,
     content_event,
-    focus_state_event,
-    pet_state_event,
     turn_lifecycle_event,
 )
-from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED
 from app.core.continuity.capsules import trigger_keyword_messages
 from app.db.session import AsyncSessionLocal
 
@@ -39,15 +36,8 @@ class TurnOrchestrator:
     def __init__(
         self,
         activity_registry: ActivityRegistry | None = None,
-        *,
-        activities_enabled: bool | None = None,
     ) -> None:
         self.activity_registry = activity_registry or build_default_activity_registry()
-        self.activities_enabled = (
-            AURA_OPTIONAL_ACTIVITIES_ENABLED
-            if activities_enabled is None
-            else activities_enabled
-        )
 
     async def prepare(self, request: TurnRequest) -> TurnPlan:
         if request.retry_message_id:
@@ -59,7 +49,7 @@ class TurnOrchestrator:
                     retry_message_id=request.retry_message_id,
                 ),
             )
-        if self.activities_enabled and request.branch_id is None:
+        if request.branch_id is None and self.activity_registry.names:
             async with AsyncSessionLocal() as session:
                 activity = await self.activity_registry.dispatch(session, request)
             if activity is not None:
@@ -134,13 +124,7 @@ class TurnOrchestrator:
     def _activity_state_event(result: ActivityResult) -> dict[str, Any] | None:
         if result.snapshot is None:
             return None
-        builders = {
-            "focus": focus_state_event,
-            "bash_game": bash_game_state_event,
-            "pet": pet_state_event,
-        }
-        builder = builders.get(result.activity)
-        return builder(result.snapshot) if builder else None
+        return activity_state_event(result.activity, result.action, result.snapshot)
 
     @staticmethod
     async def _trigger_keyword(request: TurnRequest, *, source: str) -> None:

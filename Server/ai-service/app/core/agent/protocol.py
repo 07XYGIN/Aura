@@ -36,9 +36,7 @@ _V1_EVENT_TYPES = {
     "live2d_state": "presence.updated",
     "approval_required": "approval.required",
     "conversation_branch": "conversation.branched",
-    "bash_game_state": "activity.updated",
-    "pet_state": "activity.updated",
-    "focus_state": "activity.updated",
+    "activity_state": "activity.updated",
     "error": "error",
 }
 
@@ -182,48 +180,19 @@ def error_event(message: str) -> dict[str, Any]:
     return {"event": "error", "type": "error", "message": message}
 
 
-def bash_game_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """构造巴什博弈状态事件。
-
-    Args:
-        snapshot: 游戏事务服务返回的公开快照，包含动作、棋局和行动列表。
-
-    Returns:
-        同时携带 ``event``/``type`` 的 SSE 业务事件；旧客户端可以忽略未知
-        类型，新客户端可直接用 ``bashGame`` 渲染棋局。
-    """
+def activity_state_event(
+    activity: str,
+    action: str,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """构造与具体活动实现解耦的状态事件。"""
 
     return {
-        "event": "bash_game_state",
-        "type": "bash_game_state",
-        "action": snapshot.get("action"),
-        "bashGame": snapshot,
-    }
-
-
-def pet_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """构造共同宠物状态 SSE 事件。
-
-    ``snapshot`` 只来自已提交事务或只读状态快照；旧客户端可忽略未知事件，
-    新客户端可以使用 ``petState`` 渲染宠物和最近事件。
-    """
-
-    return {
-        "event": "pet_state",
-        "type": "pet_state",
-        "action": snapshot.get("action"),
-        "petState": snapshot,
-    }
-
-
-def focus_state_event(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """构造一起专注状态 SSE 事件，旧客户端可以安全忽略。"""
-
-    return {
-        "event": "focus_state",
-        "type": "focus_state",
-        "action": snapshot.get("action"),
-        "focusState": snapshot,
+        "event": "activity_state",
+        "type": "activity_state",
+        "activity": activity,
+        "action": action,
+        "snapshot": snapshot,
     }
 
 
