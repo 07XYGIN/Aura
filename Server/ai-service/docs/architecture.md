@@ -45,6 +45,6 @@ pnpm --filter @ai-web/pc build
 pnpm --filter @ai-web/web build
 ```
 
-数据库以 `main.sql` 为新库引导、日期 SQL 为 Alembic 接管前的存量升级链，并由
-ORM/schema guard 校验。旧日期链结构通过核对后 stamp `20260918_0001`，再升级到 Alembic
-head；后续变化只允许新增 Alembic revision，不再扩展日期 SQL 链。
+数据库以仓库根目录唯一的 `main.sql` 作为新库完整基线，已有数据库只使用 Alembic Python
+revision 升级，并由 ORM/schema guard 校验。新库导入基线后 stamp 当前 head；后续结构变化必须
+同时更新 ORM、`main.sql` 和 Alembic revision，不允许新增第二个 SQL 文件。

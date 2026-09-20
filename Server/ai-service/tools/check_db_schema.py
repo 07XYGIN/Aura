@@ -20,6 +20,7 @@ from app.db.models import Base
 
 
 FRAMEWORK_TABLES = {
+    "alembic_version",
     "checkpoints",
     "checkpoint_blobs",
     "checkpoint_writes",
@@ -205,7 +206,7 @@ def database_indexes(conn, model_tables: set[str]) -> dict[str, dict[str, str]]:
 def main() -> int:
     """比较在线 PostgreSQL 与 SQLAlchemy 模型的完整结构。
 
-    检查业务表、LangGraph 框架表、字段、类型、可空性、默认值、约束和索引。
+    检查业务表、Alembic/LangGraph 管理表、字段、类型、可空性、默认值、约束和索引。
 
     Returns:
         完全一致返回 0；发现任一差异并打印明细后返回 1。
@@ -227,7 +228,7 @@ def main() -> int:
 
         errors: list[str] = []
         for table_name in sorted(FRAMEWORK_TABLES - database_tables):
-            errors.append(f"数据库缺少 LangGraph 框架表：{table_name}")
+            errors.append(f"数据库缺少框架管理表：{table_name}")
         for table_name in sorted(model_tables - business_tables):
             errors.append(f"数据库缺少模型表：{table_name}")
         for table_name in sorted(business_tables - model_tables):

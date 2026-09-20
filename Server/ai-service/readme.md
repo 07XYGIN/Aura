@@ -109,10 +109,7 @@ ai-service/
 ├── docs/
 │   ├── architecture.md             # 模块边界、SSE v1 与依赖方向
 │   └── database-schema.md          # 当前保留表与删除表说明
-├── sql/
-│   ├── README.md                   # 当前基线与历史 SQL 使用说明
-│   ├── ...                         # 仅用于追溯的历史增量迁移
-│   └── 20260722_single_user_schema_cleanup.sql # 当前单用户结构清理迁移
+├── alembic/versions/               # 已有数据库的 Python 增量迁移
 └── app/
     ├── core/
     │   ├── agent/                  # LangGraph 主聊天编排
@@ -159,10 +156,10 @@ amap_key=your_amap_key
 
 ### 初始化数据库
 
-新数据库和旧数据库都以 `sql/20260722_single_user_schema_cleanup.sql` 为当前基线。执行该文件后启动应用，
-LangGraph 会自动创建或升级四张 `checkpoint_*` 表。早期 SQL 只用于追溯，不要作为新库的建库入口。
-
-完整说明见 `sql/README.md`。
+项目根目录 `main.sql` 是唯一 SQL 文件，也是新数据库的完整导入基线。导入后在
+`Server/ai-service` 执行 `uv run alembic stamp head`；已有且已受 Alembic 管理的数据库执行
+`uv run alembic upgrade head`。应用启动时 LangGraph 会自动创建或升级四张 `checkpoint_*` 表。
+最后运行 `uv run python tools/check_db_schema.py`，确认在线 PostgreSQL 与 ORM 完全一致。
 
 ### 安装依赖
 ```bash

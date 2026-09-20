@@ -25,15 +25,15 @@ class MainSqlSchemaTests(unittest.TestCase):
         self.assertEqual(sql_tables, set(Base.metadata.tables))
         self.assertNotIn("DROP TABLE", sql)
 
-    def test_relationship_dynamics_migration_contains_both_state_tables(self) -> None:
-        sql = (ROOT / "sql" / "20260918_relationship_dynamics.sql").read_text(encoding="utf-8")
-
-        self.assertEqual(
-            {"aura_internal_state", "relationship_dynamics"},
-            set(CREATE_TABLE_PATTERN.findall(sql)),
+    def test_repository_has_one_canonical_sql_file(self) -> None:
+        ignored_directories = {".git", ".venv", "node_modules", "build", "dist"}
+        sql_files = sorted(
+            path
+            for path in REPOSITORY_ROOT.rglob("*.sql")
+            if ignored_directories.isdisjoint(path.relative_to(REPOSITORY_ROOT).parts)
         )
-        self.assertNotIn("love_score", sql)
-        self.assertNotIn("affection_score", sql)
+
+        self.assertEqual(sql_files, [REPOSITORY_ROOT / "main.sql"])
 
     def test_removed_activity_tables_are_absent_from_current_schema(self) -> None:
         sql = (REPOSITORY_ROOT / "main.sql").read_text(encoding="utf-8")

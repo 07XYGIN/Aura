@@ -38,10 +38,13 @@
 
 这些表由 `langgraph-checkpoint-postgres` 管理，不在本项目 ORM 中重复建模。
 
+Alembic 另维护 `alembic_version` 表记录当前数据库 revision。它和 `checkpoint_*` 一样属于
+框架管理表，不计入二十张业务模型表，也不写入新库基线；导入 `main.sql` 后由
+`uv run alembic stamp head` 创建。
+
 ## 已删除的遗留数据平面
 
-以下表没有进入当前主聊天、记忆或主动消息闭环，已由
-`sql/20260722_single_user_schema_cleanup.sql` 删除：
+以下表没有进入当前主聊天、记忆或主动消息闭环，已从当前 schema 删除：
 
 - `admin_audit_log`
 - `aura_profile`
@@ -82,8 +85,8 @@
 
 `relationship_event` 以 `(user_id, source_turn_id, event_type)` 保证同一回合重放不会重复写入。
 `affect_state` 按 `(user_id, kind)` 保存当前权威投影；相关事件会强化强度，时间推进会进入
-`fading` 并最终解决，明确安抚或修复也可以提前解决。旧版同名遗留表已在 20260722 清理；
-当前表是由 Alembic revision `20260918_0003` 建立的新事件模型。
+`fading` 并最终解决，明确安抚或修复也可以提前解决。当前表由 Alembic revision
+`20260918_0003` 建立，是唯一的关系事件模型。
 
 ## 关系知识与章节
 

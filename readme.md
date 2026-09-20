@@ -126,7 +126,7 @@ app/                          # Flutter 移动端
 └── web/                      # Flutter Web 调试入口
 
 tools/                        # 项目辅助脚本
-main.sql                      # 数据库初始化 / 参考 SQL
+main.sql                      # 唯一 PostgreSQL 完整导入基线
 ```
 
 ---

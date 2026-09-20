@@ -1,8 +1,7 @@
--- Aura PostgreSQL fresh-database baseline.
+-- Aura PostgreSQL canonical fresh-database baseline.
 --
--- This file creates the current application schema from scratch. It is not an
--- upgrade migration for a database that already has Aura data. Existing
--- deployments should use the dated migrations under Server/ai-service/sql.
+-- This is the only SQL file in the repository. It creates the complete current
+-- business schema from scratch; existing deployments use Alembic revisions.
 -- LangGraph checkpoint_* tables are created by PostgresSaver.setup() at app
 -- startup and are intentionally not duplicated here.
 
