@@ -86,6 +86,7 @@ from .judges.turn import (
     normalize_turn_judgement,
 )
 from .tools.registry import CHAT_TOOLS
+from .tools.world_policy import world_turn_finished
 from app.core.memory.service import save_memory
 
 SHORT_TERM_MESSAGE_WINDOW = 24
@@ -197,7 +198,7 @@ def call_model(state: AuraState) -> AuraState:
     )
     try:
         response = invoke_model_with_retry(
-            llm_with_tools.invoke,
+            (llm if world_turn_finished(state) else llm_with_tools).invoke,
             messages,
             operation="主对话",
         )

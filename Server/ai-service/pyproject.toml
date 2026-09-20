@@ -19,6 +19,7 @@ dependencies = [
     "langgraph>=1.0.6",
     "langgraph-checkpoint-postgres>=3.1.0",
     "langsmith>=0.5.0",
+    "mcp>=1.26,<2",
     "passlib>=1.7.4",
     "pgvector>=0.3.6",
     "psycopg2-binary>=2.9.12",
@@ -30,5 +31,6 @@ dependencies = [
     "redis>=5.2.0",
     "requests>=2.32.5",
     "sqlalchemy>=2.0.45",
+    "urllib3>=2.6,<3",
     "uvicorn[standard]>=0.40.0",
 ]

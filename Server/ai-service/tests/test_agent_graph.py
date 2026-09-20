@@ -134,7 +134,7 @@ class AgentGraphTest(unittest.TestCase):
 
     def test_chat_tool_registry_only_contains_runtime_tools(self):
         self.assertEqual(
-            ["search_memory_tool", "save_memory_tool", "get_weather"],
+            ["search_memory_tool", "save_memory_tool", "get_weather", "search_web", "fetch_url"],
             [item.name for item in tools],
         )
 

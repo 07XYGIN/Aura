@@ -45,6 +45,7 @@
 - `get_weather`：查询天气，高德接口不可用时不会编造结果
 - `save_memory_tool`：保存用户明确要求记住、或以后确实需要继续使用的信息
 - `search_memory_tool`：按用户隔离检索历史记忆
+- `search_web` / `fetch_url`：按需搜索互联网、阅读公开网页；本地 stdio MCP、Brave 搜索配置与安全边界见 [World Access v1](docs/world-access.md)
 
 时间属于每轮自动注入的上下文；情绪和互动状态属于内部判断；主动消息与记忆整理分别由后台调度器和维护模块执行，不绑定到普通聊天模型。
 

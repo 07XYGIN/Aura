@@ -10,7 +10,7 @@ PROMPT_ROOT = Path(__file__).with_name("prompts")
 
 
 class PromptBuilder:
-    SYSTEM_COMPONENTS = ("identity", "relationship", "conversation", "safety")
+    SYSTEM_COMPONENTS = ("identity", "relationship", "conversation", "world", "safety")
 
     def __init__(self, version: str = "v1") -> None:
         version_path = PROMPT_ROOT / version
@@ -43,4 +43,3 @@ class PromptBuilder:
 
     def build_memory(self) -> str:
         return self.component("memory")
-

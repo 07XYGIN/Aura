@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
+from time import monotonic
+from urllib.parse import urlsplit
 from functools import wraps
 from typing import Any, Callable, TypeVar, cast
 
 
 TFunc = TypeVar("TFunc", bound=Callable[..., Any])
+
+
+def log_world_call(tool_name: str, value: str, started: float, result: dict) -> None:
+    """Log bounded metadata, not page bodies, URL tokens or private queries."""
+    fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    try:
+        host = urlsplit(value).hostname if tool_name == "fetch_url" else None
+    except ValueError:
+        host = None
+    logging.info("world_tool %s", json.dumps({
+        "tool_name": tool_name, "query_or_url_hash": fingerprint,
+        "url_host": (host or "")[:200], "input_length": len(value),
+        "duration_ms": round((monotonic() - started) * 1000),
+        "success": result.get("ok", False),
+        "result_count": len(result.get("results", [])) if tool_name == "search_web" else int(result.get("ok") is True),
+        "error_type": result.get("error", {}).get("code"),
+    }, ensure_ascii=False))
 
 
 def log_tool(func: TFunc) -> TFunc:
