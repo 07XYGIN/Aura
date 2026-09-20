@@ -41,6 +41,7 @@ ProactiveScheduler → ProactivePlanner → ProactiveMessage outbox → history
 ```powershell
 uv run python -m unittest discover -s tests -p 'test_*.py'
 uv run python tools/run_relationship_evals.py
+uv run python tools/run_relationship_conversations.py --live
 pnpm --filter @ai-web/pc build
 pnpm --filter @ai-web/web build
 ```
@@ -48,3 +49,13 @@ pnpm --filter @ai-web/web build
 数据库以仓库根目录唯一的 `main.sql` 作为新库完整基线，已有数据库只使用 Alembic Python
 revision 升级，并由 ORM/schema guard 校验。新库导入基线后 stamp 当前 head；后续结构变化必须
 同时更新 ORM、`main.sql` 和 Alembic revision，不允许新增第二个 SQL 文件。
+
+`run_relationship_evals.py` 只检查预写回复样例，不代表真实模型质量。`run_relationship_conversations.py --live`
+使用当前模型、生产判断器/状态函数/提示词/输出解析器，连续运行合成对话，报告实际回复、状态和违规项。
+评测状态只存内存，不调用工具、不读写用户记忆和 checkpoint；它不是 HTTP/SSE 全链路压测。
+输出格式需要生产 formatter 修复时单独标记，供应商错误或修复失败都算失败。
+
+关系事件使用保守的否定、引用、假设和目标过滤；未知语境不推进关系阶段。离线时长只形成
+缺席事实，不自动把关系改为疏远。内部 affect 可以持续，但任务/拒绝优先，表达冷却只读取
+assistant 实际正文。明确的 `too_clingy` 反馈抑制主动醋意和挽留；关系主动联系在上一条未获
+回应时暂停，线程回访必须已到期且允许主动跟进。

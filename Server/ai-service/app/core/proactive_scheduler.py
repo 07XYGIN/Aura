@@ -656,6 +656,8 @@ async def ensure_relationship_contact_messages(
             .where(
                 RelationshipThread.user_id == aura_state.user_id,
                 RelationshipThread.status.in_(("pending", "followed_up")),
+                RelationshipThread.follow_up_at <= reference_now,
+                RelationshipThread.metadata_json["proactive_allowed"].astext == "true",
             )
             .order_by(RelationshipThread.follow_up_at.asc().nullslast(), RelationshipThread.updated_at.desc())
             .limit(1)

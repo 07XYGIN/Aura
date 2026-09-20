@@ -2,6 +2,27 @@
 
 数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
 
+服务启动时复用 `app/db/schema_audit.py` 检查真实列、类型、可空性、默认值、索引、
+CHECK 约束内容和 Alembic revision；不一致时停止启动并报告具体差异。
+命令行 `uv run python tools/check_db_schema.py` 使用相同检查。约束比较由 PostgreSQL
+在空临时表上规范化表达式，不改写业务数据。
+鉴权也直接复用 `Users.__table__`，不再维护一份缺少字段和长度限制的独立 `users` 定义。
+旧自更新记录兼容入口只校验字段，不再在请求过程中自动执行 DDL；业务结构变更统一由迁移负责。
+
+数据库变更验证命令（从 `Server/ai-service` 运行）：
+
+```powershell
+uv run alembic upgrade head
+uv run python tools/check_db_schema.py
+uv run python tools/verify_db_contract.py
+```
+
+最后一项需要本机账号具有建库权限，创建随机命名的临时库验证唯一 `main.sql`、迁移升降级、
+实际 ORM 写入以及缺列/约束漂移检测；结束自动删除该临时库，不改写用户数据。
+
+revision `20260920_0004` 将 `aura_internal_state.jealousy` 与状态引擎和 Pydantic 统一为
+`none / low / medium / high`。强度高表示内部状态，不代表必须加强对用户的表达。
+
 ## 业务模型表
 
 | 表 | 功能 | 代码入口 |

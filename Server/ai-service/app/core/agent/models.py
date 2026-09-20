@@ -39,6 +39,7 @@ class JealousyLevel(StrEnum):
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
+    HIGH = "high"
 
 
 class VulnerabilityLevel(StrEnum):

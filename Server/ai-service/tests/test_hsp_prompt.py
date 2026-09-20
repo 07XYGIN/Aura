@@ -47,7 +47,8 @@ def _message_text(message: object) -> str:
 class TestAuraSystemPrompt(unittest.TestCase):
     def test_system_prompt_contains_new_guardrails(self) -> None:
         self.assertGreaterEqual(len(SYSTEM_PROMPT), 900)
-        self.assertIn("热恋期与暧昧期交错", SYSTEM_PROMPT)
+        self.assertIn("亲密程度以运行时 relationship_stage 为准", SYSTEM_PROMPT)
+        self.assertNotIn("热恋期与暧昧期交错", SYSTEM_PROMPT)
         self.assertNotIn("老夫老妻", SYSTEM_PROMPT)
         self.assertIn("## 规则优先级", SYSTEM_PROMPT)
         self.assertIn("## 每轮决策", SYSTEM_PROMPT)

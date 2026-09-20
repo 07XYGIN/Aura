@@ -19,6 +19,7 @@ from app.db.models import (
     Users,
 )
 from app.db.session import SyncSessionLocal
+from app.core.continuity.signals import asserted_match, direct_clauses, is_task_request
 
 AURA_STATE_VERSION = "aura-internal-state-v2"
 RELATIONSHIP_DYNAMICS_VERSION = "relationship-dynamics-v2"
@@ -323,9 +324,7 @@ def derive_relationship_dynamics(
 
     if prior_last_seen_at is not None:
         gap = now - normalize_utc(prior_last_seen_at)
-        if gap >= timedelta(days=3) and result["relationship_phase"] not in {"conflict", "repair"}:
-            result["relationship_phase"] = "distant"
-            result["relationship_tone"] = "guarded"
+        if gap >= timedelta(days=3):
             result["recent_distance"] = f"用户约 {max(3, gap.days)} 天没有出现"
         elif gap >= timedelta(hours=12):
             result["recent_distance"] = "用户有一段时间没有出现"
@@ -358,16 +357,18 @@ def derive_relationship_events(
         if isinstance(turn_judgement, dict) and isinstance(turn_judgement.get("interaction"), dict)
         else {}
     )
-    mode = str(interaction.get("mode") or "natural")
     target = str(interaction.get("target") or "unclear")
-    affectionate = (
-        mode == "affection" and target == "aura"
-    ) or matches_any(text, AFFECTION_PATTERNS)
+    emotion = (turn_judgement or {}).get("emotion") or {}
+    clauses = direct_clauses(text)
+    if is_task_request(text) or emotion.get("is_current_experience") is False:
+        clauses = []
+    toward_aura = target not in {"other", "external", "self"}
+    affectionate = toward_aura and asserted_match(clauses, AFFECTION_PATTERNS)
     candidates: list[dict[str, Any]] = []
 
     if affectionate:
         candidates.append(relationship_event("affection_expressed", text, "medium"))
-    if matches_any(text, JEALOUSY_PATTERNS):
+    if asserted_match(clauses, JEALOUSY_PATTERNS):
         candidates.append(
             relationship_event(
                 "important_disclosure",
@@ -376,16 +377,18 @@ def derive_relationship_events(
                 payload={"affect": "jealousy"},
             )
         )
-    if matches_any(text, CONFLICT_PATTERNS):
+    if toward_aura and asserted_match(clauses, CONFLICT_PATTERNS):
         candidates.append(relationship_event("conflict_started", text, "high"))
-    if matches_any(text, BOUNDARY_PATTERNS):
+    if toward_aura and asserted_match(clauses, BOUNDARY_PATTERNS):
         candidates.append(relationship_event("boundary_crossed", text, "high"))
-    if matches_any(text, APOLOGY_PATTERNS):
+    if toward_aura and asserted_match(clauses, APOLOGY_PATTERNS):
         candidates.append(relationship_event("apology", text, "medium"))
-    if relationship_phase == "repair" and (affectionate or matches_any(text, REASSURANCE_PATTERNS)):
+    if toward_aura and relationship_phase == "repair" and (affectionate or asserted_match(clauses, REASSURANCE_PATTERNS)):
         candidates.append(relationship_event("repair_completed", text, "high"))
-    if matches_any(text, MILESTONE_PATTERNS):
-        established = bool(re.search(r"(?:一直|走下去|已经是恋人)", text))
+    confidence = interaction.get("confidence")
+    milestone_confident = confidence is None or (isinstance(confidence, (int, float)) and confidence >= 0.7)
+    if toward_aura and milestone_confident and asserted_match(clauses, MILESTONE_PATTERNS):
+        established = asserted_match(clauses, (r"(?:一直|走下去|已经是恋人)",))
         candidates.append(
             relationship_event(
                 "relationship_milestone",
@@ -396,7 +399,7 @@ def derive_relationship_events(
                 },
             )
         )
-    if re.search(r"(?:我答应你|我保证|以后会|一定会).{0,24}", text):
+    if toward_aura and asserted_match(clauses, (r"(?:我答应你|我保证|以后会|一定会).{0,24}",)):
         candidates.append(relationship_event("promise_created", text, "medium"))
 
     if prior_last_seen_at is not None:
@@ -534,7 +537,7 @@ def derive_affect_states(
             source_event_id,
         )
 
-    if matches_any(text, REASSURANCE_PATTERNS):
+    if allow_reinforcement and asserted_match(direct_clauses(text), REASSURANCE_PATTERNS):
         resolve_affect(states, "jealousy", now)
     if "repair_completed" in event_types:
         resolve_affect(states, "hurt", now)
@@ -766,7 +769,7 @@ def derive_aura_internal_state(
     result.update(affect_summary)
     result["active_affects"] = affect_summary["active_affects"]
 
-    if result["jealousy"] in {"low", "medium"}:
+    if result["jealousy"] in {"low", "medium", "high"}:
         result["current_desire"] = "show_jealousy"
     elif relationship_has_due_thread(relationship_context):
         result["current_desire"] = "ask_follow_up"
@@ -796,6 +799,7 @@ def format_aura_internal_state_prompt(state: dict[str, Any] | None) -> str:
     return (
         "【玲凌当前状态】\n"
         "这是玲凌真实存在的当前倾向，不是必须逐项表演的命令；只有自然适合当前对话时才表达。\n"
+        "当前任务、拒绝和表达冷却优先；即使情绪仍在，也可以本轮完全不提。\n"
         f"- 情绪：{state.get('mood') or 'calm'}\n"
         f"- 依恋语气：{state.get('attachment_tone') or 'steady'}\n"
         f"- 想念程度：{state.get('missing_user') or 'none'}\n"

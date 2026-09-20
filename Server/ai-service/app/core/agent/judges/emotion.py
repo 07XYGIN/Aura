@@ -12,6 +12,7 @@ from langsmith import traceable
 
 from app.core.config import emotion_judge_llm
 from app.core.emotion import DEFAULT_EMOTION, derive_emotion_state
+from app.core.continuity.signals import asserted_match, direct_clauses, is_task_request
 
 
 EMOTION_JUDGE_SYSTEM_PROMPT = """
@@ -128,8 +129,10 @@ def normalize_emotion_judgement(raw: dict[str, Any], fallback: dict[str, Any], t
     interaction_target = clean_string(raw.get("interaction_target"), "unclear").lower()
     if interaction_target not in INTERACTION_TARGETS:
         interaction_target = "unclear"
-    if interaction_mode in {"affection", "repair"} and interaction_target == "unclear":
-        interaction_target = "aura"
+    if not direct_clauses(text) or is_task_request(text) or confidence < 0.6:
+        interaction_mode = "natural"
+    if interaction_mode == "affection" and any(h in text for h in AFFECTION_HINTS) and not asserted_match(direct_clauses(text), tuple(re.escape(h) for h in AFFECTION_HINTS)):
+        interaction_mode = "natural"
 
     profile = EMOTION_PROFILES[emotional_state]
     support_needed = emotional_state in NEGATIVE_STATES and is_current and confidence >= 0.45
@@ -175,7 +178,10 @@ def infer_interaction_mode(text: str) -> str:
     """从明确措辞中保守推断自然、亲密或关系修复模式。"""
 
     normalized = (text or "").lower()
-    if any(hint in normalized for hint in AFFECTION_HINTS):
+    clauses = direct_clauses(normalized)
+    if not clauses or is_task_request(text):
+        return "natural"
+    if asserted_match(clauses, tuple(re.escape(hint) for hint in AFFECTION_HINTS)):
         return "affection"
     direct_to_aura = bool(re.search(r"(?:你|aura).{0,12}(?:让我|总是|刚才|不该|失望|生气|讨厌|难受|不舒服)", normalized))
     direct_from_user = bool(re.search(r"(?:我对你|我不想理你|我讨厌你|我在生你的气)", normalized))

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+import json
 from typing import Any
 
 from langsmith import traceable
 
 from app.core.agent.models import AuraImpulse, ImpulseCandidate
+from app.core.continuity.signals import declines_contact, is_task_request
 
 INITIATIVE_LEVELS = {"none", "low", "medium", "high"}
 DESIRES = {
@@ -86,6 +88,9 @@ def collect_impulse_candidates(
             )
         ]
 
+    if is_task_request(text) or declines_contact(text):
+        return []
+
     if emotion.get("support_needed") and emotion.get("is_current_experience", True):
         candidates.append(
             candidate(
@@ -125,7 +130,18 @@ def collect_impulse_candidates(
         )
 
     jealousy = str(state.get("jealousy") or "none")
-    if jealousy in {"low", "medium"}:
+    restrained = any(
+        item.get("item_key") == "reply_feedback:too_clingy" and item.get("available", True)
+        for item in context.get("knowledge_items", []) if isinstance(item, dict)
+    )
+    jealousy_relevant = bool(re.search(r"(?:吃醋|女生|女孩|男生|男孩|前任|约会|还在意|不高兴)", text))
+    casual_return = text.strip("。！!~～ ") in {"早", "早安", "早呀", "在吗", "我回来了", "我下班了", "下班了"}
+    if (
+        jealousy in {"low", "medium", "high"}
+        and (jealousy_relevant or casual_return)
+        and not recently_expressed(recent_messages, "show_jealousy")
+        and not restrained
+    ):
         active_affects = state.get("active_affects") if isinstance(state.get("active_affects"), list) else []
         jealousy_affect = next(
             (
@@ -143,7 +159,7 @@ def collect_impulse_candidates(
                 affection="subtle",
                 jealousy=jealousy,
                 vulnerability=str(state.get("vulnerability") or "medium"),
-                relevance=85 if len(text) <= 16 else 45,
+                relevance=90 if jealousy_relevant else 75,
                 freshness=35 if recently_expressed(recent_messages, "show_jealousy") else 80,
                 interrupt_risk=25,
                 reason="玲凌当前确实有一点醋意，但用户仍可自由选择",
@@ -173,7 +189,7 @@ def collect_impulse_candidates(
 
     current_desire = str(state.get("current_desire") or "none")
     missing = str(state.get("missing_user") or "none")
-    if current_desire == "express_missing" and missing in {"slight", "clear"}:
+    if current_desire == "express_missing" and missing in {"slight", "clear"} and not recently_expressed(recent_messages, "express_missing") and not restrained:
         elapsed_level = str((time_context or {}).get("elapsed_level") or "")
         candidates.append(
             candidate(
@@ -192,7 +208,7 @@ def collect_impulse_candidates(
             )
         )
 
-    if current_desire == "seek_attention" and str(state.get("attachment_tone")) in {"close", "tender"}:
+    if current_desire == "seek_attention" and str(state.get("attachment_tone")) in {"close", "tender"} and not restrained:
         candidates.append(
             candidate(
                 strength="low",
@@ -221,7 +237,7 @@ def collect_impulse_candidates(
             )
         )
 
-    if dynamics.get("relationship_tone") == "playful" and len(text) <= 24:
+    if dynamics.get("relationship_tone") == "playful" and len(text) <= 24 and not recently_expressed(recent_messages, "tease"):
         candidates.append(
             candidate(
                 strength="low",
@@ -352,7 +368,7 @@ def impulse(
         "desire": desire if desire in DESIRES else "none",
         "affection": affection if affection in AFFECTION_LEVELS else "none",
         "playfulness": playfulness if playfulness in LEVELS else "low",
-        "jealousy": jealousy if jealousy in {"none", "low", "medium"} else "none",
+        "jealousy": jealousy if jealousy in {"none", "low", "medium", "high"} else "none",
         "vulnerability": vulnerability if vulnerability in LEVELS else "low",
         "follow_up": bool(follow_up),
         "silence_preferred": bool(silence_preferred),
@@ -431,12 +447,25 @@ def recently_expressed(recent_messages: list[Any] | None, desire: str) -> bool:
     if not needles:
         return False
     texts: list[str] = []
-    for item in (recent_messages or [])[-6:]:
+    for item in reversed(recent_messages or []):
+        role = item.get("role", item.get("type")) if isinstance(item, dict) else getattr(item, "type", None)
+        if role not in {"assistant", "ai"}:
+            continue
+        if (item.get("tool_calls") if isinstance(item, dict) else getattr(item, "tool_calls", None)):
+            continue
         content = getattr(item, "content", None)
         if content is None and isinstance(item, dict):
             content = item.get("content")
         if isinstance(content, str):
+            try:
+                payload = json.loads(content)
+            except (ValueError, TypeError):
+                payload = None
+            if isinstance(payload, dict):
+                content = "\n".join(part for part in payload.get("messages", []) if isinstance(part, str))
             texts.append(content)
+        if len(texts) >= 6:
+            break
     joined = "\n".join(texts)
     return any(marker in joined for marker in needles)
 

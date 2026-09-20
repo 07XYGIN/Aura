@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -17,6 +18,7 @@ from app.core.exceptions import (
     validation_exception_handler,
 )
 from app.core.logging_config import configure_logging
+from app.db.schema_audit import assert_schema_ready
 from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
@@ -46,10 +48,12 @@ async def lifespan(app: FastAPI):
     启动时初始化 PostgreSQL 检查点表并构建全局 Agent 图；关闭时先停止后台
     调度任务，再释放检查点连接。
     """
-    logging.info("程序启动成功")
+    logging.info("正在初始化检查点并核对数据库结构")
 
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
         checkpointer.setup()
+        await asyncio.to_thread(assert_schema_ready)
+        logging.info("数据库结构与后端模型、迁移版本一致")
         agent_graph.aura = agent_graph.build_graph(checkpointer)
         approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")

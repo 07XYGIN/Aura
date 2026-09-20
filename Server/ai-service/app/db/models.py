@@ -491,7 +491,7 @@ class AuraInternalState(Base, TimestampMixin):
             name="chk_aura_internal_state_playfulness",
         ),
         CheckConstraint(
-            "jealousy IN ('none', 'low', 'medium')",
+            "jealousy IN ('none', 'low', 'medium', 'high')",
             name="chk_aura_internal_state_jealousy",
         ),
         CheckConstraint(

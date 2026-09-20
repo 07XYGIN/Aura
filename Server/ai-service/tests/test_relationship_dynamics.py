@@ -35,7 +35,7 @@ class RelationshipDynamicsTest(unittest.TestCase):
         self.assertEqual(current["relationship_tone"], "tender")
         self.assertNotIn("stage_evidence_count", current)
 
-    def test_distance_changes_phase_without_erasing_romance_stage(self):
+    def test_absence_alone_does_not_imply_relationship_distance(self):
         now = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
         current = {
             **default_relationship_dynamics(now=now),
@@ -51,8 +51,9 @@ class RelationshipDynamicsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["relationship_stage"], "established_romance")
-        self.assertEqual(result["relationship_phase"], "distant")
-        self.assertEqual(result["relationship_tone"], "guarded")
+        self.assertEqual(result["relationship_phase"], "normal")
+        self.assertEqual(result["relationship_tone"], "warm")
+        self.assertIn("4", result["recent_distance"])
 
     def test_conflict_repair_and_completion_only_change_phase(self):
         now = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)

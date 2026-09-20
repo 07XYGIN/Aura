@@ -266,7 +266,7 @@ CREATE TABLE IF NOT EXISTS aura_internal_state (
     CONSTRAINT chk_aura_internal_state_playfulness CHECK (
         playfulness IN ('none', 'low', 'medium', 'high')
     ),
-    CONSTRAINT chk_aura_internal_state_jealousy CHECK (jealousy IN ('none', 'low', 'medium')),
+    CONSTRAINT chk_aura_internal_state_jealousy CHECK (jealousy IN ('none', 'low', 'medium', 'high')),
     CONSTRAINT chk_aura_internal_state_vulnerability CHECK (
         vulnerability IN ('low', 'medium', 'high')
     ),

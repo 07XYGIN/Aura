@@ -1,4 +1,7 @@
-"""Run Aura's deterministic relationship regression suite."""
+"""Check prewritten response fixtures only; this does NOT evaluate live model output.
+
+For actual generated multi-turn responses use run_relationship_conversations.py --live.
+"""
 
 from __future__ import annotations
 
