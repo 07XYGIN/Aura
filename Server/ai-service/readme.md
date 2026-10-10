@@ -3,7 +3,7 @@
 <div align="center">
 
 *Aura AI Service 是 Aura 的 Python AI 对话服务，负责编排、流式响应、工具调用、长期记忆和主动陪伴能力。*
-*它把本地模型、LangGraph、PostgreSQL 检查点与 pgvector 记忆系统连接成一条可持续对话链路。*
+*它连接线上 Qwen、LangGraph、PostgreSQL 检查点与记忆存储，线上 Embedding 接口待接入。*
 
 ---
 
@@ -12,8 +12,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
-![DeepSeek](https://img.shields.io/badge/DeepSeek-Chat-4D6BFE)
-![Ollama](https://img.shields.io/badge/Ollama-Embeddings-000000?logo=ollama&logoColor=white)
+![Qwen](https://img.shields.io/badge/Qwen-3.8_Max-4169E1)
 
 ### 数据库
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)
@@ -26,7 +25,7 @@
 
 ## 📖 简介
 
-**Aura AI Service** 位于 `Server/ai-service/`，是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，默认使用 DeepSeek 处理对话和判断任务，使用本地 Ollama Embedding 生成记忆向量，并通过 Server-Sent Events（SSE）向客户端输出回复事件。
+**Aura AI Service** 位于 `Server/ai-service/`，是 Aura 的 FastAPI 异步 AI 服务。它通过 LangGraph 构建对话状态机，使用 `qwen3.8-max` 处理对话和判断任务，并通过 Server-Sent Events（SSE）向客户端输出回复事件。线上 Embedding 尚未选型，接口位于 `app/core/memory/embeddings.py`。
 
 服务同时提供认证、聊天历史、长期记忆、附件、位置、自我更新和主动消息能力。Web、PC 与移动端直接消费这一个后端入口。
 
@@ -36,7 +35,7 @@
 
 ### 🤖 AI 对话
 - 基于 LangGraph `StateGraph` 编排聊天节点与工具节点
-- 默认使用 DeepSeek 作为主对话模型，模型配置集中在 `app/core/llms.py`
+- 只保留 `qwen3.8-max`，主对话、结构化回复、记忆判断和情绪判断共用这一模型，任务参数集中在 `app/core/llms.py`
 - `/api/send/sse/` 通过 SSE 持续输出模型响应片段
 - SSE 协议保持 `data: JSON` + `data: [DONE]` 兼容
 - 每轮可输出 `emotion`、`memory_candidate` 和多段 `assistant_message` 事件
@@ -52,9 +51,15 @@
 ### 🧠 记忆与历史
 - 使用 PostgreSQL Checkpointer 持久化 LangGraph 对话状态
 - 使用 `PGVector` + PostgreSQL/pgvector 存储语义向量
-- 使用 `nomic-embed-text:latest` 生成记忆 Embedding
+- 当前未启用 Embedding 模型；语义检索、新记忆保存和需要重新生成向量的合并/晋升暂不可用
 - 记忆 metadata 包含 `user_id`、`title`、`create_time` 等字段
-- 支持按用户清空历史、删除单条历史、分页列出记忆、语义检索记忆和删除记忆
+- 支持按用户清空历史、删除单条历史、分页列出已有记忆和删除记忆
+
+本地向量模型及依赖已移除，原有记忆正文、metadata、向量和 checkpoint 保留。未接入期间，
+语义检索 API 返回明确的 503；聊天工具说明暂不可用，不会声称记忆已经保存。
+未来在 `get_memory_embeddings()` 接入选定的线上客户端，沿用 LangChain `Embeddings` 合约。
+启用前必须重建旧记忆向量并完成验证，不能将新模型向量直接混入旧集合。
+详细步骤见[重构方案](docs/refactoring-plan.md)。
 
 ### 🔌 API 端点
 | 方法 | 端点 | 功能 |
@@ -90,8 +95,8 @@
 └───────────────┬──────────────┘ └──────────┬─────────────┘
                 │                           │
 ┌───────────────▼──────────────┐ ┌──────────▼─────────────┐
-│    DeepSeek + Ollama Embed     │ │ PostgreSQL + pgvector   │
-│       chat · judge · vector    │ │ checkpoints · vectors   │
+│       Qwen 3.8 Max             │ │ PostgreSQL + pgvector   │
+│       chat · judge             │ │ checkpoints · vectors   │
 └──────────────────────────────┘ └────────────────────────┘
 ```
 
@@ -137,8 +142,8 @@ ai-service/
 - uv
 - PostgreSQL，并启用 pgvector
 - Redis 7+
-- DeepSeek API Key，用于主对话、情绪判断和记忆判断
-- Ollama，并准备 `nomic-embed-text:latest` 用于本地记忆向量
+- 阿里云 DashScope API Key，用于主对话、结构化回复、情绪判断和记忆判断
+- 当前无需本地模型；线上 Embedding 接入前只能查看和管理已有记忆
 - 高德地图 API Key，用于天气与位置工具
 
 ### 配置环境变量
@@ -151,7 +156,7 @@ DB_NAME=Aura
 DB_USER=postgres
 DB_PASSWORD=your_password
 JWT_SECRET_KEY=至少32字符的随机密钥
-DEEPSEEK_API_KEY=your_deepseek_key
+DASHSCOPE_API_KEY=your_dashscope_key
 amap_key=your_amap_key
 ```
 

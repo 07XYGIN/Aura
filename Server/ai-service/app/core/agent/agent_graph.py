@@ -88,6 +88,7 @@ from .judges.turn import (
 from .tools.registry import CHAT_TOOLS
 from .tools.world_policy import world_turn_finished
 from app.core.memory.service import save_memory
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 
 SHORT_TERM_MESSAGE_WINDOW = 24
 AURA_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -1524,6 +1525,8 @@ def save_memory_candidate_once(user_id: str, candidate: dict[str, Any]) -> None:
             },
         )
         logging.info("记忆候选保存完成 scope=%s user_id=%s title=%s", memory_scope, user_id, title)
+    except MemoryEmbeddingsUnavailable:
+        logging.info("记忆向量服务暂未接入，跳过候选写入 user_id=%s", user_id)
     except Exception:
         logging.exception("记忆候选保存失败 user_id=%s", user_id)
 

@@ -2,6 +2,8 @@ from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
+
 
 async def validation_exception_handler(_request: Request, _exc: RequestValidationError):
     """将 FastAPI 请求校验异常统一转换为中文 422 响应。"""
@@ -28,4 +30,11 @@ async def http_exception_handler(_request: Request, exc: HTTPException):
             "msg": message,
             "data": None,
         },
+    )
+
+
+async def memory_embeddings_unavailable_handler(_request: Request, _exc: MemoryEmbeddingsUnavailable):
+    return await http_exception_handler(
+        _request,
+        HTTPException(status_code=503, detail="记忆向量服务暂未接入，语义检索和写入暂不可用。"),
     )

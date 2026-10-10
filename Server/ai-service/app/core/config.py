@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 
 from app.core.llms import (
-    AURA_LLM_REASONING_EFFORT,
     AURA_LLM_ENABLE_THINKING,
     AURA_LLM_TEMPERATURE,
     AURA_LLM_TOP_P,
@@ -20,7 +19,6 @@ from app.core.llms import (
 load_dotenv()
 
 __all__ = [
-    "AURA_LLM_REASONING_EFFORT",
     "AURA_LLM_ENABLE_THINKING",
     "AURA_LLM_TEMPERATURE",
     "AURA_LLM_TOP_P",

@@ -8,14 +8,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core import llms
-from app.core.owned_llms import DEEPSEEK, QWEN_3_8_MAX
+from app.core.owned_llms import QWEN_3_8_MAX
 
 
 class LlmSamplingConfigTest(unittest.TestCase):
     def test_create_llm_passes_supported_sampling_parameters(self):
         with patch.object(llms, "ChatOpenAI") as chat_openai:
             llms.create_llm(
-                DEEPSEEK,
+                QWEN_3_8_MAX,
                 temperature=0.75,
                 top_p=0.9,
                 streaming=True,

@@ -23,7 +23,7 @@
 ### AI
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-Qwen3-000000?logo=ollama&logoColor=white)
+![Qwen](https://img.shields.io/badge/Qwen-3.8_Max-4169E1)
 
 ### 数据库
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)
@@ -47,12 +47,12 @@
 ### 🤖 AI 对话
 - 基于 LangGraph 的多轮对话编排，支持工具调用与对话状态管理
 - 通过 Server-Sent Events（SSE）返回流式响应
-- 使用本地模型与外部模型组合承载对话、判断和记忆相关任务
-- 长期记忆通过 PostgreSQL + pgvector 进行语义检索，并按用户隔离存储
+- 对话、结构化回复、记忆判断和情绪判断统一使用线上 `qwen3.8-max`
+- 记忆保留在 PostgreSQL + pgvector；线上 Embedding 待接入，语义检索与新记忆写入暂不可用
 - 天气查询、记忆保存、记忆搜索等工具已接入 Agent 流程
 
 ### 🧠 记忆与陪伴能力
-- 支持聊天历史、长期记忆、语义检索和记忆清理
+- 支持聊天历史、已有记忆查看和清理；向量能力恢复条件见[重构方案](Server/ai-service/docs/refactoring-plan.md)
 - 支持情绪状态识别、互动目标判断与上下文注入
 - 支持主动消息调度、附件、位置和自我更新管理等扩展能力
 
@@ -140,7 +140,7 @@ main.sql                      # 唯一 PostgreSQL 完整导入基线
 - Python 3.12+ 与 uv
 - PostgreSQL 16+
 - Redis 7+
-- Ollama，并准备 `qwen3:8b`、`qwen3:0.6b`、`nomic-embed-text:latest`
+- 阿里云 DashScope API Key，用于 `qwen3.8-max`；当前无需本地模型
 
 ### 启动 AI 服务
 ```bash

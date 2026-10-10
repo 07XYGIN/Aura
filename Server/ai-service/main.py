@@ -15,9 +15,11 @@ from app.core.config import (
 )
 from app.core.exceptions import (
     http_exception_handler,
+    memory_embeddings_unavailable_handler,
     validation_exception_handler,
 )
 from app.core.logging_config import configure_logging
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 from app.db.schema_audit import assert_schema_ready
 from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
@@ -104,6 +106,7 @@ def create_app() -> FastAPI:
     exception_handlers = [
         (RequestValidationError, validation_exception_handler),
         (HTTPException, http_exception_handler),
+        (MemoryEmbeddingsUnavailable, memory_embeddings_unavailable_handler),
     ]
     for exc_type, handler in exception_handlers:
         app.add_exception_handler(exc_type, handler)

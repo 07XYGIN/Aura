@@ -10,11 +10,11 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from langchain_core.documents import Document
-from langchain_ollama import OllamaEmbeddings
 from langchain_postgres import PGVector
 
 from app.core.config import SYNC_DATABASE_URL
 from app.core.agent.judges.memory import judge_memory_dedup, merge_memory_contents
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable, get_memory_embeddings
 from app.db.models import LangchainPgCollection, LangchainPgEmbedding
 from app.db.session import SyncSessionLocal
 
@@ -73,16 +73,12 @@ MEMORY_CATALOG_LOOKUP_KEYWORDS = (
     "你记得我什么",
 )
 
-embeddings = OllamaEmbeddings(
-    model="nomic-embed-text:latest"
-)
-
 
 def get_memory_vector_store(collection_name: str = LONG_TERM_COLLECTION_NAME) -> PGVector:
     """创建指定 collection 的 PGVector 访问对象。"""
 
     return PGVector(
-        embeddings=embeddings,
+        embeddings=get_memory_embeddings(),
         collection_name=collection_name,
         connection=SYNC_DATABASE_URL,
         use_jsonb=True,
@@ -764,7 +760,10 @@ def list_memory_documents(
 def format_memory_context(user_id: str, query: str, k: int = 5) -> str:
     """检索相关记忆并格式化为主模型可引用的上下文文本。"""
 
-    layered = search_layered_memories(user_id=user_id, query=query, k=k)
+    try:
+        layered = search_layered_memories(user_id=user_id, query=query, k=k)
+    except MemoryEmbeddingsUnavailable:
+        return "记忆向量服务暂未接入，本轮无法进行语义检索。不要把服务不可用说成用户没有记忆，也不要编造历史事实。"
     sections: list[str] = []
     if layered["long"]:
         sections.append("稳定记忆（只在当前话题确实相关时自然使用）：\n" + format_docs(layered["long"]))

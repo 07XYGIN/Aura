@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from app.core.memory.service import save_memory
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 
 from .logging_utils import log_tool
 from .world_policy import current_turn_calls
@@ -61,6 +62,8 @@ def save_memory_tool(
                 "reason": clean_text(reason, 120),
             },
         )
+    except MemoryEmbeddingsUnavailable:
+        return "记忆向量服务暂未接入，本次记忆未保存，不要声称已经记住。"
     except Exception:
         logging.exception("保存记忆失败 user_id=%s title=%s", user_id, clean_title)
         return "记忆保存失败，先不要声称已经记住。"

@@ -11,11 +11,9 @@ if str(ROOT) not in sys.path:
 
 try:
     from langchain_core.messages import HumanMessage, SystemMessage
-    from langchain_ollama import ChatOllama
 except ModuleNotFoundError:  # pragma: no cover - depends on local virtualenv
     HumanMessage = None
     SystemMessage = None
-    ChatOllama = None
 
 from app.core.agent.prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
 
@@ -103,21 +101,14 @@ class TestAuraSystemPrompt(unittest.TestCase):
         if os.getenv("AURA_RUN_LIVE_MODEL_TESTS") != "1":
             self.skipTest("Set AURA_RUN_LIVE_MODEL_TESTS=1 to run live model checks")
 
-        if ChatOllama is None or SystemMessage is None or HumanMessage is None:
-            self.skipTest("LangChain/Ollama dependencies are not installed")
+        if SystemMessage is None or HumanMessage is None:
+            self.skipTest("LangChain dependencies are not installed")
 
-        model_name = os.getenv("AURA_TEST_MODEL", "qwen3:8b")
-        model = ChatOllama(model=model_name, temperature=0)
+        from app.core.llms import CHAT_MODEL, create_llm
 
-        try:
-            model.invoke(
-                [
-                    SystemMessage(content=SYSTEM_PROMPT),
-                    HumanMessage(content="ping"),
-                ]
-            )
-        except Exception as exc:  # pragma: no cover - environment dependent
-            self.skipTest(f"Ollama unavailable for {model_name}: {exc}")
+        if not os.getenv(CHAT_MODEL["api_key_env"]):
+            self.skipTest("DASHSCOPE_API_KEY is required for live model checks")
+        model = create_llm(CHAT_MODEL, temperature=0)
 
         for scenario in SCENARIOS:
             with self.subTest(scenario=scenario):
