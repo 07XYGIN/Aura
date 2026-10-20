@@ -36,7 +36,7 @@
 
 ## 📖 简介
 
-**Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，前端覆盖 Vue3 管理后台、Vue3 PC 客户端、Next.js Web 工作台与 Flutter 移动端。
+**Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，用户端使用 Next.js Web，管理端使用 Vue3，Flutter 移动端保留并待后续接入。
 
 历史上的 Java Core Service 与 NestJS BFF 已从主线移除；认证、业务 API、对话编排与持久化统一由 FastAPI 模块化单体承担。
 
@@ -61,9 +61,8 @@
 - 登录、注册、用户信息页面与 Pinia 状态管理
 - 面向用户、会话、消息、记忆和配置管理继续扩展
 
-### 🖥️ Web / PC 客户端
-- `AI-Web/apps/PC`：Vue3 PC 聊天端，包含登录、注册、聊天、记忆、设置等页面
-- `AI-Web/apps/web`：Next.js 16 + React 19 的新版 Aura 工作台，包含聊天、登录、记忆和设置界面
+### 🖥️ Web 客户端
+- `AI-Web/apps/web`：Next.js 16 + React 19 的 Aura 用户端，包含聊天、登录、记忆和设置界面
 - 支持主题切换、路由过渡、请求封装和基础 UI 组件
 
 ### 📱 移动端
@@ -78,7 +77,7 @@
 ```text
 ┌────────────────────────────────────────────────────────┐
 │                      客户端层                           │
-│  Admin(Vue3)  PC(Vue3)  Web(Next/React)  Mobile(Flutter)│
+│       Admin(Vue3)  Web(Next/React)  Mobile(Flutter)     │
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
@@ -110,9 +109,7 @@
 AI-Web/                       # 前端 Monorepo（pnpm workspace）
 ├── apps/
 │   ├── admin/                # Vue3 管理后台
-│   ├── PC/                   # Vue3 PC 聊天端
 │   ├── web/                  # Next.js + React 新版 Web 工作台
-│   └── mobile/               # Monorepo 内保留的移动端目录
 └── package/
     ├── Types/                # 共享 TypeScript 类型包
     └── ...
@@ -160,7 +157,6 @@ http://127.0.0.1:8000
 cd AI-Web
 pnpm install
 pnpm dev:admin               # Vue3 管理后台
-pnpm --filter @ai-web/pc dev  # Vue3 PC 聊天端
 pnpm dev:web                 # Next.js Web 工作台
 ```
 
