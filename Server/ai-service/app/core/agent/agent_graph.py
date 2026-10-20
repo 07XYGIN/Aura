@@ -203,8 +203,8 @@ def call_model(state: AuraState) -> AuraState:
             messages,
             operation="主对话",
         )
-    except Exception:
-        logging.exception("Aura 主模型在重试后仍不可用，返回安全降级回复")
+    except Exception as e:
+        logging.exception("Aura 主模型在重试后仍不可用，返回安全降级回复",e)
         response = AIMessage(
             content=(
                 '{"messages":["我这边刚刚没有接上，等一下再试一次。"],'
