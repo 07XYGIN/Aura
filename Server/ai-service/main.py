@@ -25,18 +25,11 @@ from app.core.proactive_scheduler import start_proactive_scheduler, stop_proacti
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
     admin,
-    approvals,
     attachments,
-    capsules,
-    continuity,
-    continuity_state,
-    feedback,
     history,
     location,
     memory,
     msg,
-    offline_mind,
-    relationship_knowledge,
     user,
 )
 
@@ -86,13 +79,6 @@ def create_app() -> FastAPI:
     )
     routers: list[APIRouter] = [
         admin.router,
-        approvals.router,
-        capsules.router,
-        continuity.router,
-        continuity_state.router,
-        feedback.router,
-        relationship_knowledge.router,
-        offline_mind.router,
         msg.router,
         history.router,
         memory.router,
