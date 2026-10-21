@@ -418,7 +418,6 @@ async def load_daily_greeting_targets(
     """
     result = await session.execute(
         select(Users.id)
-        .order_by(Users.created_at.asc())
         .limit(limit)
     )
     targets: list[dict] = []
@@ -628,7 +627,7 @@ async def ensure_relationship_contact_messages(
     now: datetime | None = None,
     limit: int = 100,
 ) -> int:
-    """为玲凌自身联系欲望创建低频、可审计的关系主动消息。"""
+    """为钟夏自身联系欲望创建低频、可审计的关系主动消息。"""
 
     reference_now = normalize_utc(now or datetime.now(UTC))
     result = await session.execute(
@@ -689,7 +688,7 @@ async def ensure_relationship_contact_messages(
             id=uuid4(),
             user_id=aura_state.user_id,
             trigger_type=RELATIONSHIP_CONTACT_TRIGGER_TYPE,
-            title="玲凌想联系你",
+            title="钟夏想联系你",
             content=intent.content,
             scheduled_at=intent.not_before,
             status="pending",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from collections.abc import Mapping
@@ -116,7 +117,7 @@ async def get_current_user_id(
     # JWT 在账号删除后仍可能尚未自然过期。每次认证都核对 users 表，确保删除
     # 账号会立即终止旧令牌，而不是让它继续创建无所有者的 checkpoint 或附件。
     result = await session.execute(
-        select(users_table.c.id).where(users_table.c.id == parsed_user_id).limit(1)
+        select(users_table.c.user_id).where(users_table.c.user_id == parsed_user_id).limit(1)
     )
     if result.scalar_one_or_none() is None:
         raise credentials_exception
@@ -147,7 +148,7 @@ def clean_revoked_tokens() -> None:
 
 
 async def register_user(session: AsyncSession, request: UserRegisterRequest) -> None:
-    """校验注册信息、散列密码并创建用户。
+    """校验注册信息。
 
     Args:
         session: 当前请求使用的异步数据库会话。
@@ -166,22 +167,8 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
         raise HTTPException(status_code=400, detail="用户名不能为空")
     if not password:
         raise HTTPException(status_code=400, detail="密码不能为空")
-    if request.sex not in (0, 1):
-        raise HTTPException(status_code=400, detail="性别字段只能是 0 或 1")
 
     try:
-        # PostgreSQL 事务级 advisory lock 把“检查是否已有账号”和“创建账号”串行化。
-        # 仅查询 count 无法阻止两个并发注册同时看到空表。
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext('aura_single_user_registration'))")
-        )
-        existing_count_result = await session.execute(
-            select(func.count()).select_from(users_table)
-        )
-        if int(existing_count_result.scalar_one()) > 0:
-            await session.rollback()
-            raise HTTPException(status_code=409, detail="Aura 已绑定唯一用户，不能再注册新账号")
-
         password_digest = hash_password(password)
         result = await session.execute(
             insert(users_table)
@@ -189,12 +176,9 @@ async def register_user(session: AsyncSession, request: UserRegisterRequest) -> 
                 username=username,
                 password=password_digest,
                 email=blank_to_none(request.email),
-                sex=request.sex,
-                age=request.age,
             )
-            .returning(users_table.c.id)
+            .returning(users_table.c.user_id)
         )
-
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
@@ -253,7 +237,7 @@ async def update_user_info(
         }
         await session.execute(
             update(users_table)
-            .where(users_table.c.id == UUID(user_id))
+            .where(users_table.c.user_id == UUID(user_id))
             .values(**values)
         )
         await session.commit()
@@ -300,7 +284,7 @@ async def get_user_record(session: AsyncSession, user_id: str) -> Mapping[str, A
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="用户 ID 无效") from exc
 
-    result = await session.execute(select(users_table).where(users_table.c.id == parsed_user_id))
+    result = await session.execute(select(users_table).where(users_table.c.user_id == parsed_user_id))
     user = result.mappings().first()
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -310,11 +294,9 @@ async def get_user_record(session: AsyncSession, user_id: str) -> Mapping[str, A
 def user_to_dict(user: Mapping[str, Any], include_password: bool = False) -> dict[str, Any]:
     """将数据库用户映射转换为 API 使用的字典，并按需保留密码摘要。"""
     data = {
-        "id": str(user["id"]),
+        "id": str(user["user_id"]),
         "username": user["username"],
         "email": user["email"],
-        "sex": user["sex"],
-        "age": user["age"],
     }
     if include_password:
         data["password"] = user["password"]

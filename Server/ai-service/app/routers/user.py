@@ -36,7 +36,7 @@ async def register(request: UserRegisterRequest, session: SessionDep):
 async def login(request: UserLoginRequest, session: SessionDep):
     """验证账号密码并签发访问令牌。"""
     user = await authenticate_user(session, request)
-    token = create_access_token(user["id"])
+    token = create_access_token(user["username"])
     return api_success(message="登录成功", token=token)
 
 
@@ -99,7 +99,6 @@ def api_success(data=None, message="成功", token: str | None = None):
     response = {
         "code": 200,
         "data": data,
-        "msg": message,
         "message": message,
     }
     if token:

@@ -1,4 +1,4 @@
-"""玲凌自身状态与关系动态的持久化和保守状态迁移。"""
+"""钟夏自身状态与关系动态的持久化和保守状态迁移。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ AFFECT_STATE_VERSION = "affect-state-v1"
 
 AFFECTION_PATTERNS = (
     r"(?:我爱你|喜欢你|想你了|想抱抱你|亲亲|陪我一会儿)",
-    r"(?:晚安|早安).{0,8}(?:宝贝|宝宝|玲凌)",
+    r"(?:晚安|早安).{0,8}(?:宝贝|宝宝|钟夏)",
 )
 JEALOUSY_PATTERNS = (
     r"(?:和|跟).{0,10}(?:女生|女孩|男生|男孩|前任).{0,10}(?:聊天|吃饭|约会|出去|见面)",
@@ -244,7 +244,7 @@ def observe_relationship_state_sync(
                 "affect_states": projected_affects,
             }
     except Exception:
-        logging.exception("玲凌自身状态读取或更新失败，聊天继续 user_id=%s", parsed_user_id)
+        logging.exception("钟夏自身状态读取或更新失败，聊天继续 user_id=%s", parsed_user_id)
         return project_without_database(
             message,
             turn_judgement,
@@ -736,7 +736,7 @@ def derive_aura_internal_state(
     now: datetime,
     affect_states: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """根据真实时间间隔、当前互动和已有关系事实更新玲凌自身状态。"""
+    """根据真实时间间隔、当前互动和已有关系事实更新钟夏自身状态。"""
 
     result = {**default_aura_internal_state(now=now), **dict(current or {})}
     text = (message or "").strip()
@@ -795,10 +795,10 @@ def format_aura_internal_state_prompt(state: dict[str, Any] | None) -> str:
     """把自身状态写成倾向而非强制表演命令。"""
 
     if not isinstance(state, dict):
-        return "【玲凌当前状态】\n当前没有可用的持续状态。"
+        return "【钟夏当前状态】\n当前没有可用的持续状态。"
     return (
-        "【玲凌当前状态】\n"
-        "这是玲凌真实存在的当前倾向，不是必须逐项表演的命令；只有自然适合当前对话时才表达。\n"
+        "【钟夏当前状态】\n"
+        "这是钟夏真实存在的当前倾向，不是必须逐项表演的命令；只有自然适合当前对话时才表达。\n"
         "当前任务、拒绝和表达冷却优先；即使情绪仍在，也可以本轮完全不提。\n"
         f"- 情绪：{state.get('mood') or 'calm'}\n"
         f"- 依恋语气：{state.get('attachment_tone') or 'steady'}\n"

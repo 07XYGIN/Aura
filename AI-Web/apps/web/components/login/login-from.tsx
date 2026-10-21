@@ -10,7 +10,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
-import type { AuthFormValues, AuthMode, SexOption, UserSex } from '@/types/auth'
+import type { AuthFormValues, AuthMode, SexOption} from '@/types/auth'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,16 +21,6 @@ const sexOptions: SexOption[] = [
   { label: 'Female', value: '0' },
 ]
 
-const toUserSex = (value?: string): UserSex | undefined => {
-  if (value === '1') {
-    return 1
-  }
-  if (value === '0') {
-    return 0
-  }
-
-  return undefined
-}
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const { t } = useI18n()
@@ -101,9 +91,6 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   username: formData.username ?? '',
                   password: formData.password ?? '',
                   email: formData.email ?? '',
-                  sex: toUserSex(formData.sex),
-                  age: formData.age ? Number(formData.age) : undefined,
-                  inviteCode: formData.inviteCode ?? '',
               }
             : {
                   username: formData.username ?? '',
@@ -217,7 +204,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   />
                 </Field>
 
-                <Field orientation="horizontal">
+                {/* <Field orientation="horizontal">
                   <Cake />
                   <Input
                     type="number"
@@ -238,7 +225,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                     value={formData.inviteCode ?? ''}
                     onChange={handleChange}
                   />
-                </Field>
+                </Field> */}
               </div>
             ) : null}
 
@@ -253,7 +240,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               />
             </Field>
 
-            {mode === 'register' ? (
+            {/* {mode === 'register' ? (
               <RadioGroup
                 value={formData.sex ?? ''}
                 onValueChange={(value) => handleSexChange(value as AuthFormValues['sex'])}
@@ -285,7 +272,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   )
                 })}
               </RadioGroup>
-            ) : null}
+            ) : null} */}
 
             {mode === 'login' ? (
               <div className="flex flex-col gap-3 pt-1 text-sm text-[var(--aura-text-muted)] sm:flex-row sm:items-center sm:justify-between">

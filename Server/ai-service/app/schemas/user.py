@@ -5,12 +5,10 @@ class UserRegisterRequest(BaseModel):
     """注册账号所需的凭据和基础资料。"""
 
     model_config = ConfigDict(populate_by_name=True)
-
+    
     username: str
     password: str
     email: str | None = None
-    age: int | None = None
-    sex: int
 
 
 class UserLoginRequest(BaseModel):

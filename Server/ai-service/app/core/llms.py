@@ -14,10 +14,10 @@ STRUCTURED_REPLY_MODEL = QWEN_3_8_MAX
 MEMORY_JUDGE_MODEL = QWEN_3_8_MAX
 EMOTION_JUDGE_MODEL = QWEN_3_8_MAX
 """
-CHAT_MODEL：主对话模型
-structured_reply_llm：把回复整理成 Aura 需要的 JSON 消息数组
-memory_judge_llm：判断是否写入记忆、合并记忆
-emotion_judge_llm：判断情绪上下文
+CHAT_MODEL:主对话模型
+structured_reply_llm:把回复整理成 Aura 需要的 JSON 消息数组
+memory_judge_llm:判断是否写入记忆、合并记忆
+emotion_judge_llm:判断情绪上下文
 """
 
 

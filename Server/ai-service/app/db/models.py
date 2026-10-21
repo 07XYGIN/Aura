@@ -47,15 +47,11 @@ class TimestampMixin:
 
 
 class Users(Base, TimestampMixin):
-    """登录用户账号与基础资料表。"""
+    """用户表"""
 
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint("sex IS NULL OR sex IN (0, 1)", name="chk_users_sex"),
-        CheckConstraint("age IS NULL OR age BETWEEN 0 AND 150", name="chk_users_age"),
-    )
 
-    id: Mapped[UUID] = mapped_column(
+    user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
@@ -64,8 +60,12 @@ class Users(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), unique=True)
-    sex: Mapped[int | None] = mapped_column(SmallInteger)
-    age: Mapped[int | None] = mapped_column(Integer)
+    birthday: Mapped[date] = mapped_column(
+    Date,
+    nullable=False,
+    default=date(2003, 6, 8),
+    server_default=text("'2003-06-08'::date"),
+)
 
 
 class SelfChangelogEntry(Base, TimestampMixin):
@@ -466,7 +466,7 @@ class RelationshipChapter(Base, TimestampMixin):
 
 
 class AuraInternalState(Base, TimestampMixin):
-    """玲凌跨对话持续的自身情绪、依恋语气和联系倾向。"""
+    """钟夏跨对话持续的自身情绪、依恋语气和联系倾向。"""
 
     __tablename__ = "aura_internal_state"
     __table_args__ = (
@@ -634,7 +634,7 @@ class RelationshipEvent(Base, TimestampMixin):
 
 
 class AffectState(Base, TimestampMixin):
-    """玲凌当前情绪余韵的权威投影，按类型持续、强化、衰减或解决。"""
+    """钟夏当前情绪余韵的权威投影，按类型持续、强化、衰减或解决。"""
 
     __tablename__ = "affect_state"
     __table_args__ = (
