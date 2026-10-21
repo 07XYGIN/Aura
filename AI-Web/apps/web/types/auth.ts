@@ -10,6 +10,7 @@ export type AuthFormValues = Partial<
     age: string
     sex: AuthSex
     inviteCode: string
+    birthday:string
   }
 >
 

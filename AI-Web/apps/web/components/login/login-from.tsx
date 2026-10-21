@@ -2,13 +2,12 @@
 
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
-import { Cake, KeyRound, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
+import { LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import type { AuthFormValues, AuthMode, SexOption} from '@/types/auth'
 import { toast } from 'sonner'
@@ -16,10 +15,6 @@ import { useUserStore } from '@/store/user'
 import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from '@/lib/i18n'
 import { setAuthTokenCookie } from '@/lib/auth-token'
-const sexOptions: SexOption[] = [
-  { label: 'Male', value: '1' },
-  { label: 'Female', value: '0' },
-]
 
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
@@ -30,15 +25,13 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     username: '',
     password: '',
     email: '',
-    age: '',
-    sex: '',
-    inviteCode: '',
+    birthday:''
   })
   const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
   const searchParams = useSearchParams();
   const authReason = searchParams.get('reason');
-
+  
   useEffect(() => {
     if (authReason === 'missing') {
       toast.error('请先登录', {
