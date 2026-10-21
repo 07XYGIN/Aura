@@ -1,21 +1,8 @@
-"""Compatibility exports backed by the versioned prompt builder."""
-
-from .prompt_builder import PromptBuilder
-
+"将提示词组装给llm"
 
 PROMPT_VERSION = "v1"
-PROMPTS = PromptBuilder(PROMPT_VERSION)
 
-SYSTEM_PROMPT = PROMPTS.build_system()
-STRUCTURED_REPLY_PROMPT = PROMPTS.build_output_contract()
-FEW_SHOT_EXAMPLES = PROMPTS.build_few_shot()
-MEMORY_PROMPT = PROMPTS.build_memory()
-
-__all__ = [
-    "FEW_SHOT_EXAMPLES",
-    "MEMORY_PROMPT",
-    "PROMPTS",
-    "PROMPT_VERSION",
-    "STRUCTURED_REPLY_PROMPT",
-    "SYSTEM_PROMPT",
-]
+# TEMP: PromptBuilder 重构中，先硬编码占位
+SYSTEM_PROMPT = "你是 Aura，一个虚拟女友助手。"
+FEW_SHOT_EXAMPLES = ""
+STRUCTURED_REPLY_PROMPT = ""

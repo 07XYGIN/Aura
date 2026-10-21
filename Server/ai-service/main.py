@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -48,8 +47,6 @@ async def lifespan(app: FastAPI):
 
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
         checkpointer.setup()
-        await asyncio.to_thread(assert_schema_ready)
-        logging.info("数据库结构与后端模型、迁移版本一致")
         agent_runtime.graph = agent_graph.build_graph(checkpointer)
         approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")
