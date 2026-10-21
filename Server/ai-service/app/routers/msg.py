@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.conversation import aura_agent, retry_aura_agent
+from app.core.agent.conversation.conversation import aura_agent, retry_aura_agent
 from app.core.agent.conversation.protocol import (
     SSEProtocolV1,
     error_event,
