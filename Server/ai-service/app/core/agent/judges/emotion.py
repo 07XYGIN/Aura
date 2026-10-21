@@ -13,6 +13,7 @@ from langsmith import traceable
 from app.core.config import emotion_judge_llm
 from app.core.emotion import DEFAULT_EMOTION, derive_emotion_state
 from app.core.continuity.signals import asserted_match, direct_clauses, is_task_request
+from ..conversation.message_utils import message_content_to_text
 
 
 EMOTION_JUDGE_SYSTEM_PROMPT = """
@@ -203,24 +204,6 @@ def parse_json_object(text: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("情绪判断结果必须是 JSON 对象")
     return value
-
-
-def message_content_to_text(content: Any) -> str:
-    """把 LangChain 消息的字符串或内容块转换成文本。"""
-
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, dict):
-                value = item.get("text") or item.get("content")
-                if isinstance(value, str):
-                    parts.append(value)
-            elif isinstance(item, str):
-                parts.append(item)
-        return "\n".join(parts).strip()
-    return str(content).strip()
 
 
 def as_bool(value: Any) -> bool:

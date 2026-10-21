@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from app.core.config import memory_judge_llm
+from ..conversation.message_utils import message_content_to_text
 from app.core.continuity.extractor import (
     deterministic_thread_hints,
     normalize_thread_candidates,
@@ -461,24 +462,6 @@ def fallback_memory_merge(memories: list[dict[str, Any]]) -> dict[str, str]:
         seen.add(content)
         parts.append(content)
     return memory_merge_result(title, "；".join(parts)[:260], "去重后直接合并")
-
-
-def message_content_to_text(content: Any) -> str:
-    """把模型消息的字符串或内容块统一转换为文本。"""
-
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, dict):
-                text = item.get("text") or item.get("content")
-                if isinstance(text, str):
-                    parts.append(text)
-            elif isinstance(item, str):
-                parts.append(item)
-        return "\n".join(parts).strip()
-    return str(content).strip()
 
 
 def memory_candidate(

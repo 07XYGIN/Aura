@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.agent.agent_graph import append_proactive_history_message, get_history
+from app.core.agent.conversation.history import append_proactive_history_message, get_history
 from app.core.continuity.state import ensure_daily_states_async
 from app.core.continuity.aura_state import mark_aura_proactive_sent_async
 from app.core.continuity.capsules import (

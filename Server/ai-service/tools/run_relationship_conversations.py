@@ -17,9 +17,9 @@ sys.path.insert(0, str(ROOT))
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.core.config import llm, CHAT_MODEL
-from app.core.agent.agent_graph import (
-    build_runtime_system_prompt, try_parse_structured_reply_payload, build_structured_reply_response,
-)
+from app.core.agent.conversation.reply import build_structured_reply_response
+from app.core.agent.graph.runtime_prompt import build_runtime_system_prompt
+from app.core.agent.schemas.structured_reply import try_parse_structured_reply_payload
 from app.core.agent.judges.turn import judge_turn, apply_aura_impulse_to_response_mode
 from app.core.agent.judges.impulse import judge_aura_impulse
 from app.core.continuity.aura_state import (

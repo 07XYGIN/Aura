@@ -9,13 +9,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.agent_graph import aura_agent, retry_aura_agent
-from app.core.agent.models import TurnRequest
-from app.core.agent.protocol import (
+from app.core.agent.conversation import aura_agent, retry_aura_agent
+from app.core.agent.conversation.protocol import (
     SSEProtocolV1,
     error_event,
     turn_lifecycle_event,
 )
+from app.core.agent.schemas.models import TurnRequest
 from app.core.auth_store import get_current_user_id
 from app.core.emotion import derive_emotion_state
 from app.schemas.request import MessageRequest

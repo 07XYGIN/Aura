@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.agent.models import ActivityResult, TurnRequest
+from app.core.agent.schemas.models import ActivityResult, TurnRequest
 
 from .base import ActivityHandler
 

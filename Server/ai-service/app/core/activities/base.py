@@ -6,7 +6,7 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.agent.models import ActivityResult, TurnRequest
+from app.core.agent.schemas.models import ActivityResult, TurnRequest
 
 
 class ActivityHandler(Protocol):

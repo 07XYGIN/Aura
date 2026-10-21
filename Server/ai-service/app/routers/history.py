@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.agent.agent_graph import (
+from app.core.agent.conversation.history import (
     clear_history,
     create_history_branch,
     delete_history_message,

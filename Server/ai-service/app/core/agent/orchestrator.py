@@ -8,15 +8,15 @@ from collections.abc import AsyncIterator, Callable, Iterable
 from typing import Any
 
 from app.core.activities.registry import ActivityRegistry, build_default_activity_registry
-from app.core.agent.agent_graph import append_external_history_turn
-from app.core.agent.models import (
+from app.core.agent.conversation.history import append_external_history_turn
+from app.core.agent.schemas.models import (
     ActivityResult,
     InteractionMode,
     InteractionState,
     TurnPlan,
     TurnRequest,
 )
-from app.core.agent.protocol import (
+from app.core.agent.conversation.protocol import (
     SSEProtocolV1,
     activity_state_event,
     assistant_message_event,

@@ -8,7 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from app.core.agent import agent_graph, approval
+from app.core.agent import approval
+from app.core.agent.graph import agent_graph, agent_runtime
 from app.core.config import (
     AURA_CORS_ORIGINS,
     SYNC_DATABASE_URL,
@@ -49,7 +50,7 @@ async def lifespan(app: FastAPI):
         checkpointer.setup()
         await asyncio.to_thread(assert_schema_ready)
         logging.info("数据库结构与后端模型、迁移版本一致")
-        agent_graph.aura = agent_graph.build_graph(checkpointer)
+        agent_runtime.graph = agent_graph.build_graph(checkpointer)
         approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")
         proactive_stop_event = start_proactive_scheduler()
