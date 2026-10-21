@@ -12,7 +12,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer
 from langsmith import traceable
 
@@ -23,12 +22,7 @@ from app.core.attachment_store import (
 )
 from app.core.config import llm, structured_reply_llm
 from app.core.continuity.context import load_relationship_context_sync
-from app.core.continuity.aura_state import (
-    format_aura_internal_state_prompt,
-    format_relationship_dynamics_prompt,
-    observe_relationship_state_sync,
-    project_without_database,
-)
+from app.core.continuity.aura_state import observe_relationship_state_sync, project_without_database
 from app.core.continuity.capsules import (
     capture_conditional_candidates_sync,
     trigger_keyword_messages_sync,
@@ -54,6 +48,8 @@ from app.core.continuity.service import (
 )
 from app.core.emotion import format_emotion_context
 from app.core.reply_timing_state import store_reply_timing_state
+from app.core.memory.service import save_memory
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 from .protocol import (
     approval_required_event,
     assistant_message_event,
@@ -66,29 +62,13 @@ from .protocol import (
     memory_candidate_event,
 )
 from .approval import approval_config, resume_approval, start_approval
-from .prompt import FEW_SHOT_EXAMPLES, STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
-from .presence import resolve_live2d_presence
+from .prompt import STRUCTURED_REPLY_PROMPT, SYSTEM_PROMPT
 from .reliability import invoke_model_with_retry
 from .structured_reply import (
     parse_structured_reply,
     try_parse_structured_reply_payload,
 )
 from .self_changelog import load_self_changelog_context_sync, mark_self_changelog_reacted_sync
-from .judges.impulse import (
-    format_aura_impulse_context,
-    judge_aura_impulse,
-    normalize_aura_impulse,
-)
-from .judges.turn import (
-    apply_aura_impulse_to_response_mode,
-    format_turn_judgement_context,
-    judge_turn,
-    normalize_turn_judgement,
-)
-from .tools.registry import CHAT_TOOLS
-from .tools.world_policy import world_turn_finished
-from app.core.memory.service import save_memory
-from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 
 SHORT_TERM_MESSAGE_WINDOW = 24
 AURA_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -128,61 +108,12 @@ class AuraState(TypedDict, total=False):
     pending_approvals: list[dict[str, Any]]
 
 
-tools = CHAT_TOOLS
-
-llm_with_tools = llm.bind_tools(tools)
-
-tool_node = ToolNode(tools)
-
-
 @traceable(name="aura_prepare_context")
 def prepare_context(state: AuraState) -> AuraState:
-    """把附件转换成提示词上下文，并初始化按需记忆检索说明。"""
+    """把本轮附件转换成模型可读的文字上下文。"""
 
     attachment_context = format_attachment_context(state.get("attachments", []))
-    return {
-        "memory_context": (
-            "本轮没有预加载历史记忆。"
-            "只有当前回复确实需要过去信息时，才调用 search_memory_tool。"
-        ),
-        "attachment_context": attachment_context,
-    }
-
-
-@traceable(name="aura_turn_judge_node")
-def turn_judge(state: AuraState) -> AuraState:
-    """规范化预计算的回合判断，向后续节点提供情绪和回复模式。"""
-
-    query = latest_human_text(state.get("messages", []))
-    turn_judgement = normalize_turn_judgement(state.get("turn_judgement"), query)
-    return {
-        "emotion": turn_judgement["emotion"],
-        "turn_judgement": turn_judgement,
-    }
-
-
-@traceable(name="aura_impulse_judge_node")
-def aura_impulse_judge(state: AuraState) -> AuraState:
-    """在用户回合判断之后，生成玲凌自身的行动倾向并合并回复模式。"""
-
-    query = latest_human_text(state.get("messages", []))
-    impulse = judge_aura_impulse(
-        query,
-        state.get("messages", [])[:-1],
-        state.get("turn_judgement"),
-        state.get("relationship_snapshot"),
-        state.get("aura_internal_state"),
-        state.get("time_context"),
-        state.get("relationship_dynamics"),
-    )
-    impulse = normalize_aura_impulse(impulse)
-    return {
-        "aura_impulse": impulse,
-        "turn_judgement": apply_aura_impulse_to_response_mode(
-            state.get("turn_judgement") or {},
-            impulse,
-        ),
-    }
+    return {"attachment_context": attachment_context}
 
 
 @traceable(name="aura_final_response_generation")
@@ -199,7 +130,7 @@ def call_model(state: AuraState) -> AuraState:
     )
     try:
         response = invoke_model_with_retry(
-            (llm if world_turn_finished(state) else llm_with_tools).invoke,
+            llm.invoke,
             messages,
             operation="主对话",
         )
@@ -212,28 +143,6 @@ def call_model(state: AuraState) -> AuraState:
                 '"presence":{"expression":"thinking","motion":"idle","intensity":0}}'
             )
         )
-    tool_calls = getattr(response, "tool_calls", None) or []
-    if tool_calls:
-        logging.info(
-            "Aura 请求调用工具 tools=%s",
-            [tool_call.get("name") for tool_call in tool_calls],
-        )
-    else:
-        logging.info("Aura 未调用工具，直接生成回复")
-
-    if tool_calls:
-        return {
-            "messages": [response],
-            "relationship_actions": {
-                "turn_id": state.get("turn_id"),
-                "items": [],
-            },
-            "relationship_item_usages": {
-                "turn_id": state.get("turn_id"),
-                "items": [],
-            },
-        }
-
     draft_content = message_content_to_text(getattr(response, "content", ""))
     parsed_payload = try_parse_structured_reply_payload(draft_content)
     if parsed_payload is not None:
@@ -273,101 +182,35 @@ def call_model(state: AuraState) -> AuraState:
 
 
 def build_runtime_system_prompt(state: AuraState) -> str:
-    """组合静态人设、动态时间/情绪/记忆上下文和最终输出格式要求。"""
+    """组合基础人设、时间、情绪和本轮附件上下文。"""
 
     return "\n\n".join(
         part for part in (
             SYSTEM_PROMPT.strip(),
-            FEW_SHOT_EXAMPLES.strip(),
             format_time_context(state.get("time_context")),
-            format_self_changelog_context(state.get("self_changelog_context")),
-            format_location_context(state.get("city_adcode")),
             "【情绪上下文】\n" + format_emotion_context(state.get("emotion")),
-            "【本轮判断】\n" + format_turn_judgement_context(state.get("turn_judgement")),
-            format_aura_internal_state_prompt(state.get("aura_internal_state")),
-            format_relationship_dynamics_prompt(state.get("relationship_dynamics")),
-            "【玲凌当前冲动】\n" + format_aura_impulse_context(state.get("aura_impulse")),
-            "【可引用记忆】\n" + (state.get("memory_context") or "没有可引用记忆。"),
             "【本轮附件】\n" + (state.get("attachment_context") or "本轮没有附件。"),
-            state.get("relationship_context") or "",
-            state.get("continuity_state_context") or "",
-            STRUCTURED_REPLY_PROMPT.strip(),
         )
         if part
     )
 
 
-def should_continue(state: AuraState) -> str:
-    """根据最后一条 AI 消息是否包含工具调用，决定进入 tools 节点或结束。"""
-
-    messages = state.get("messages") or []
-    if not messages:
-        return END
-
-    last_message = messages[-1]
-    if getattr(last_message, "tool_calls", None):
-        return "tools"
-    return END
-
-
-def build_intent_subgraph() -> CompiledStateGraph:
-    """构建负责上下文准备、情绪、关系和记忆候选判断的子图。"""
-
-    workflow = StateGraph(AuraState)
-    workflow.add_node("prepare_context", prepare_context)
-    workflow.add_node("turn_judge", turn_judge)
-    workflow.add_node("aura_impulse_judge", aura_impulse_judge)
-    workflow.set_entry_point("prepare_context")
-    workflow.add_edge("prepare_context", "turn_judge")
-    workflow.add_edge("turn_judge", "aura_impulse_judge")
-    workflow.add_edge("aura_impulse_judge", END)
-    return workflow.compile()
-
-
-def build_dialogue_subgraph() -> CompiledStateGraph:
-    """构建负责工具调用与自然语言回复的对话智能体子图。"""
-
-    workflow = StateGraph(AuraState)
-    workflow.add_node("chat", call_model)
-    workflow.add_node("tools", tool_node)
-    workflow.set_entry_point("chat")
-    workflow.add_conditional_edges("chat", should_continue)
-    workflow.add_edge("tools", "chat")
-    return workflow.compile()
-
-
-@traceable(name="aura_experience_director")
-def experience_director(state: AuraState) -> AuraState:
-    """把对话结果映射成受限的 Live2D 状态，不让模型直接驱动资源名称。"""
-
-    return {
-        "live2d_state": resolve_live2d_presence(
-            state.get("reply_presence"),
-            state.get("turn_judgement"),
-        )
-    }
-
-
 def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
-    """构建 Aura 协调图：对话子图后接体验导演节点。
+    """构建带持久化短期上下文的单节点聊天图。
 
     Args:
         checkpointer: 用于持久化每个用户线程状态的 LangGraph checkpointer。
 
     Returns:
-        已连接多角色子图和体验状态节点的可执行图。
+        可通过 LangGraph checkpointer 按用户线程恢复消息历史的图。
     """
 
-    intent_subgraph = build_intent_subgraph()
-    dialogue_subgraph = build_dialogue_subgraph()
     workflow = StateGraph(AuraState)
-    workflow.add_node("intent_specialist", intent_subgraph)
-    workflow.add_node("dialogue_agent", dialogue_subgraph)
-    workflow.add_node("experience_director", experience_director)
-    workflow.set_entry_point("intent_specialist")
-    workflow.add_edge("intent_specialist", "dialogue_agent")
-    workflow.add_edge("dialogue_agent", "experience_director")
-    workflow.add_edge("experience_director", END)
+    workflow.add_node("prepare_context", prepare_context)
+    workflow.add_node("chat", call_model)
+    workflow.set_entry_point("prepare_context")
+    workflow.add_edge("prepare_context", "chat")
+    workflow.add_edge("chat", END)
     return workflow.compile(checkpointer=checkpointer)
 
 
@@ -450,12 +293,13 @@ def aura_agent(
             now=request_started_at,
         )
     continuity_state = load_continuity_state_context_sync(user_id, now=request_started_at)
-    turn_judgement = judge_turn(
-        human_prompt,
-        emotion_state,
-        recent_messages=previous_messages,
-        relationship_context=relationship_context["judge_context"],
-    )
+    turn_judgement = {
+        "emotion": emotion_state or {},
+        "interaction": {},
+        "memory_candidate": {},
+        "risk_signal": {"requires_safety_gate": False},
+        "response_mode": "natural_chat",
+    }
     if is_branch:
         relationship_state = project_without_database(
             human_prompt,
