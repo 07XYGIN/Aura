@@ -82,7 +82,6 @@ def create_branch_from_messages(user_id: str, messages: list) -> str | None:
             {
                 "messages": messages,
                 "user_id": user_id,
-                "pending_approvals": [],
             },
         )
     except Exception:

@@ -7,7 +7,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from app.core.agent import approval
 from app.core.agent.graph import agent_graph, agent_runtime
 from app.core.config import (
     AURA_CORS_ORIGINS,
@@ -20,8 +19,6 @@ from app.core.exceptions import (
 )
 from app.core.logging_config import configure_logging
 from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
-from app.db.schema_audit import assert_schema_ready
-from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
     admin,
@@ -38,23 +35,17 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期中的 LangGraph 检查点和主动消息调度器。
+    """管理应用生命周期中的 LangGraph 检查点。
 
-    启动时初始化 PostgreSQL 检查点表并构建全局 Agent 图；关闭时先停止后台
-    调度任务，再释放检查点连接。
+    启动时初始化 PostgreSQL 检查点表并构建全局 Agent 图，关闭时释放连接。
     """
-    logging.info("正在初始化检查点并核对数据库结构")
+    logging.info("正在初始化 LangGraph 检查点")
 
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
         checkpointer.setup()
         agent_runtime.graph = agent_graph.build_graph(checkpointer)
-        approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")
-        proactive_stop_event = start_proactive_scheduler()
-        try:
-            yield
-        finally:
-            await stop_proactive_scheduler(proactive_stop_event)
+        yield
 
     logging.info("程序关闭")
 

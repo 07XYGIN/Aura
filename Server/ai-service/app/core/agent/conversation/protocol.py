@@ -10,9 +10,6 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
-MemoryScope = Literal["short", "mid", "long"]
-
-
 class SSEEnvelope(BaseModel):
     """Versioned event contract used by new clients."""
 
@@ -32,9 +29,6 @@ _V1_EVENT_TYPES = {
     "assistant_message": "message.created",
     "emotion": "emotion.updated",
     "memory_reference": "memory.referenced",
-    "memory_candidate": "memory.candidate",
-    "live2d_state": "presence.updated",
-    "approval_required": "approval.required",
     "conversation_branch": "conversation.branched",
     "activity_state": "activity.updated",
     "error": "error",
@@ -113,18 +107,6 @@ def emotion_event(emotion_state: dict[str, Any]) -> dict[str, Any]:
     return {"event": "emotion", "type": "emotion", "emotion": emotion_state}
 
 
-def live2d_state_event(presence: dict[str, Any]) -> dict[str, Any]:
-    """构造经过后端白名单约束的 Live2D 表情事件。"""
-
-    return {"event": "live2d_state", "type": "live2d_state", "presence": presence}
-
-
-def approval_required_event(approval: dict[str, Any]) -> dict[str, Any]:
-    """通知客户端一条持久化副作用正在等待用户明确决定。"""
-
-    return {"event": "approval_required", "type": "approval_required", "approval": approval}
-
-
 def conversation_branch_event(branch_id: str, source_message_id: str | None = None) -> dict[str, Any]:
     """通知客户端后续消息已写入新的 LangGraph 对话分支。"""
 
@@ -133,34 +115,6 @@ def conversation_branch_event(branch_id: str, source_message_id: str | None = No
         "type": "conversation_branch",
         "branchId": branch_id,
         "sourceMessageId": source_message_id,
-    }
-
-
-def memory_candidate_event(candidate: dict[str, Any]) -> dict[str, Any]:
-    """构造记忆候选事件，供客户端观察本轮记忆判断。
-
-    条件消息候选可能包含尚未打开的正文和口令，只能向客户端返回类型、标题和
-    授权摘要。真正创建结果由条件消息 API 查询；SSE 不能成为绕过密封边界的
-    第二条数据通道。
-    """
-
-    public_candidate = dict(candidate)
-    raw_conditional_messages = candidate.get("conditional_messages")
-    public_candidate["conditional_messages"] = [
-        {
-            "authorized": bool(item.get("authorized", True)),
-            "message_type": item.get("messageType") or item.get("message_type"),
-            "condition_type": item.get("conditionType") or item.get("condition_type"),
-            "title": item.get("title"),
-        }
-        for item in raw_conditional_messages or []
-        if isinstance(item, dict)
-    ]
-
-    return {
-        "event": "memory_candidate",
-        "type": "memory_candidate",
-        "memory_candidate": public_candidate,
     }
 
 

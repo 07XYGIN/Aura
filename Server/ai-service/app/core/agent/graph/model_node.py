@@ -23,7 +23,7 @@ from .runtime_prompt import build_runtime_system_prompt
 
 
 def generate_chat_response(state: dict[str, Any]) -> dict[str, Any]:
-    """调用模型并整理本轮回复及结构化副作用。"""
+    """调用模型并整理本轮回复。"""
 
     system_prompt = build_runtime_system_prompt(state)
     messages = [SystemMessage(content=system_prompt)] + trim_short_term_messages(state["messages"])
@@ -38,11 +38,7 @@ def generate_chat_response(state: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         logging.exception("Aura 主模型在重试后仍不可用，返回安全降级回复")
         response = AIMessage(
-            content=(
-                '{"messages":["我这边刚刚没有接上，等一下再试一次。"],'
-                '"threadActions":[],"itemUsages":[],'
-                '"presence":{"expression":"thinking","motion":"idle","intensity":0}}'
-            )
+            content='{"messages":["我这边刚刚没有接上，等一下再试一次。"]}'
         )
 
     draft_content = message_content_to_text(getattr(response, "content", ""))
@@ -60,19 +56,4 @@ def generate_chat_response(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "messages": reply_messages,
         "last_reply_batch": reply_batch,
-        "reply_presence": parsed_payload.presence.model_dump() if parsed_payload else {},
-        "relationship_actions": {
-            "turn_id": state.get("turn_id"),
-            "items": [
-                action.model_dump()
-                for action in (parsed_payload.thread_actions if parsed_payload else [])
-            ],
-        },
-        "relationship_item_usages": {
-            "turn_id": state.get("turn_id"),
-            "items": [
-                usage.model_dump()
-                for usage in (parsed_payload.item_usages if parsed_payload else [])
-            ],
-        },
     }

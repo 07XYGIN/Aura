@@ -4,31 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
-
-from .presence import Live2DPresence
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 MAX_REPLY_MESSAGES = 4
 FALLBACK_REPLY = "我刚才有点卡住了，你再说一遍？"
-
-
-class StructuredThreadAction(BaseModel):
-    """主回复确实接续关系线程后返回的受限状态动作。"""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    thread_ref: str = Field(alias="threadRef", pattern=r"^T(?:[1-9]|1[0-2])$")
-    action: Literal["follow_up"]
-
-
-class StructuredItemUsage(BaseModel):
-    """主回复实际复用私人语言或关系物件后的内部使用回执。"""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    item_ref: str = Field(alias="itemRef", pattern=r"^K(?:[1-9]|1[0-2])$")
 
 
 class StructuredReply(BaseModel):
@@ -37,9 +18,6 @@ class StructuredReply(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     messages: list[str]
-    thread_actions: list[StructuredThreadAction] = Field(default_factory=list, alias="threadActions")
-    item_usages: list[StructuredItemUsage] = Field(default_factory=list, alias="itemUsages")
-    presence: Live2DPresence = Field(default_factory=Live2DPresence)
 
     @field_validator("messages", mode="before")
     @classmethod
@@ -70,56 +48,6 @@ class StructuredReply(BaseModel):
 
         return messages
 
-    @field_validator("thread_actions", mode="before")
-    @classmethod
-    def clean_thread_actions(cls, value: Any) -> list[StructuredThreadAction]:
-        """逐条过滤非法引用和动作，不让附加字段破坏正常文本回复。"""
-
-        if not isinstance(value, list):
-            return []
-        actions: list[StructuredThreadAction] = []
-        seen: set[tuple[str, str]] = set()
-        for item in value[:12]:
-            try:
-                action = StructuredThreadAction.model_validate(item)
-            except ValidationError:
-                continue
-            key = (action.thread_ref, action.action)
-            if key not in seen:
-                actions.append(action)
-                seen.add(key)
-        return actions
-
-    @field_validator("item_usages", mode="before")
-    @classmethod
-    def clean_item_usages(cls, value: Any) -> list[StructuredItemUsage]:
-        """过滤非法知识引用并去重，避免模型伪造数据库对象。"""
-
-        if not isinstance(value, list):
-            return []
-        usages: list[StructuredItemUsage] = []
-        seen: set[str] = set()
-        for item in value[:12]:
-            try:
-                usage = StructuredItemUsage.model_validate(item)
-            except ValidationError:
-                continue
-            if usage.item_ref not in seen:
-                usages.append(usage)
-                seen.add(usage.item_ref)
-        return usages
-
-    @field_validator("presence", mode="before")
-    @classmethod
-    def clean_presence(cls, value: Any) -> Live2DPresence:
-        """无效表情侧信道不能让文本回复整体解析失败。"""
-
-        try:
-            return Live2DPresence.model_validate(value)
-        except ValidationError:
-            return Live2DPresence()
-
-
 def parse_structured_reply(raw_content: Any) -> list[str]:
     """返回可展示消息列表；JSON 无法解析时把原文本作为单条回复。"""
 
@@ -142,7 +70,7 @@ def try_parse_structured_reply(raw_content: Any) -> list[str] | None:
 
 
 def try_parse_structured_reply_payload(raw_content: Any) -> StructuredReply | None:
-    """解析完整结构化回复，保留经过白名单校验的关系线程动作。"""
+    """解析完整结构化回复。"""
 
     text = normalize_text(raw_content)
     if not text:
