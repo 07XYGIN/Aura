@@ -183,9 +183,6 @@ class TurnRequest(BaseModel):
     message: str = ""
     client_message_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list)
-    city_adcode: str | None = None
-    branch_id: str | None = None
-    retry_message_id: str | None = None
 
 
 class ActivityResult(BaseModel):

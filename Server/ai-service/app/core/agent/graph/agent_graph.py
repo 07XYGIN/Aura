@@ -5,21 +5,18 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Checkpointer
-from langsmith import traceable
 
 from app.core.attachment_store import format_attachment_context
 from ..schemas.state import AuraState
 from .model_node import generate_chat_response
 
 
-@traceable(name="aura_prepare_context")
 def prepare_context(state: AuraState) -> AuraState:
     """把本轮附件转换成模型可读的文字上下文。"""
 
     return {"attachment_context": format_attachment_context(state.get("attachments", []))}
 
 
-@traceable(name="aura_final_response_generation")
 def call_model(state: AuraState) -> AuraState:
     """调用聊天模型，并把最终文本转换成可分批发送的 AIMessage。"""
 
@@ -27,7 +24,7 @@ def call_model(state: AuraState) -> AuraState:
 
 
 def build_graph(checkpointer: Checkpointer) -> CompiledStateGraph:
-    """构建带持久化短期上下文的单节点聊天图。
+    """构建带持久化短期上下文的聊天图。
 
     Args:
         checkpointer: 用于持久化每个用户线程状态的 LangGraph checkpointer。

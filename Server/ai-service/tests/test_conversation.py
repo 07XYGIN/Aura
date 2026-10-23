@@ -21,28 +21,23 @@ class ConversationTests(TestCase):
                 patch(
                     "app.core.agent.graph.model_node.llm",
                     new=Mock(
-                        invoke=Mock(return_value=AIMessage(content='{"messages":["你好"]}'))
+                        invoke=Mock(return_value=AIMessage(content="你好"))
                     ),
                 ),
                 patch(
                     "app.core.agent.conversation.conversation.load_attachments",
                     return_value=[],
                 ),
-                patch(
-                    "app.core.agent.conversation.reply.store_reply_timing_state",
-                    return_value=True,
-                ),
             ):
                 events = list(
                     aura_agent(
                         "你好",
                         str(uuid4()),
-                        emotion_state={},
                         client_message_id="test-turn",
                     )
                 )
         finally:
             agent_runtime.graph = previous_graph
 
-        assistant_events = [event for event in events if event.get("event") == "assistant_message"]
-        self.assertEqual([event["content"] for event in assistant_events], ["你好"])
+        content_events = [event for event in events if event.get("event") == "content"]
+        self.assertEqual("".join(event["content"] for event in content_events), "你好")

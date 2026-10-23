@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.core.agent.conversation.conversation import aura_agent, retry_aura_agent
+from app.core.agent.conversation.conversation import aura_agent
 from app.core.agent.conversation.protocol import (
     SSEProtocolV1,
     error_event,
@@ -17,7 +17,6 @@ from app.core.agent.conversation.protocol import (
 )
 from app.core.agent.schemas.models import TurnRequest
 from app.core.auth_store import get_current_user_id
-from app.core.emotion import derive_emotion_state
 from app.schemas.request import MessageRequest
 
 
@@ -32,22 +31,12 @@ def event_generator(request: TurnRequest) -> Iterator[str]:
     yield protocol.encode(turn_lifecycle_event("started"))
 
     try:
-        if request.retry_message_id:
-            events = retry_aura_agent(
-                request.user_id,
-                request.retry_message_id,
-                request.branch_id,
-            )
-        else:
-            events = aura_agent(
-                request.message,
-                request.user_id,
-                derive_emotion_state(request.message).to_dict(),
-                request.client_message_id,
-                request.attachment_ids,
-                request.city_adcode,
-                request.branch_id,
-            )
+        events = aura_agent(
+            request.message,
+            request.user_id,
+            request.client_message_id,
+            request.attachment_ids,
+        )
         for event in events:
             yield protocol.encode(event)
     except Exception:
@@ -76,9 +65,6 @@ async def send_message(
         message=msg.message,
         client_message_id=msg.client_message_id,
         attachment_ids=msg.attachment_ids,
-        city_adcode=msg.city_adcode,
-        branch_id=msg.branch_id,
-        retry_message_id=msg.retry_message_id,
     )
     return StreamingResponse(
         event_generator(request),
