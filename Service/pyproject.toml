@@ -1,0 +1,17 @@
+[project]
+name = "fastapi-basic"
+version = "0.1.0"
+description = "This is Python FastAPI template"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiomysql>=0.3.2",
+    "fastapi[all]>=0.141.1",
+    "pwdlib[argon2,bcrypt]>=0.3.0",
+    "pydantic-settings>=2.14.2",
+    "pydantic[email]>=2.13.4",
+    "pyjwt>=2.13.0",
+    "redis>=8.1.0",
+    "sqlalchemy>=2.0.51",
+    "uvicorn>=0.51.0",
+]
