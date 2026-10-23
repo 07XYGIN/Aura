@@ -1,6 +1,7 @@
 'use client'
 
 import { CircleUserRound } from 'lucide-react'
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { aruaNavItems } from '@/components/arua/data'
 import { RouteTransitionLink } from '@/components/arua/route-transition-link'
@@ -33,6 +34,10 @@ export function AruaAppShell({
           style={{ viewTransitionName: 'aura-sidebar' }}
         >
           <div className="flex h-full flex-col">
+            <div className="flex items-center gap-3 px-2">
+              <Image src="/aura-mark.svg" alt="Aura" width={44} height={44} priority />
+              <span className="text-xl font-semibold text-[var(--aura-text)]">Aura</span>
+            </div>
             {/* <div className="aura-panel rounded-[2rem] px-5 py-6 shadow-[0_24px_64px_-48px_var(--aura-glow)]">
               <p className="text-xs tracking-[0.36em] text-[var(--aura-text-soft)] uppercase">
                 {t('app.companionConsole')}
@@ -53,7 +58,7 @@ export function AruaAppShell({
               </p>
             </div> */}
 
-            <nav className="aura-scrollbar mt-4 grid grid-cols-4 gap-2 overflow-x-auto pb-1 lg:grid-cols-1 lg:gap-3 lg:pb-0">
+            <nav className="aura-scrollbar mt-6 grid grid-cols-4 gap-2 overflow-x-auto pb-1 lg:grid-cols-1 lg:gap-3 lg:pb-0">
               {aruaNavItems.map((item, index) => {
                 const Icon = item.icon
                 const isActive = item.key === active
