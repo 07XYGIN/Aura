@@ -2,20 +2,35 @@
 
 import type { ChangeEvent, ComponentProps, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
-import { LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
+import { Cake, KeyRound, LoaderCircle, LockKeyhole, Mail, User } from 'lucide-react'
 import { user } from '@/apis/user'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
-import type { AuthFormValues, AuthMode, SexOption} from '@/types/auth'
+import type { AuthFormValues, AuthMode, SexOption, UserSex } from '@/types/auth'
 import { toast } from 'sonner'
 import { useUserStore } from '@/store/user'
 import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from '@/lib/i18n'
 import { setAuthTokenCookie } from '@/lib/auth-token'
+const sexOptions: SexOption[] = [
+  { label: 'Male', value: '1' },
+  { label: 'Female', value: '0' },
+]
 
+const toUserSex = (value?: string): UserSex | undefined => {
+  if (value === '1') {
+    return 1
+  }
+  if (value === '0') {
+    return 0
+  }
+
+  return undefined
+}
 
 export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
   const { t } = useI18n()
@@ -25,13 +40,15 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
     username: '',
     password: '',
     email: '',
-    birthday:''
+    age: '',
+    sex: '',
+    inviteCode: '',
   })
   const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
   const searchParams = useSearchParams();
   const authReason = searchParams.get('reason');
-  
+
   useEffect(() => {
     if (authReason === 'missing') {
       toast.error('请先登录', {
@@ -84,6 +101,9 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   username: formData.username ?? '',
                   password: formData.password ?? '',
                   email: formData.email ?? '',
+                  sex: toUserSex(formData.sex),
+                  age: formData.age ? Number(formData.age) : undefined,
+                  inviteCode: formData.inviteCode ?? '',
               }
             : {
                   username: formData.username ?? '',
@@ -197,7 +217,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   />
                 </Field>
 
-                {/* <Field orientation="horizontal">
+                <Field orientation="horizontal">
                   <Cake />
                   <Input
                     type="number"
@@ -218,7 +238,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                     value={formData.inviteCode ?? ''}
                     onChange={handleChange}
                   />
-                </Field> */}
+                </Field>
               </div>
             ) : null}
 
@@ -233,7 +253,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
               />
             </Field>
 
-            {/* {mode === 'register' ? (
+            {mode === 'register' ? (
               <RadioGroup
                 value={formData.sex ?? ''}
                 onValueChange={(value) => handleSexChange(value as AuthFormValues['sex'])}
@@ -265,7 +285,7 @@ export function LoginForm({ className, ...props }: ComponentProps<'div'>) {
                   )
                 })}
               </RadioGroup>
-            ) : null} */}
+            ) : null}
 
             {mode === 'login' ? (
               <div className="flex flex-col gap-3 pt-1 text-sm text-[var(--aura-text-muted)] sm:flex-row sm:items-center sm:justify-between">

@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import time
+from collections.abc import Mapping
+from typing import Any
+
+from sqlalchemy import event
+from sqlalchemy import inspect as sqlalchemy_inspect
+
+logger = logging.getLogger("aura.dev")
+sql_logger = logging.getLogger("aura.sql")
+http_logger = logging.getLogger("aura.http")
+
+SENSITIVE_KEYS = {
+    "authorization",
+    "access_token",
+    "token",
+    "password",
+    "passphrase",
+    "unlock_secret_hash",
+    "content",
+    "payload",
+    "dataBase64",
+    "data_base64",
+}
+MAX_VALUE_LENGTH = int(os.getenv("AURA_LOG_VALUE_MAX_LENGTH", "1000"))
+MAX_RESULT_ROWS = int(os.getenv("AURA_SQL_RESULT_MAX_ROWS", "50"))
+SQL_VERBOSE = os.getenv("AURA_SQL_VERBOSE", "false").strip().lower() == "true"
+
+
+def configure_logging() -> None:
+    """初始化全局中文日志格式，并降低第三方 HTTP、SQL 日志噪声。"""
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("AURA_LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s.%(msecs)03d %(levelname)-5s [%(name)s] %(filename)s:%(lineno)d - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def install_sql_logging(engine: Any) -> None:
+    """为 SQLAlchemy 引擎安装一次 SQL 执行耗时与错误监听器。
+
+    Args:
+        engine: 同步或异步 SQLAlchemy 引擎；异步引擎会使用其 ``sync_engine``。
+
+    Side Effects:
+        在引擎上注册事件监听器，并设置安装标记防止重复注册。
+    """
+    sync_engine = getattr(engine, "sync_engine", engine)
+    if getattr(sync_engine, "_aura_sql_logging_installed", False):
+        return
+
+    @event.listens_for(sync_engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        """记录 SQL 开始时间，并按详细级别输出语句和脱敏参数。"""
+        context._aura_query_start_time = time.perf_counter()
+        sql_logger.info("准备执行 SQL: %s", normalize_sql(statement))
+        if SQL_VERBOSE:
+            sql_logger.info("SQL 参数: %s", to_log_text(sanitize_sql_parameters(statement, parameters)))
+
+    @event.listens_for(sync_engine, "after_cursor_execute")
+    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        """在 SQL 完成后记录影响行数和执行耗时。"""
+        started_at = getattr(context, "_aura_query_start_time", None)
+        elapsed_ms = (time.perf_counter() - started_at) * 1000 if started_at else 0
+        rowcount = cursor.rowcount
+        sql_logger.info("SQL 执行完成 affected_rows=%s elapsed_ms=%.2f", rowcount, elapsed_ms)
+
+    @event.listens_for(sync_engine, "handle_error")
+    def handle_error(exception_context):
+        """记录 SQL 异常；详细模式额外输出参数。"""
+        if SQL_VERBOSE:
+            sql_logger.exception(
+                "SQL 执行失败 statement=%s params=%s",
+                normalize_sql(str(exception_context.statement or "")),
+                to_log_text(
+                    sanitize_sql_parameters(
+                        str(exception_context.statement or ""),
+                        exception_context.parameters,
+                    )
+                ),
+            )
+        else:
+            sql_logger.exception("SQL 执行失败 statement=%s", normalize_sql(str(exception_context.statement or "")))
+
+    setattr(sync_engine, "_aura_sql_logging_installed", True)
+
+
+def log_sql_result(result: Any, elapsed_ms: float) -> Any:
+    """在详细模式预览 SQLAlchemy 结果，同时返回仍可消费的结果对象。
+
+    ``freeze`` 会消费原始结果，因此成功冻结后通过 ``frozen()`` 返回一个新结果；
+    不支持冻结的结果保持原样。
+    """
+    if not SQL_VERBOSE:
+        return result
+    try:
+        frozen = result.freeze()
+    except NotImplementedError:
+        sql_logger.info("SQL 结果不可预览 elapsed_ms=%.2f", elapsed_ms)
+        return result
+
+    rows = list(frozen.data)
+    preview = rows[:MAX_RESULT_ROWS]
+    sql_logger.info(
+        "SQL 查询完成 total_rows=%s preview=%s elapsed_ms=%.2f",
+        len(rows),
+        to_log_text(preview),
+        elapsed_ms,
+    )
+    return frozen()
+
+
+def sanitize_sql_parameters(statement: str, parameters: Any) -> Any:
+    """根据 INSERT 列顺序隐藏位置参数中的敏感字段值。"""
+    if isinstance(parameters, Mapping):
+        return {
+            key: "***" if str(key) in SENSITIVE_KEYS else value
+            for key, value in parameters.items()
+        }
+    if not isinstance(parameters, (list, tuple)):
+        return parameters
+
+    if parameters and all(isinstance(row, (list, tuple)) for row in parameters):
+        return [sanitize_sql_parameters(statement, row) for row in parameters]
+
+    sensitive_indexes = sensitive_parameter_indexes(statement)
+    if not sensitive_indexes:
+        return parameters
+
+    sanitized = list(parameters)
+    for index in sensitive_indexes:
+        if 0 <= index < len(sanitized):
+            sanitized[index] = "***"
+    return sanitized
+
+
+def sensitive_parameter_indexes(statement: str) -> set[int]:
+    """从简单 INSERT 语句中找出敏感列对应的位置参数索引。"""
+    match = re.search(
+        r"INSERT\s+INTO\s+\w+\s*\((?P<columns>[^)]+)\)\s+VALUES",
+        statement,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return set()
+
+    columns = [column.strip().strip('"').split(".")[-1] for column in match.group("columns").split(",")]
+    return {index for index, column in enumerate(columns) if column in SENSITIVE_KEYS}
+
+
+def normalize_sql(statement: str) -> str:
+    """将多行 SQL 和连续空白压缩成单行日志文本。"""
+    return " ".join(statement.split())
+
+
+def to_log_text(value: Any) -> str:
+    """将任意值脱敏、截断并序列化为适合日志输出的文本。"""
+    try:
+        return json.dumps(to_log_value(value), ensure_ascii=False, default=str)
+    except TypeError:
+        return truncate(repr(value))
+
+
+def to_log_value(value: Any, key: str | None = None) -> Any:
+    """递归把映射、序列和 ORM 对象转换为脱敏的可日志化结构。"""
+    if key and key in SENSITIVE_KEYS:
+        return "***"
+    if isinstance(value, Mapping):
+        return {str(k): to_log_value(v, str(k)) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [to_log_value(item) for item in value]
+    if hasattr(value, "_mapping"):
+        return to_log_value(dict(value._mapping))
+    if hasattr(value, "__table__"):
+        try:
+            mapper = sqlalchemy_inspect(value).mapper
+            return {
+                attr.columns[0].name: to_log_value(
+                    getattr(value, attr.key, None),
+                    attr.columns[0].name,
+                )
+                for attr in mapper.column_attrs
+            }
+        except Exception:
+            return {
+                column.name: to_log_value(getattr(value, column.key, None), column.name)
+                for column in value.__table__.columns
+            }
+    if isinstance(value, str):
+        return truncate(value)
+    return value
+
+
+def truncate(value: str) -> str:
+    """将过长日志文本截断，并在末尾标记省略的字符数。"""
+    if len(value) <= MAX_VALUE_LENGTH:
+        return value
+    return f"{value[:MAX_VALUE_LENGTH]}...<truncated {len(value) - MAX_VALUE_LENGTH} chars>"

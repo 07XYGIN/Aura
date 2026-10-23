@@ -1,0 +1,124 @@
+# ==========================
+# Python FastAPI .gitignore
+# ==========================
+
+# ---- Python 编译缓存 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+ENV/
+.env/
+virtualenv/
+.virtualenv/
+Pipfile.lock          # 视团队习惯决定是否提交
+
+# ---- 包管理 ----
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# ---- 环境变量 / 配置 ----
+.env
+.env.*
+!.env.example
+*.cfg.local
+config/local.py
+config/local.yaml
+
+# ---- FastAPI / Uvicorn ----
+# 上传文件目录
+uploads/
+media/
+static/collected/
+
+# ---- 数据库 ----
+*.db
+*.sqlite3
+*.sqlite
+dump.rdb
+alembic/versions/__pycache__/
+
+# ---- 测试 ----
+.pytest_cache/
+.tox/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.coveragerc
+nosetests.xml
+test-results/
+junit*.xml
+
+# ---- 类型检查 ----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# ---- Jupyter Notebook ----
+.ipynb_checkpoints/
+*.ipynb
+
+# ---- 日志 ----
+logs/
+*.log
+*.log.*
+log/
+
+# ---- IDE - VS Code ----
+.vscode/
+.devcontainer/
+
+# ---- IDE - PyCharm ----
+.idea/
+*.iml
+
+# ---- IDE - Vim / Emacs ----
+*.swp
+*.swo
+*~
+\#*\#
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时文件 ----
+*.tmp
+*.bak
+*.orig
+
+# ---- Docker ----
+docker-compose.override.yml
+
+# ---- 安全敏感 ----
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+\learn

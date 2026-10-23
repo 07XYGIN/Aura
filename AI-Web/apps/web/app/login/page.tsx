@@ -1,6 +1,5 @@
 import { LoginForm } from '@/components/login/login-from'
 import { RouteTransitionLink } from '@/components/arua/route-transition-link'
-import Image from 'next/image'
 
 export default function LoginPage() {
   return (
@@ -11,8 +10,9 @@ export default function LoginPage() {
       </div>
       <div className="relative z-10 flex w-full max-w-lg flex-col gap-10">
         <RouteTransitionLink href="/" className="flex flex-col items-center gap-3 text-center">
-          <Image src="/aura-mark.svg" alt="Aura" width={88} height={88} priority />
-          <h1 className="text-4xl font-bold text-[var(--aura-primary)] sm:text-5xl">Aura</h1>
+          <h1 className="text-5xl font-bold tracking-tight text-[var(--aura-primary)] sm:text-6xl">
+            Arua
+          </h1>
           <p className="text-xl text-[var(--aura-text-muted)]">Always here for you</p>
         </RouteTransitionLink>
         <LoginForm />

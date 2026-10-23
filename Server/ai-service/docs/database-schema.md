@@ -1,0 +1,189 @@
+# 当前 PostgreSQL 表结构
+
+数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
+
+服务启动时复用 `app/db/schema_audit.py` 检查真实列、类型、可空性、默认值、索引、
+CHECK 约束内容和 Alembic revision；不一致时停止启动并报告具体差异。
+命令行 `uv run python tools/check_db_schema.py` 使用相同检查。约束比较由 PostgreSQL
+在空临时表上规范化表达式，不改写业务数据。
+鉴权也直接复用 `Users.__table__`，不再维护一份缺少字段和长度限制的独立 `users` 定义。
+旧自更新记录兼容入口只校验字段，不再在请求过程中自动执行 DDL；业务结构变更统一由迁移负责。
+
+数据库变更验证命令（从 `Server/ai-service` 运行）：
+
+```powershell
+uv run alembic upgrade head
+uv run python tools/check_db_schema.py
+uv run python tools/verify_db_contract.py
+```
+
+最后一项需要本机账号具有建库权限，创建随机命名的临时库验证唯一 `main.sql`、迁移升降级、
+实际 ORM 写入以及缺列/约束漂移检测；结束自动删除该临时库，不改写用户数据。
+
+revision `20260920_0004` 将 `aura_internal_state.jealousy` 与状态引擎和 Pydantic 统一为
+`none / low / medium / high`。强度高表示内部状态，不代表必须加强对用户的表达。
+
+## 业务模型表
+
+| 表 | 功能 | 代码入口 |
+| --- | --- | --- |
+| `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
+| `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
+| `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
+| `conditional_message` | 时间胶囊与秘密保险箱的密封正文、触发条件和交付状态 | `app/core/continuity/capsules.py` |
+| `conditional_message_event` | 关键词、项目、GitHub 和口令事件的幂等 inbox | `app/core/continuity/capsules.py` |
+| `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
+| `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
+| `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
+| `relationship_chapter` | 由真实重要关系事件形成的低频时间线章节 | `app/core/continuity/` |
+| `aura_internal_state` | 玲凌持续的依恋、联系欲望和当前表达倾向投影 | `app/core/continuity/aura_state.py` |
+| `relationship_dynamics` | 独立保存关系阶段、当前状况和关系语气 | `app/core/continuity/aura_state.py` |
+| `relationship_event` | 示爱、冲突、修复、承诺、离开与返回等不可变关系事实 | `app/core/continuity/aura_state.py` |
+| `affect_state` | 醋意、受伤、想念等可强化、衰减和解决的情绪余韵 | `app/core/continuity/aura_state.py` |
+| `aura_daily_state` | Aura 每个自然日唯一、一天内一致的设定生活状态 | `app/core/continuity/state.py` |
+| `emotional_afterglow` | 有限时间自然衰减的情绪余温，只调整后续语气 | `app/core/continuity/state.py` |
+| `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
+| `aura_thought_seed` | 有真实来源、未必展示的离线思绪、第二念头和惊喜候选 | `app/core/continuity/mind.py` |
+| `aura_sleep_cycle` | 每天一次的关系线索、边界与向量记忆整理结果 | `app/core/continuity/mind.py` |
+| `langchain_pg_collection` | 长期/中期向量记忆集合 | `app/core/memory/service.py` |
+| `langchain_pg_embedding` | 向量记忆正文、向量和 metadata | `app/core/memory/service.py` |
+
+## LangGraph 框架表
+
+| 表 | 功能 |
+| --- | --- |
+| `checkpoints` | 对话线程状态快照 |
+| `checkpoint_blobs` | checkpoint 二进制数据 |
+| `checkpoint_writes` | 图执行过程中的待提交写入 |
+| `checkpoint_migrations` | LangGraph checkpoint schema 版本 |
+
+这些表由 `langgraph-checkpoint-postgres` 管理，不在本项目 ORM 中重复建模。
+
+Alembic 另维护 `alembic_version` 表记录当前数据库 revision。它和 `checkpoint_*` 一样属于
+框架管理表，不计入二十张业务模型表，也不写入新库基线；导入 `main.sql` 后由
+`uv run alembic stamp head` 创建。
+
+## 已删除的遗留数据平面
+
+以下表没有进入当前主聊天、记忆或主动消息闭环，已从当前 schema 删除：
+
+- `admin_audit_log`
+- `aura_profile`
+- `chat_message`
+- `conversation_feedback`
+- `conversation_session`
+- `daily_checkin`
+- `emotion_insight_report`
+- `emotion_snapshot`
+- `invitation_code`
+- `invitation_code_redemption`
+- `memory_item`
+- `memory_relation`
+- `notification_plan`
+- `prompt_version`
+- `relationship_state`
+- `safety_event`
+- `user_behavior_event`
+- `user_export_job`
+- `user_memory_entitlement`
+- `user_profile`
+
+专注、巴什博弈和宠物功能的数据表由 Alembic revision `20260918_0002`
+删除：`focus_session_event`、`focus_session`、`bash_game_move`、
+`bash_game_session`、`pet_event`、`companion_pet`。该 revision 同时移除
+`aura_daily_state.pet_event` 字段。
+
+聊天历史以 LangGraph checkpoint 为唯一事实源；语义记忆以 LangChain PGVector 表为事实源；
+需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
+稳定关系知识以 `relationship_item` 为可更新投影，低频关系阶段以 `relationship_chapter` 为时间线；
+两者都显式区分小乔、Aura、共同视角以及现实、共同历史、想象、愿望和承诺，不使用关系积分。
+
+## Relationship Engine v2
+
+`relationship_dynamics` 把长期 `relationship_stage`、短期 `relationship_phase` 和表达层
+`relationship_tone` 分开。疏远、冲突和修复只改变 phase，不会抹掉已经形成的恋爱阶段。
+阶段迁移来自明确的 `relationship_event`，不再使用累计示爱次数。
+
+`relationship_event` 以 `(user_id, source_turn_id, event_type)` 保证同一回合重放不会重复写入。
+`affect_state` 按 `(user_id, kind)` 保存当前权威投影；相关事件会强化强度，时间推进会进入
+`fading` 并最终解决，明确安抚或修复也可以提前解决。当前表由 Alembic revision
+`20260918_0003` 建立，是唯一的关系事件模型。
+
+## 关系知识与章节
+
+`relationship_item` 使用 `(user_id, item_key)` 保证同一稳定知识不会因模型或网络重试重复创建。
+昵称、玩笑、暗号、仪式和共同物件带使用冷却；说话边界、纠偏规则和稳定立场不受冷却影响，
+始终可以约束当前回复。`confidence` 只表示原对话对该知识的支持程度，不衡量关系好坏。
+
+`relationship_chapter` 使用 `(user_id, source_key)` 保证同一来源只创建一次章节，同时以部分唯一
+索引保证每个用户最多一个 `current` 章节。新章节创建时，服务会在同一事务中关闭上一章节。
+
+## 连续状态
+
+`aura_daily_state` 按 `(user_id, local_date)` 唯一，一天内不会重新随机。它是明确标记的 Aura
+设定内生活模拟，不是现实世界外部事实。
+
+`emotional_afterglow` 每个用户只有一条当前投影。强度按固定时间线性衰减，过期后不再进入提示词；
+它不是关系积分或心理诊断，中性消息不会粗暴清空仍有意义的余温。
+
+`shared_scene` 以部分唯一索引保证最多一个 `active` 场景。地点移动会更新同一场景，关闭后下一轮
+明确注入空场景约束；所有房间和文字约会都属于 `imagined`/`wish`，不能混入现实记忆。
+
+## 离线心智
+
+`aura_thought_seed` 将“产生想法”和“展示想法”分开。第二念头延迟 10-90 分钟，用户回来即取消，
+每天限量；离线反思只有与当前消息相关时才进入一次提示词；惊喜必须同时满足无开放冲突、主动
+消息冷却充分、时间合适且存在真实共同记录。所有主动投递仍由 `proactive_message` 负责。
+
+`aura_sleep_cycle` 按 `(user_id, local_date)` 唯一。凌晨整理开放线程、交互边界并最多合并一组
+重复向量记忆，生成的简短反思只基于已有记录，不生成梦境或现实见闻。
+
+## 主动消息可靠投递
+
+`proactive_message` 是主动消息投递的 PostgreSQL 权威来源。Redis 可以用于唤醒或加速，
+但不能代替数据库中的计划和最终状态。
+
+| 字段或约束 | 语义 |
+| --- | --- |
+| `dedupe_key varchar(160)` | 可空业务幂等键；`(user_id, dedupe_key)` 唯一，避免重复计划同一件事 |
+| `delivery_message_id varchar(128)` | 非空稳定消息 ID；创建、进程重启和重试时保持不变 |
+| `attempt_count integer` | 非空且默认 `0`，记录已经执行的投递尝试次数 |
+| `claimed_until timestamptz` | worker 租约截止时间；过期的 `processing` 消息可以被其他 worker 接管 |
+| `last_error text` | 最近一次失败原因，供重试策略和运维诊断使用 |
+| `cancelled_at timestamptz` | 进入 `cancelled` 终态的时间 |
+| `chk_proactive_message_status` | 只允许 `pending`、`processing`、`sent`、`skipped`、`failed`、`cancelled` |
+| `idx_proactive_message_claim` | 按 `(status, scheduled_at, claimed_until)` 查找应领取或租约已过期的消息 |
+
+`sent`、`skipped`、`failed` 和 `cancelled` 是终态。投递失败但仍可重试时，业务层应增加
+`attempt_count`、记录 `last_error` 并重新置为 `pending`；达到上限后才进入 `failed`。
+
+## 条件消息
+
+`conditional_message` 统一承载时间胶囊与秘密保险箱。记录从 `sealed` 开始；时间到期、
+后续用户消息命中关键词、共同项目达到目标状态、GitHub 事件匹配或口令验证成功后，服务在
+同一事务中把记录推进为 `queued` 并创建唯一 `proactive_message`。只有聊天历史成功写入后才会
+标记 `delivered`；outbox 达到重试上限则标记 `failed`。
+
+密封阶段的列表和详情响应始终返回 `content=null`，口令只保存单向摘要。这里的“密封”是接口
+保密边界，并不等同于数据库静态加密。`conditional_message_event` 以
+`(user_id, event_type, event_id)` 唯一约束处理聊天重放、项目事件重试和 GitHub redelivery；
+旧事件重放不会打开事件发生后才创建的新胶囊。
+
+每条条件消息保存唯一 `outbox_message_id`。主动投递在同一次数据库提交中同步 outbox 和来源
+状态；调度周期还会对账已经进入 `sent`/`failed` 的 outbox，只补业务状态，不再次写聊天历史。
+
+## 自动核对
+
+执行：
+
+```powershell
+.\.venv\Scripts\python tools\check_db_schema.py
+```
+
+脚本会检查：
+
+- ORM 业务表和 PostgreSQL 业务表是否完全一致；
+- 每张业务表的字段名、类型、可空性和默认值是否一致；
+- 主键、唯一约束、检查约束、外键和普通索引是否一致；
+- LangGraph 所需的四张框架表是否存在；
+- 是否重新出现没有 ORM 模型的遗留业务表。
