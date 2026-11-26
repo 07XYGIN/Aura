@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 from threading import Lock
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
 from app.db.session import engine, sync_engine
+from app.db.models import SelfChangelogEntry
 
 SELF_CHANGELOG_TABLE = "self_changelog_entry"
 
@@ -13,21 +13,19 @@ _self_changelog_schema_ready = False
 _self_changelog_schema_lock = Lock()
 
 
-SELF_CHANGELOG_ADMIN_DDL = (
-    "ALTER TABLE self_changelog_entry ADD COLUMN IF NOT EXISTS occurred_at timestamptz",
-    "UPDATE self_changelog_entry SET occurred_at = change_date::timestamptz WHERE occurred_at IS NULL",
-    "ALTER TABLE self_changelog_entry ALTER COLUMN occurred_at SET DEFAULT now()",
-    "ALTER TABLE self_changelog_entry ALTER COLUMN occurred_at SET NOT NULL",
-    "ALTER TABLE self_changelog_entry ADD COLUMN IF NOT EXISTS category varchar(64) NOT NULL DEFAULT 'infra'",
-    "CREATE INDEX IF NOT EXISTS idx_self_changelog_occurred_at ON self_changelog_entry(occurred_at DESC)",
-)
+def validate_self_changelog_fields(connection) -> None:
+    """Legacy callers validate only; all schema mutations belong to migrations."""
+    inspector = inspect(connection)
+    if not inspector.has_table(SELF_CHANGELOG_TABLE):
+        raise RuntimeError("缺少 self_changelog_entry 表；请先初始化数据库并执行迁移")
+    actual = {column["name"] for column in inspector.get_columns(SELF_CHANGELOG_TABLE)}
+    missing = set(SelfChangelogEntry.__table__.columns.keys()) - actual
+    if missing:
+        raise RuntimeError(f"self_changelog_entry 缺少字段 {sorted(missing)}；请执行数据库迁移")
 
 
 def ensure_self_changelog_admin_fields() -> None:
-    """同步补齐自更新记录表的管理端字段与索引。
-
-    进程内只执行一次，并用线程锁避免并发重复迁移；表尚不存在时仅告警。
-    """
+    """Validate legacy callers without changing schema during a request."""
     global _self_changelog_schema_ready
     if _self_changelog_schema_ready:
         return
@@ -36,33 +34,19 @@ def ensure_self_changelog_admin_fields() -> None:
         if _self_changelog_schema_ready:
             return
 
-        with sync_engine.begin() as connection:
-            if not inspect(connection).has_table(SELF_CHANGELOG_TABLE):
-                logging.warning("缺少 self_changelog_entry 表，跳过管理端结构检查")
-                return
-            for statement in SELF_CHANGELOG_ADMIN_DDL:
-                connection.execute(text(statement))
+        with sync_engine.connect() as connection:
+            validate_self_changelog_fields(connection)
 
         _self_changelog_schema_ready = True
 
 
 async def ensure_self_changelog_admin_fields_async() -> None:
-    """异步补齐自更新记录表的管理端字段与索引。
-
-    该函数主要供异步调用方使用，完成后设置进程内就绪标记。
-    """
+    """Async validation; schema changes must be applied through Alembic."""
     global _self_changelog_schema_ready
     if _self_changelog_schema_ready:
         return
 
-    async with engine.begin() as connection:
-        table_exists = await connection.run_sync(
-            lambda sync_connection: inspect(sync_connection).has_table(SELF_CHANGELOG_TABLE)
-        )
-        if not table_exists:
-            logging.warning("缺少 self_changelog_entry 表，跳过管理端结构检查")
-            return
-        for statement in SELF_CHANGELOG_ADMIN_DDL:
-            await connection.execute(text(statement))
+    async with engine.connect() as connection:
+        await connection.run_sync(validate_self_changelog_fields)
 
     _self_changelog_schema_ready = True

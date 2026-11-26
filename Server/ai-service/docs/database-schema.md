@@ -1,6 +1,27 @@
 # 当前 PostgreSQL 表结构
 
-数据库已经收敛为单用户 Aura 当前实际使用的二十二张业务表。
+数据库已经收敛为单用户 Aura 当前实际使用的二十张业务表。
+
+服务启动时复用 `app/db/schema_audit.py` 检查真实列、类型、可空性、默认值、索引、
+CHECK 约束内容和 Alembic revision；不一致时停止启动并报告具体差异。
+命令行 `uv run python tools/check_db_schema.py` 使用相同检查。约束比较由 PostgreSQL
+在空临时表上规范化表达式，不改写业务数据。
+鉴权也直接复用 `Users.__table__`，不再维护一份缺少字段和长度限制的独立 `users` 定义。
+旧自更新记录兼容入口只校验字段，不再在请求过程中自动执行 DDL；业务结构变更统一由迁移负责。
+
+数据库变更验证命令（从 `Server/ai-service` 运行）：
+
+```powershell
+uv run alembic upgrade head
+uv run python tools/check_db_schema.py
+uv run python tools/verify_db_contract.py
+```
+
+最后一项需要本机账号具有建库权限，创建随机命名的临时库验证唯一 `main.sql`、迁移升降级、
+实际 ORM 写入以及缺列/约束漂移检测；结束自动删除该临时库，不改写用户数据。
+
+revision `20260920_0004` 将 `aura_internal_state.jealousy` 与状态引擎和 Pydantic 统一为
+`none / low / medium / high`。强度高表示内部状态，不代表必须加强对用户的表达。
 
 ## 业务模型表
 
@@ -9,23 +30,21 @@
 | `users` | 唯一用户的注册、登录和身份信息 | `app/core/auth_store.py` |
 | `self_changelog_entry` | Aura 自我更新记录 | `app/core/agent/self_changelog.py`、`app/routers/admin.py` |
 | `proactive_message` | 主动消息可靠 outbox：计划、领取租约、幂等投递、重试与终态 | `app/core/proactive_scheduler.py` |
-| `focus_session` | 一起专注的当前计时、暂停、结束问询和用户汇报状态 | `app/core/focus/service.py` |
-| `focus_session_event` | 一起专注每次状态变化的不可变审计事件 | `app/core/focus/service.py` |
 | `conditional_message` | 时间胶囊与秘密保险箱的密封正文、触发条件和交付状态 | `app/core/continuity/capsules.py` |
 | `conditional_message_event` | 关键词、项目、GitHub 和口令事件的幂等 inbox | `app/core/continuity/capsules.py` |
 | `relationship_thread` | 未完成事项、后续关心、冲突、承诺和项目任务的当前状态 | `app/core/continuity/` |
 | `relationship_thread_event` | 关系线程每次创建、更新、跟进、解决或放弃的不可变事件 | `app/core/continuity/` |
 | `relationship_item` | 双视角共同记忆、私人语言、Aura 立场、交互纠偏、边界和关系物件 | `app/core/continuity/` |
 | `relationship_chapter` | 由真实重要关系事件形成的低频时间线章节 | `app/core/continuity/` |
+| `aura_internal_state` | 玲凌持续的依恋、联系欲望和当前表达倾向投影 | `app/core/continuity/aura_state.py` |
+| `relationship_dynamics` | 独立保存关系阶段、当前状况和关系语气 | `app/core/continuity/aura_state.py` |
+| `relationship_event` | 示爱、冲突、修复、承诺、离开与返回等不可变关系事实 | `app/core/continuity/aura_state.py` |
+| `affect_state` | 醋意、受伤、想念等可强化、衰减和解决的情绪余韵 | `app/core/continuity/aura_state.py` |
 | `aura_daily_state` | Aura 每个自然日唯一、一天内一致的设定生活状态 | `app/core/continuity/state.py` |
 | `emotional_afterglow` | 有限时间自然衰减的情绪余温，只调整后续语气 | `app/core/continuity/state.py` |
 | `shared_scene` | 共享房间、文字约会和想象场景的活动状态、地点与物件 | `app/core/continuity/state.py` |
 | `aura_thought_seed` | 有真实来源、未必展示的离线思绪、第二念头和惊喜候选 | `app/core/continuity/mind.py` |
 | `aura_sleep_cycle` | 每天一次的关系线索、边界与向量记忆整理结果 | `app/core/continuity/mind.py` |
-| `bash_game_session` | 巴什博弈的当前局面、参与者轮次和并发版本 | `app/core/games/bash/service.py` |
-| `bash_game_move` | 巴什博弈每一步不可变行动历史 | `app/core/games/bash/service.py` |
-| `companion_pet` | 小乔与 Aura 共同宠物的当前状态 | `app/core/pet/service.py` |
-| `pet_event` | 宠物领养、照顾、改名和成长事件 | `app/core/pet/service.py` |
 | `langchain_pg_collection` | 长期/中期向量记忆集合 | `app/core/memory/service.py` |
 | `langchain_pg_embedding` | 向量记忆正文、向量和 metadata | `app/core/memory/service.py` |
 
@@ -40,10 +59,13 @@
 
 这些表由 `langgraph-checkpoint-postgres` 管理，不在本项目 ORM 中重复建模。
 
+Alembic 另维护 `alembic_version` 表记录当前数据库 revision。它和 `checkpoint_*` 一样属于
+框架管理表，不计入二十张业务模型表，也不写入新库基线；导入 `main.sql` 后由
+`uv run alembic stamp head` 创建。
+
 ## 已删除的遗留数据平面
 
-以下表没有进入当前主聊天、记忆或主动消息闭环，已由
-`sql/20260722_single_user_schema_cleanup.sql` 删除：
+以下表没有进入当前主聊天、记忆或主动消息闭环，已从当前 schema 删除：
 
 - `admin_audit_log`
 - `aura_profile`
@@ -59,7 +81,6 @@
 - `memory_relation`
 - `notification_plan`
 - `prompt_version`
-- `relationship_event`
 - `relationship_state`
 - `safety_event`
 - `user_behavior_event`
@@ -67,10 +88,26 @@
 - `user_memory_entitlement`
 - `user_profile`
 
+专注、巴什博弈和宠物功能的数据表由 Alembic revision `20260918_0002`
+删除：`focus_session_event`、`focus_session`、`bash_game_move`、
+`bash_game_session`、`pet_event`、`companion_pet`。该 revision 同时移除
+`aura_daily_state.pet_event` 字段。
+
 聊天历史以 LangGraph checkpoint 为唯一事实源；语义记忆以 LangChain PGVector 表为事实源；
 需要明确生命周期和幂等更新的跨对话事项以 `relationship_thread` 及其事件表为事实源。
 稳定关系知识以 `relationship_item` 为可更新投影，低频关系阶段以 `relationship_chapter` 为时间线；
 两者都显式区分小乔、Aura、共同视角以及现实、共同历史、想象、愿望和承诺，不使用关系积分。
+
+## Relationship Engine v2
+
+`relationship_dynamics` 把长期 `relationship_stage`、短期 `relationship_phase` 和表达层
+`relationship_tone` 分开。疏远、冲突和修复只改变 phase，不会抹掉已经形成的恋爱阶段。
+阶段迁移来自明确的 `relationship_event`，不再使用累计示爱次数。
+
+`relationship_event` 以 `(user_id, source_turn_id, event_type)` 保证同一回合重放不会重复写入。
+`affect_state` 按 `(user_id, kind)` 保存当前权威投影；相关事件会强化强度，时间推进会进入
+`fading` 并最终解决，明确安抚或修复也可以提前解决。当前表由 Alembic revision
+`20260918_0003` 建立，是唯一的关系事件模型。
 
 ## 关系知识与章节
 
@@ -84,8 +121,7 @@
 ## 连续状态
 
 `aura_daily_state` 按 `(user_id, local_date)` 唯一，一天内不会重新随机。它是明确标记的 Aura
-设定内生活模拟，不是现实世界外部事实；如果已经共同领养宠物，当天小事会同时形成一条幂等
-`pet_event`，成为可核验的宠物经历。
+设定内生活模拟，不是现实世界外部事实。
 
 `emotional_afterglow` 每个用户只有一条当前投影。强度按固定时间线性衰减，过期后不再进入提示词；
 它不是关系积分或心理诊断，中性消息不会粗暴清空仍有意义的余温。

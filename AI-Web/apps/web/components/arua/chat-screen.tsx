@@ -41,18 +41,9 @@ import {
     type AuraUploadedAttachment,
     type AuraUploadAttachmentInput,
 } from '@/apis/aura'
+import type { AuraSSEEventV1 } from '@ai-web/types'
 
-type ChatStreamChunk = {
-    content?: string
-    event?: string
-    presence?: Live2DPresence
-    messageId?: string
-    batchId?: string
-    batchIndex?: number
-    batchTotal?: number
-    delayMs?: number
-    sentAt?: string
-}
+type ChatStreamChunk = Omit<AuraSSEEventV1, 'presence'> & { presence?: Live2DPresence }
 
 const MAX_ATTACHMENTS_PER_MESSAGE = 4
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024

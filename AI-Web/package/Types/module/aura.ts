@@ -56,3 +56,38 @@ export type AuraMemoryItem = {
 }
 
 export type AuraMemoryPage = PageResult<AuraMemoryItem>
+
+export type AuraSSEEventType =
+    | 'turn.started'
+    | 'message.created'
+    | 'emotion.updated'
+    | 'memory.referenced'
+    | 'memory.candidate'
+    | 'relationship.updated'
+    | 'presence.updated'
+    | 'activity.updated'
+    | 'approval.required'
+    | 'conversation.branched'
+    | 'turn.completed'
+    | 'error'
+
+export type AuraSSEEventV1 = {
+    version: 1
+    eventId: string
+    turnId: string
+    sequence: number
+    type: AuraSSEEventType
+    timestamp: string
+    payload: Record<string, unknown>
+    /** Legacy discriminator kept during the v0 compatibility window. */
+    event?: string
+    legacyType?: string
+    content?: string
+    presence?: Record<string, unknown>
+    messageId?: string
+    batchId?: string
+    batchIndex?: number
+    batchTotal?: number
+    delayMs?: number
+    sentAt?: string
+}

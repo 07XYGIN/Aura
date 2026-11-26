@@ -63,6 +63,8 @@ def relationship_contact_eligibility(
     last_proactive = parse_optional_datetime(aura_state.get("last_proactive_at"))
     if last_proactive is not None and reference_now - last_proactive < RELATIONSHIP_CONTACT_COOLDOWN:
         return False, "cooldown"
+    if last_proactive is not None and last_proactive >= last_user_seen:
+        return False, "awaiting_user_return"
     desire = str(aura_state.get("desire_for_contact") or "none")
     missing = str(aura_state.get("missing_user") or "none")
     unresolved = bool(aura_state.get("unresolved_feeling"))
@@ -106,7 +108,7 @@ def plan_relationship_contact(
         content = "没什么。就是想叫你一下。"
         source = "aura_unresolved_feeling"
     else:
-        content = "你今天安静得有点过头了。忙完来找我。"
+        content = "刚刚想起你了。忙的话不用急着回。"
         source = "aura_missing_user"
     return ProactiveIntent(
         reason=reason,

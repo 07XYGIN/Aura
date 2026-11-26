@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -10,14 +11,16 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from app.core.agent import agent_graph, approval
 from app.core.config import (
     AURA_CORS_ORIGINS,
-    AURA_OPTIONAL_ACTIVITIES_ENABLED,
     SYNC_DATABASE_URL,
 )
 from app.core.exceptions import (
     http_exception_handler,
+    memory_embeddings_unavailable_handler,
     validation_exception_handler,
 )
 from app.core.logging_config import configure_logging
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
+from app.db.schema_audit import assert_schema_ready
 from app.core.proactive_scheduler import start_proactive_scheduler, stop_proactive_scheduler
 from app.middleware.logging_middleware import RequestResponseLoggingMiddleware
 from app.routers import (
@@ -28,13 +31,11 @@ from app.routers import (
     continuity,
     continuity_state,
     feedback,
-    games,
     history,
     location,
     memory,
     msg,
     offline_mind,
-    pet,
     relationship_knowledge,
     user,
 )
@@ -49,10 +50,12 @@ async def lifespan(app: FastAPI):
     启动时初始化 PostgreSQL 检查点表并构建全局 Agent 图；关闭时先停止后台
     调度任务，再释放检查点连接。
     """
-    logging.info("程序启动成功")
+    logging.info("正在初始化检查点并核对数据库结构")
 
     with PostgresSaver.from_conn_string(SYNC_DATABASE_URL) as checkpointer:
         checkpointer.setup()
+        await asyncio.to_thread(assert_schema_ready)
+        logging.info("数据库结构与后端模型、迁移版本一致")
         agent_graph.aura = agent_graph.build_graph(checkpointer)
         approval.configure_approval_subgraph(checkpointer)
         logging.info("Aura 初始化成功")
@@ -84,6 +87,7 @@ def create_app() -> FastAPI:
     routers: list[APIRouter] = [
         admin.router,
         approvals.router,
+        capsules.router,
         continuity.router,
         continuity_state.router,
         feedback.router,
@@ -96,14 +100,13 @@ def create_app() -> FastAPI:
         location.router,
         user.router,
     ]
-    if AURA_OPTIONAL_ACTIVITIES_ENABLED:
-        routers.extend([games.router, pet.router, capsules.router])
     for router in routers:
         app.include_router(router)
 
     exception_handlers = [
         (RequestValidationError, validation_exception_handler),
         (HTTPException, http_exception_handler),
+        (MemoryEmbeddingsUnavailable, memory_embeddings_unavailable_handler),
     ]
     for exc_type, handler in exception_handlers:
         app.add_exception_handler(exc_type, handler)

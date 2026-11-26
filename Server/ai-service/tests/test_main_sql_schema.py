@@ -25,24 +25,28 @@ class MainSqlSchemaTests(unittest.TestCase):
         self.assertEqual(sql_tables, set(Base.metadata.tables))
         self.assertNotIn("DROP TABLE", sql)
 
-    def test_focus_migration_contains_both_focus_tables(self) -> None:
-        sql = (ROOT / "sql" / "20260724_focus_sessions.sql").read_text(encoding="utf-8")
-
-        self.assertEqual(
-            {"focus_session", "focus_session_event"},
-            set(CREATE_TABLE_PATTERN.findall(sql)),
+    def test_repository_has_one_canonical_sql_file(self) -> None:
+        ignored_directories = {".git", ".venv", "node_modules", "build", "dist"}
+        sql_files = sorted(
+            path
+            for path in REPOSITORY_ROOT.rglob("*.sql")
+            if ignored_directories.isdisjoint(path.relative_to(REPOSITORY_ROOT).parts)
         )
-        self.assertIn("uq_focus_session_running_user", sql)
 
-    def test_relationship_dynamics_migration_contains_both_state_tables(self) -> None:
-        sql = (ROOT / "sql" / "20260918_relationship_dynamics.sql").read_text(encoding="utf-8")
+        self.assertEqual(sql_files, [REPOSITORY_ROOT / "main.sql"])
 
-        self.assertEqual(
-            {"aura_internal_state", "relationship_dynamics"},
-            set(CREATE_TABLE_PATTERN.findall(sql)),
-        )
-        self.assertNotIn("love_score", sql)
-        self.assertNotIn("affection_score", sql)
+    def test_removed_activity_tables_are_absent_from_current_schema(self) -> None:
+        sql = (REPOSITORY_ROOT / "main.sql").read_text(encoding="utf-8")
+
+        for table_name in (
+            "focus_session",
+            "focus_session_event",
+            "bash_game_session",
+            "bash_game_move",
+            "companion_pet",
+            "pet_event",
+        ):
+            self.assertNotIn(f"CREATE TABLE IF NOT EXISTS {table_name}", sql)
 
 
 if __name__ == "__main__":

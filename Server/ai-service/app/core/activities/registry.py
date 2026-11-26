@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent.models import ActivityResult, TurnRequest
 
-from .adapters import default_activity_adapters
 from .base import ActivityHandler
 
 
@@ -33,5 +32,10 @@ class ActivityRegistry:
 
 
 def build_default_activity_registry() -> ActivityRegistry:
-    return ActivityRegistry(default_activity_adapters())
+    """Build the registry shipped by Aura.
 
+    The product currently has no built-in activities. Integrations can still
+    construct an ``ActivityRegistry`` with their own handlers.
+    """
+
+    return ActivityRegistry()

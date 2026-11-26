@@ -12,6 +12,17 @@ from app.core.memory.maintenance import merge_memories
 
 
 class SaveMemoryToolTest(unittest.TestCase):
+    def test_unconfigured_embeddings_do_not_report_a_successful_save(self):
+        with patch("app.core.memory.service.PGVector") as vector_store:
+            result = save_memory_tool.invoke(
+                {"title": "饮食偏好", "content": "不太能吃辣。", "memory_scope": "long"},
+                config={"configurable": {"user_id": "user-1"}},
+            )
+
+        self.assertIn("本次记忆未保存", result)
+        self.assertNotIn("已保存", result)
+        vector_store.assert_not_called()
+
     def test_save_memory_tool_uses_config_user(self):
         with patch("app.core.agent.tools.memory.save_memory", return_value="memory-key") as save_memory:
             result = save_memory_tool.invoke(

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from app.core.memory.service import save_memory
+from app.core.memory.embeddings import MemoryEmbeddingsUnavailable
 
 from .logging_utils import log_tool
+from .world_policy import current_turn_calls
 
 
 @tool
@@ -24,12 +27,15 @@ def save_memory_tool(
     confidence: float = 0.8,
     reason: str | None = None,
     signals: list[str] | None = None,
+    state: Annotated[dict | None, InjectedState] = None,
 ) -> str:
     """保存当前用户以后确实需要继续使用的信息。
 
     用户明确要求记住，或内容属于稳定偏好、边界、重要事实、共同事件和近期待跟进事项时调用。
     普通闲聊、一次性情绪、模型猜测和工具结果不要保存。
     """
+    if current_turn_calls(state):
+        return "本轮包含外部网页数据，禁止自动写入用户记忆。需要保存时请用户在下一轮独立确认。"
     configurable: dict[str, Any] = config.get("configurable", {})
     user_id = configurable.get("user_id")
     if not user_id:
@@ -56,6 +62,8 @@ def save_memory_tool(
                 "reason": clean_text(reason, 120),
             },
         )
+    except MemoryEmbeddingsUnavailable:
+        return "记忆向量服务暂未接入，本次记忆未保存，不要声称已经记住。"
     except Exception:
         logging.exception("保存记忆失败 user_id=%s title=%s", user_id, clean_title)
         return "记忆保存失败，先不要声称已经记住。"

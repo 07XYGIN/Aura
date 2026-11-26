@@ -13,12 +13,12 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import Column, Integer, MetaData, SmallInteger, String, Table, func, insert, select, text, update
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.db.models import Users
 from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserUpdateRequest
 
 load_dotenv()
@@ -31,17 +31,7 @@ ACCESS_TOKEN_EXPIRE = timedelta(milliseconds=int(os.getenv("JWT_EXPIRE_TIME", "8
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 password_hash = PasswordHash.recommended()
 revoked_tokens: dict[str, int] = {}
-metadata = MetaData()
-users_table = Table(
-    "users",
-    metadata,
-    Column("id", PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
-    Column("username", String),
-    Column("password", String),
-    Column("email", String),
-    Column("sex", SmallInteger),
-    Column("age", Integer),
-)
+users_table = Users.__table__
 
 
 def create_access_token(subject: str, expires_delta: timedelta = ACCESS_TOKEN_EXPIRE) -> str:

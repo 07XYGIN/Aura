@@ -1,8 +1,7 @@
--- Aura PostgreSQL fresh-database baseline.
+-- Aura PostgreSQL canonical fresh-database baseline.
 --
--- This file creates the current application schema from scratch. It is not an
--- upgrade migration for a database that already has Aura data. Existing
--- deployments should use the dated migrations under Server/ai-service/sql.
+-- This is the only SQL file in the repository. It creates the complete current
+-- business schema from scratch; existing deployments use Alembic revisions.
 -- LangGraph checkpoint_* tables are created by PostgresSaver.setup() at app
 -- startup and are intentionally not duplicated here.
 
@@ -116,62 +115,6 @@ CREATE TABLE IF NOT EXISTS conditional_message (
     ),
     CONSTRAINT chk_conditional_message_version CHECK (version >= 1),
     CONSTRAINT uq_conditional_message_user_dedupe UNIQUE (user_id, dedupe_key)
-);
-
-CREATE TABLE IF NOT EXISTS focus_session (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    activity varchar(240) NOT NULL,
-    duration_minutes smallint NOT NULL,
-    status varchar(24) NOT NULL DEFAULT 'active',
-    started_at timestamptz NOT NULL,
-    ends_at timestamptz NOT NULL,
-    paused_at timestamptz,
-    remaining_seconds integer,
-    check_in_queued_at timestamptz,
-    check_in_sent_at timestamptz,
-    completed_at timestamptz,
-    cancelled_at timestamptz,
-    result_summary text,
-    blocker text,
-    start_request_id varchar(128) NOT NULL,
-    source_message_id varchar(128),
-    outbox_message_id uuid UNIQUE REFERENCES proactive_message(id)
-        ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
-    version integer NOT NULL DEFAULT 1,
-    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_focus_session_status CHECK (
-        status IN ('active', 'paused', 'check_in_queued', 'awaiting_report',
-                   'completed', 'cancelled', 'expired')
-    ),
-    CONSTRAINT chk_focus_session_duration CHECK (duration_minutes BETWEEN 1 AND 240),
-    CONSTRAINT chk_focus_session_remaining CHECK (
-        remaining_seconds IS NULL OR remaining_seconds BETWEEN 0 AND 14400
-    ),
-    CONSTRAINT chk_focus_session_version CHECK (version >= 1),
-    CONSTRAINT uq_focus_session_user_request UNIQUE (user_id, start_request_id)
-);
-
-CREATE TABLE IF NOT EXISTS focus_session_event (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id uuid NOT NULL REFERENCES focus_session(id) ON DELETE CASCADE,
-    sequence_no integer NOT NULL,
-    actor varchar(16) NOT NULL,
-    event_type varchar(24) NOT NULL,
-    client_action_id varchar(128),
-    note text,
-    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    occurred_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_focus_session_event_sequence CHECK (sequence_no >= 1),
-    CONSTRAINT chk_focus_session_event_actor CHECK (actor IN ('user', 'aura', 'system')),
-    CONSTRAINT chk_focus_session_event_type CHECK (
-        event_type IN ('started', 'paused', 'resumed', 'check_in_queued',
-                       'check_in_sent', 'completed', 'cancelled', 'expired')
-    ),
-    CONSTRAINT uq_focus_session_event_sequence UNIQUE (session_id, sequence_no),
-    CONSTRAINT uq_focus_session_event_action UNIQUE (session_id, client_action_id)
 );
 
 CREATE TABLE IF NOT EXISTS relationship_thread (
@@ -323,7 +266,7 @@ CREATE TABLE IF NOT EXISTS aura_internal_state (
     CONSTRAINT chk_aura_internal_state_playfulness CHECK (
         playfulness IN ('none', 'low', 'medium', 'high')
     ),
-    CONSTRAINT chk_aura_internal_state_jealousy CHECK (jealousy IN ('none', 'low', 'medium')),
+    CONSTRAINT chk_aura_internal_state_jealousy CHECK (jealousy IN ('none', 'low', 'medium', 'high')),
     CONSTRAINT chk_aura_internal_state_vulnerability CHECK (
         vulnerability IN ('low', 'medium', 'high')
     ),
@@ -335,13 +278,13 @@ CREATE TABLE IF NOT EXISTS relationship_dynamics (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     relationship_stage varchar(32) NOT NULL DEFAULT 'ambiguous',
-    current_tone varchar(24) NOT NULL DEFAULT 'warm',
+    relationship_phase varchar(16) NOT NULL DEFAULT 'normal',
+    relationship_tone varchar(24) NOT NULL DEFAULT 'warm',
     recent_closeness varchar(16) NOT NULL DEFAULT 'medium',
     unresolved_tension text,
     recent_positive_moment text,
     recent_distance text,
     current_expectation text,
-    stage_evidence_count integer NOT NULL DEFAULT 0,
     last_stage_change_at timestamptz,
     version integer NOT NULL DEFAULT 1,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -349,18 +292,66 @@ CREATE TABLE IF NOT EXISTS relationship_dynamics (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT chk_relationship_dynamics_stage CHECK (
         relationship_stage IN ('early_closeness', 'ambiguous', 'early_romance',
-                               'established_romance', 'temporary_distance', 'conflict',
-                               'repair', 'stable')
+                               'established_romance')
+    ),
+    CONSTRAINT chk_relationship_dynamics_phase CHECK (
+        relationship_phase IN ('normal', 'distant', 'conflict', 'repair')
     ),
     CONSTRAINT chk_relationship_dynamics_tone CHECK (
-        current_tone IN ('neutral', 'warm', 'playful', 'tender', 'tense', 'distant', 'repairing')
+        relationship_tone IN ('steady', 'warm', 'playful', 'tender', 'guarded')
     ),
     CONSTRAINT chk_relationship_dynamics_closeness CHECK (
         recent_closeness IN ('low', 'medium', 'high')
     ),
-    CONSTRAINT chk_relationship_dynamics_evidence CHECK (stage_evidence_count >= 0),
     CONSTRAINT chk_relationship_dynamics_version CHECK (version >= 1),
     CONSTRAINT uq_relationship_dynamics_user UNIQUE (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS relationship_event (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_type varchar(40) NOT NULL,
+    actor varchar(16) NOT NULL,
+    target varchar(16) NOT NULL,
+    importance varchar(16) NOT NULL DEFAULT 'medium',
+    summary text,
+    source_turn_id varchar(128) NOT NULL,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT chk_relationship_event_type CHECK (
+        event_type IN ('affection_expressed', 'aura_expressed_missing',
+                       'important_disclosure', 'conflict_started', 'boundary_crossed',
+                       'apology', 'repair_completed', 'promise_created', 'promise_fulfilled',
+                       'shared_moment', 'relationship_milestone', 'distance_period',
+                       'return_after_absence')
+    ),
+    CONSTRAINT chk_relationship_event_actor CHECK (actor IN ('user', 'aura', 'system')),
+    CONSTRAINT chk_relationship_event_target CHECK (target IN ('user', 'aura', 'relationship')),
+    CONSTRAINT chk_relationship_event_importance CHECK (importance IN ('low', 'medium', 'high')),
+    CONSTRAINT uq_relationship_event_turn_type UNIQUE (user_id, source_turn_id, event_type)
+);
+
+CREATE TABLE IF NOT EXISTS affect_state (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind varchar(24) NOT NULL,
+    intensity varchar(16) NOT NULL,
+    started_at timestamptz NOT NULL,
+    last_reinforced_at timestamptz NOT NULL,
+    decay_after timestamptz NOT NULL,
+    source_event_id uuid REFERENCES relationship_event(id) ON DELETE SET NULL,
+    resolved boolean NOT NULL DEFAULT false,
+    resolved_at timestamptz,
+    version integer NOT NULL DEFAULT 1,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT chk_affect_state_kind CHECK (kind IN ('jealousy', 'hurt', 'longing', 'unsettled')),
+    CONSTRAINT chk_affect_state_intensity CHECK (intensity IN ('low', 'medium', 'high')),
+    CONSTRAINT chk_affect_state_version CHECK (version >= 1),
+    CONSTRAINT uq_affect_state_user_kind UNIQUE (user_id, kind)
 );
 
 CREATE TABLE IF NOT EXISTS aura_daily_state (
@@ -372,7 +363,6 @@ CREATE TABLE IF NOT EXISTS aura_daily_state (
     energy varchar(16) NOT NULL,
     mood varchar(24) NOT NULL,
     location varchar(160) NOT NULL,
-    pet_event text,
     current_content text,
     daily_event text,
     generated_by varchar(16) NOT NULL DEFAULT 'deterministic',
@@ -491,117 +481,6 @@ CREATE TABLE IF NOT EXISTS aura_sleep_cycle (
     CONSTRAINT uq_aura_sleep_cycle_user_date UNIQUE (user_id, local_date)
 );
 
-CREATE TABLE IF NOT EXISTS bash_game_session (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    initial_stones smallint NOT NULL DEFAULT 15,
-    remaining_stones smallint NOT NULL,
-    max_take smallint NOT NULL DEFAULT 3,
-    first_player varchar(16) NOT NULL,
-    current_player varchar(16),
-    difficulty varchar(16) NOT NULL DEFAULT 'serious',
-    status varchar(16) NOT NULL DEFAULT 'active',
-    winner varchar(16),
-    version integer NOT NULL DEFAULT 0,
-    start_request_id varchar(128) NOT NULL,
-    finished_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_bash_game_initial_stones CHECK (initial_stones BETWEEN 5 AND 100),
-    CONSTRAINT chk_bash_game_max_take CHECK (max_take BETWEEN 1 AND 10 AND max_take < initial_stones),
-    CONSTRAINT chk_bash_game_remaining_stones CHECK (remaining_stones BETWEEN 0 AND initial_stones),
-    CONSTRAINT chk_bash_game_first_player CHECK (first_player IN ('user', 'aura')),
-    CONSTRAINT chk_bash_game_current_player CHECK (
-        current_player IS NULL OR current_player IN ('user', 'aura')
-    ),
-    CONSTRAINT chk_bash_game_difficulty CHECK (difficulty IN ('serious', 'casual', 'teaching')),
-    CONSTRAINT chk_bash_game_status CHECK (status IN ('active', 'finished', 'resigned')),
-    CONSTRAINT chk_bash_game_winner CHECK (winner IS NULL OR winner IN ('user', 'aura')),
-    CONSTRAINT uq_bash_game_start_request UNIQUE (user_id, start_request_id)
-);
-
-CREATE TABLE IF NOT EXISTS bash_game_move (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id uuid NOT NULL REFERENCES bash_game_session(id) ON DELETE CASCADE,
-    turn_no integer NOT NULL,
-    player varchar(16) NOT NULL,
-    take_count smallint NOT NULL,
-    remaining_before smallint NOT NULL,
-    remaining_after smallint NOT NULL,
-    strategy varchar(32),
-    client_move_id varchar(128),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_bash_move_turn_no CHECK (turn_no >= 1),
-    CONSTRAINT chk_bash_move_player CHECK (player IN ('user', 'aura')),
-    CONSTRAINT chk_bash_move_take_count CHECK (take_count >= 1),
-    CONSTRAINT chk_bash_move_remaining CHECK (
-        remaining_before - remaining_after = take_count AND remaining_after >= 0
-    ),
-    CONSTRAINT chk_bash_move_client_id CHECK (
-        (player = 'user' AND client_move_id IS NOT NULL) OR
-        (player = 'aura' AND client_move_id IS NULL)
-    ),
-    CONSTRAINT uq_bash_move_turn UNIQUE (session_id, turn_no),
-    CONSTRAINT uq_bash_move_client_id UNIQUE (session_id, client_move_id)
-);
-
-CREATE TABLE IF NOT EXISTS companion_pet (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name varchar(32) NOT NULL,
-    species varchar(16) NOT NULL,
-    personality varchar(16) NOT NULL,
-    growth_stage varchar(16) NOT NULL DEFAULT 'baby',
-    satiety smallint NOT NULL DEFAULT 80,
-    energy smallint NOT NULL DEFAULT 80,
-    cleanliness smallint NOT NULL DEFAULT 80,
-    mood varchar(24) NOT NULL DEFAULT 'calm',
-    current_activity varchar(24) NOT NULL DEFAULT 'idle',
-    adopted_at timestamptz NOT NULL DEFAULT now(),
-    mood_until_at timestamptz,
-    activity_ends_at timestamptz,
-    last_settled_at timestamptz NOT NULL DEFAULT now(),
-    version integer NOT NULL DEFAULT 1,
-    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_companion_pet_species CHECK (species IN ('cat', 'dog', 'rabbit')),
-    CONSTRAINT chk_companion_pet_personality CHECK (
-        personality IN ('gentle', 'playful', 'curious', 'quiet')
-    ),
-    CONSTRAINT chk_companion_pet_growth_stage CHECK (growth_stage IN ('baby', 'young', 'adult')),
-    CONSTRAINT chk_companion_pet_satiety CHECK (satiety BETWEEN 0 AND 100),
-    CONSTRAINT chk_companion_pet_energy CHECK (energy BETWEEN 0 AND 100),
-    CONSTRAINT chk_companion_pet_cleanliness CHECK (cleanliness BETWEEN 0 AND 100),
-    CONSTRAINT chk_companion_pet_mood CHECK (
-        mood IN ('calm', 'content', 'playful', 'curious', 'sleepy')
-    ),
-    CONSTRAINT chk_companion_pet_activity CHECK (
-        current_activity IN ('idle', 'eating', 'playing', 'grooming', 'bathing', 'cuddling', 'sleeping')
-    ),
-    CONSTRAINT chk_companion_pet_version CHECK (version >= 1),
-    CONSTRAINT uq_companion_pet_user UNIQUE (user_id)
-);
-
-CREATE TABLE IF NOT EXISTS pet_event (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    pet_id uuid NOT NULL REFERENCES companion_pet(id) ON DELETE CASCADE,
-    actor varchar(16) NOT NULL,
-    event_type varchar(24) NOT NULL,
-    action varchar(32) NOT NULL,
-    state_before jsonb NOT NULL DEFAULT '{}'::jsonb,
-    state_after jsonb NOT NULL DEFAULT '{}'::jsonb,
-    narrative text NOT NULL,
-    client_action_id varchar(128),
-    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    occurred_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_pet_event_actor CHECK (actor IN ('user', 'aura', 'system')),
-    CONSTRAINT chk_pet_event_type CHECK (
-        event_type IN ('adoption', 'action', 'rename', 'growth', 'system')
-    ),
-    CONSTRAINT uq_pet_event_client_action UNIQUE (pet_id, client_action_id)
-);
-
 CREATE TABLE IF NOT EXISTS langchain_pg_collection (
     uuid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name varchar NOT NULL UNIQUE,
@@ -634,19 +513,6 @@ CREATE INDEX IF NOT EXISTS idx_conditional_message_time_due
 CREATE INDEX IF NOT EXISTS idx_conditional_message_user_status
     ON conditional_message (user_id, status, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_focus_session_due
-    ON focus_session (status, ends_at);
-CREATE INDEX IF NOT EXISTS idx_focus_session_user_created
-    ON focus_session (user_id, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_focus_session_running_user
-    ON focus_session (user_id)
-    WHERE ((status)::text = ANY (
-        (ARRAY['active'::character varying, 'paused'::character varying,
-               'check_in_queued'::character varying])::text[]
-    ));
-CREATE INDEX IF NOT EXISTS idx_focus_session_event_session_time
-    ON focus_session_event (session_id, occurred_at);
-
 CREATE INDEX IF NOT EXISTS idx_relationship_thread_user_status_follow_up
     ON relationship_thread (user_id, status, follow_up_at);
 CREATE INDEX IF NOT EXISTS idx_relationship_thread_event_thread_occurred
@@ -662,6 +528,10 @@ CREATE INDEX IF NOT EXISTS idx_aura_internal_state_last_seen
     ON aura_internal_state (last_user_seen_at);
 CREATE INDEX IF NOT EXISTS idx_relationship_dynamics_stage
     ON relationship_dynamics (relationship_stage, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_relationship_event_user_occurred
+    ON relationship_event (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_affect_state_user_decay
+    ON affect_state (user_id, resolved, decay_after);
 
 CREATE INDEX IF NOT EXISTS idx_aura_daily_state_user_date
     ON aura_daily_state (user_id, local_date DESC);
@@ -679,16 +549,6 @@ CREATE INDEX IF NOT EXISTS idx_aura_thought_seed_user_created
 CREATE INDEX IF NOT EXISTS idx_aura_sleep_cycle_user_date
     ON aura_sleep_cycle (user_id, local_date DESC);
 
-CREATE INDEX IF NOT EXISTS idx_bash_game_user_created
-    ON bash_game_session (user_id, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_bash_game_active_user
-    ON bash_game_session (user_id)
-    WHERE ((status)::text = 'active'::text);
-CREATE INDEX IF NOT EXISTS idx_bash_move_session_created
-    ON bash_game_move (session_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_pet_event_pet_occurred
-    ON pet_event (pet_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS ix_cmetadata_gin
     ON langchain_pg_embedding USING gin (cmetadata jsonb_path_ops);
 

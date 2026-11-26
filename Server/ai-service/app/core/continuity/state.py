@@ -22,9 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     AuraDailyState,
-    CompanionPet,
     EmotionalAfterglow,
-    PetEvent,
     SharedScene,
     Users,
 )
@@ -61,14 +59,6 @@ DAILY_EVENTS = (
 )
 DAILY_ENERGIES = ("rested", "steady", "steady", "steady", "low")
 DAILY_MOODS = ("calm", "focused", "focused", "playful", "annoyed", "tired", "cozy")
-PET_DAILY_EVENTS = (
-    "{name}趴在数位板旁边，把尾巴搭到了桌沿上",
-    "{name}把一张废稿压在爪子下面，像是替 Aura 做了最终审核",
-    "{name}在椅子上睡得很沉，偶尔抬头看一眼桌面",
-    "{name}绕着桌脚转了两圈，最后挨着 Aura 的脚边坐下",
-    "{name}对着屏幕上的光标看了半天，像在认真研究它为什么会动",
-)
-
 AFTERGLOW_DURATIONS = {
     "happy": timedelta(hours=2),
     "distressed": timedelta(hours=4),
@@ -104,13 +94,11 @@ SCENE_DENIAL_PATTERNS = (
 def generate_daily_state_values(
     user_id: UUID | str,
     local_date: date,
-    *,
-    pet_name: str | None = None,
 ) -> dict[str, Any]:
     """根据用户和日期稳定生成一天内不漂移的设定生活状态。
 
-    相同用户、日期和宠物名会得到完全相同的结果，因此进程重启或并发重试不会
-    改写 Aura 当天正在做的事情。函数不读取网络，也不会伪造天气或现实新闻。
+    相同用户和日期会得到完全相同的结果，因此进程重启或并发重试不会改写
+    Aura 当天正在做的事情。函数不读取网络，也不会伪造天气或现实新闻。
     """
 
     seed = hashlib.sha256(f"{user_id}:{local_date.isoformat()}".encode("utf-8")).digest()
@@ -118,9 +106,6 @@ def generate_daily_state_values(
     def choose(options: tuple[str, ...], offset: int) -> str:
         return options[seed[offset] % len(options)]
 
-    pet_event = None
-    if pet_name:
-        pet_event = choose(PET_DAILY_EVENTS, 6).format(name=pet_name)
     return {
         "local_date": local_date,
         "timezone": str(AURA_TIMEZONE),
@@ -128,7 +113,6 @@ def generate_daily_state_values(
         "energy": choose(DAILY_ENERGIES, 1),
         "mood": choose(DAILY_MOODS, 2),
         "location": choose(DAILY_LOCATIONS, 3),
-        "pet_event": pet_event,
         "current_content": choose(DAILY_CONTENT, 4),
         "daily_event": choose(DAILY_EVENTS, 5),
         "generated_by": "deterministic",
@@ -146,8 +130,7 @@ def ensure_daily_state_sync(
 ) -> dict[str, Any] | None:
     """为当前用户幂等创建并返回今天的 Aura 生活状态。
 
-    PostgreSQL 的 ``ON CONFLICT DO NOTHING`` 是最终并发边界；宠物日常事件也以
-    ``pet_id + client_action_id`` 幂等写入，生成后会成为宠物上下文可引用的事实。
+    PostgreSQL 的 ``ON CONFLICT DO NOTHING`` 是最终并发边界。
     数据库故障只会让本轮缺少生活状态，不会阻断聊天。
     """
 
@@ -163,17 +146,8 @@ def ensure_daily_state_sync(
             ).scalar_one_or_none()
             if user_exists is None:
                 return None
-            pet = session.execute(
-                select(CompanionPet).where(CompanionPet.user_id == parsed_user_id).limit(1)
-            ).scalar_one_or_none()
-            values = generate_daily_state_values(
-                parsed_user_id,
-                local_date,
-                pet_name=pet.name if pet is not None else None,
-            )
+            values = generate_daily_state_values(parsed_user_id, local_date)
             insert_daily_state(session, parsed_user_id, values)
-            if pet is not None and values["pet_event"]:
-                insert_daily_pet_event(session, pet, values, reference_now)
             state = session.execute(
                 select(AuraDailyState).where(
                     AuraDailyState.user_id == parsed_user_id,
@@ -207,21 +181,11 @@ async def ensure_daily_states_async(
         )
         if existing_result.scalar_one_or_none() is not None:
             continue
-        pet_result = await session.execute(
-            select(CompanionPet).where(CompanionPet.user_id == user_id).limit(1)
-        )
-        pet = pet_result.scalar_one_or_none()
-        values = generate_daily_state_values(
-            user_id,
-            local_date,
-            pet_name=pet.name if pet is not None else None,
-        )
+        values = generate_daily_state_values(user_id, local_date)
         result = await session.execute(daily_state_insert_statement(user_id, values))
         if result.scalar_one_or_none() is None:
             continue
         created += 1
-        if pet is not None and values["pet_event"]:
-            await session.execute(daily_pet_event_insert_statement(pet, values, reference_now))
     await session.commit()
     return created
 
@@ -239,7 +203,6 @@ def daily_state_insert_statement(user_id: UUID, values: dict[str, Any]):
             energy=values["energy"],
             mood=values["mood"],
             location=values["location"],
-            pet_event=values["pet_event"],
             current_content=values["current_content"],
             daily_event=values["daily_event"],
             generated_by=values["generated_by"],
@@ -254,39 +217,6 @@ def insert_daily_state(session: Any, user_id: UUID, values: dict[str, Any]) -> U
     """在同步事务中执行每日状态 INSERT，已存在时返回 ``None``。"""
 
     return session.execute(daily_state_insert_statement(user_id, values)).scalar_one_or_none()
-
-
-def daily_pet_event_insert_statement(pet: CompanionPet, values: dict[str, Any], occurred_at: datetime):
-    """构造不改变宠物数值、只记录当天小事的幂等事件 INSERT。"""
-
-    client_action_id = f"daily-life:{values['local_date'].isoformat()}"
-    return (
-        pg_insert(PetEvent)
-        .values(
-            pet_id=pet.id,
-            actor="system",
-            event_type="system",
-            action="daily_life",
-            state_before={},
-            state_after={},
-            narrative=values["pet_event"],
-            client_action_id=client_action_id,
-            metadata_json={"source": DAILY_GENERATOR_VERSION},
-            occurred_at=occurred_at,
-        )
-        .on_conflict_do_nothing(constraint="uq_pet_event_client_action")
-    )
-
-
-def insert_daily_pet_event(
-    session: Any,
-    pet: CompanionPet,
-    values: dict[str, Any],
-    occurred_at: datetime,
-) -> None:
-    """在同步事务中写入宠物当天小事；重复调用不会生成第二条事件。"""
-
-    session.execute(daily_pet_event_insert_statement(pet, values, occurred_at))
 
 
 def derive_afterglow_candidate(
@@ -672,7 +602,6 @@ def daily_state_dict(item: AuraDailyState | Any) -> dict[str, Any]:
         "energy": item.energy,
         "mood": item.mood,
         "location": item.location,
-        "pet_event": item.pet_event,
         "current_content": item.current_content,
         "daily_event": item.daily_event,
         "generated_by": item.generated_by,

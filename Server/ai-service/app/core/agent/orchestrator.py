@@ -18,13 +18,11 @@ from app.core.agent.models import (
 )
 from app.core.agent.protocol import (
     SSEProtocolV1,
+    activity_state_event,
     assistant_message_event,
-    bash_game_state_event,
     content_event,
-    focus_state_event,
-    pet_state_event,
+    turn_lifecycle_event,
 )
-from app.core.config import AURA_OPTIONAL_ACTIVITIES_ENABLED
 from app.core.continuity.capsules import trigger_keyword_messages
 from app.db.session import AsyncSessionLocal
 
@@ -38,15 +36,8 @@ class TurnOrchestrator:
     def __init__(
         self,
         activity_registry: ActivityRegistry | None = None,
-        *,
-        activities_enabled: bool | None = None,
     ) -> None:
         self.activity_registry = activity_registry or build_default_activity_registry()
-        self.activities_enabled = (
-            AURA_OPTIONAL_ACTIVITIES_ENABLED
-            if activities_enabled is None
-            else activities_enabled
-        )
 
     async def prepare(self, request: TurnRequest) -> TurnPlan:
         if request.retry_message_id:
@@ -58,7 +49,7 @@ class TurnOrchestrator:
                     retry_message_id=request.retry_message_id,
                 ),
             )
-        if self.activities_enabled and request.branch_id is None:
+        if request.branch_id is None and self.activity_registry.names:
             async with AsyncSessionLocal() as session:
                 activity = await self.activity_registry.dispatch(session, request)
             if activity is not None:
@@ -83,6 +74,7 @@ class TurnOrchestrator:
         if result is None:
             raise ValueError("activity turn is missing activity_result")
         protocol = SSEProtocolV1(plan.request.client_message_id)
+        yield protocol.encode(turn_lifecycle_event("started"))
         state_event = self._activity_state_event(result)
         if state_event is not None:
             yield protocol.encode(state_event)
@@ -125,19 +117,14 @@ class TurnOrchestrator:
         else:
             for content in result.messages:
                 yield protocol.encode(content_event(content))
+        yield protocol.encode(turn_lifecycle_event("completed"))
         yield "data: [DONE]\n\n"
 
     @staticmethod
     def _activity_state_event(result: ActivityResult) -> dict[str, Any] | None:
         if result.snapshot is None:
             return None
-        builders = {
-            "focus": focus_state_event,
-            "bash_game": bash_game_state_event,
-            "pet": pet_state_event,
-        }
-        builder = builders.get(result.activity)
-        return builder(result.snapshot) if builder else None
+        return activity_state_event(result.activity, result.action, result.snapshot)
 
     @staticmethod
     async def _trigger_keyword(request: TurnRequest, *, source: str) -> None:
@@ -157,4 +144,3 @@ class TurnOrchestrator:
                 source,
                 request.user_id,
             )
-

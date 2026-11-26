@@ -103,7 +103,7 @@ class TestSseConcurrency(unittest.IsolatedAsyncioTestCase):
         self.assertLess(elapsed, sleep_seconds * 3.5)
 
     async def test_sse_uses_authenticated_user_instead_of_body_user_id(self) -> None:
-        """聊天、游戏和宠物入口必须以 JWT 身份为准，忽略伪造的请求体用户。"""
+        """聊天入口必须以 JWT 身份为准，忽略伪造的请求体用户。"""
 
         captured_user_ids: list[str] = []
 

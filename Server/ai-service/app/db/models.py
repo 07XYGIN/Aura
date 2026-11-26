@@ -243,107 +243,6 @@ class ConditionalMessageEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-class FocusSession(Base, TimestampMixin):
-    """保存一次一起专注的计时状态、结束问询和用户汇报。"""
-
-    __tablename__ = "focus_session"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('active', 'paused', 'check_in_queued', 'awaiting_report', "
-            "'completed', 'cancelled', 'expired')",
-            name="chk_focus_session_status",
-        ),
-        CheckConstraint(
-            "duration_minutes BETWEEN 1 AND 240",
-            name="chk_focus_session_duration",
-        ),
-        CheckConstraint(
-            "remaining_seconds IS NULL OR remaining_seconds BETWEEN 0 AND 14400",
-            name="chk_focus_session_remaining",
-        ),
-        CheckConstraint("version >= 1", name="chk_focus_session_version"),
-        UniqueConstraint("user_id", "start_request_id", name="uq_focus_session_user_request"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    activity: Mapped[str] = mapped_column(String(240), nullable=False)
-    duration_minutes: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active", server_default="active")
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    remaining_seconds: Mapped[int | None] = mapped_column(Integer)
-    check_in_queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    check_in_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    result_summary: Mapped[str | None] = mapped_column(Text)
-    blocker: Mapped[str | None] = mapped_column(Text)
-    start_request_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    source_message_id: Mapped[str | None] = mapped_column(String(128))
-    outbox_message_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey(
-            "proactive_message.id",
-            ondelete="SET NULL",
-            deferrable=True,
-            initially="DEFERRED",
-        ),
-        unique=True,
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
-
-
-class FocusSessionEvent(Base):
-    """记录专注会话每次状态变化，提供动作幂等和完整审计。"""
-
-    __tablename__ = "focus_session_event"
-    __table_args__ = (
-        CheckConstraint("sequence_no >= 1", name="chk_focus_session_event_sequence"),
-        CheckConstraint(
-            "actor IN ('user', 'aura', 'system')",
-            name="chk_focus_session_event_actor",
-        ),
-        CheckConstraint(
-            "event_type IN ('started', 'paused', 'resumed', 'check_in_queued', "
-            "'check_in_sent', 'completed', 'cancelled', 'expired')",
-            name="chk_focus_session_event_type",
-        ),
-        UniqueConstraint("session_id", "sequence_no", name="uq_focus_session_event_sequence"),
-        UniqueConstraint("session_id", "client_action_id", name="uq_focus_session_event_action"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    session_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("focus_session.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    actor: Mapped[str] = mapped_column(String(16), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
-    client_action_id: Mapped[str | None] = mapped_column(String(128))
-    note: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-
 class RelationshipThread(Base, TimestampMixin):
     """保存一条需要跨对话延续的关系线程及其当前权威状态。
 
@@ -592,7 +491,7 @@ class AuraInternalState(Base, TimestampMixin):
             name="chk_aura_internal_state_playfulness",
         ),
         CheckConstraint(
-            "jealousy IN ('none', 'low', 'medium')",
+            "jealousy IN ('none', 'low', 'medium', 'high')",
             name="chk_aura_internal_state_jealousy",
         ),
         CheckConstraint(
@@ -637,18 +536,21 @@ class RelationshipDynamics(Base, TimestampMixin):
     __table_args__ = (
         CheckConstraint(
             "relationship_stage IN ('early_closeness', 'ambiguous', 'early_romance', "
-            "'established_romance', 'temporary_distance', 'conflict', 'repair', 'stable')",
+            "'established_romance')",
             name="chk_relationship_dynamics_stage",
         ),
         CheckConstraint(
-            "current_tone IN ('neutral', 'warm', 'playful', 'tender', 'tense', 'distant', 'repairing')",
+            "relationship_phase IN ('normal', 'distant', 'conflict', 'repair')",
+            name="chk_relationship_dynamics_phase",
+        ),
+        CheckConstraint(
+            "relationship_tone IN ('steady', 'warm', 'playful', 'tender', 'guarded')",
             name="chk_relationship_dynamics_tone",
         ),
         CheckConstraint(
             "recent_closeness IN ('low', 'medium', 'high')",
             name="chk_relationship_dynamics_closeness",
         ),
-        CheckConstraint("stage_evidence_count >= 0", name="chk_relationship_dynamics_evidence"),
         CheckConstraint("version >= 1", name="chk_relationship_dynamics_version"),
         UniqueConstraint("user_id", name="uq_relationship_dynamics_user"),
     )
@@ -665,14 +567,111 @@ class RelationshipDynamics(Base, TimestampMixin):
         nullable=False,
     )
     relationship_stage: Mapped[str] = mapped_column(String(32), nullable=False, default="ambiguous", server_default="ambiguous")
-    current_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="warm", server_default="warm")
+    relationship_phase: Mapped[str] = mapped_column(String(16), nullable=False, default="normal", server_default="normal")
+    relationship_tone: Mapped[str] = mapped_column(String(24), nullable=False, default="warm", server_default="warm")
     recent_closeness: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", server_default="medium")
     unresolved_tension: Mapped[str | None] = mapped_column(Text)
     recent_positive_moment: Mapped[str | None] = mapped_column(Text)
     recent_distance: Mapped[str | None] = mapped_column(Text)
     current_expectation: Mapped[str | None] = mapped_column(Text)
-    stage_evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_stage_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
+
+
+class RelationshipEvent(Base, TimestampMixin):
+    """关系引擎使用的不可变事实事件，而不是关系积分。"""
+
+    __tablename__ = "relationship_event"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('affection_expressed', 'aura_expressed_missing', "
+            "'important_disclosure', 'conflict_started', 'boundary_crossed', "
+            "'apology', 'repair_completed', 'promise_created', 'promise_fulfilled', "
+            "'shared_moment', 'relationship_milestone', 'distance_period', "
+            "'return_after_absence')",
+            name="chk_relationship_event_type",
+        ),
+        CheckConstraint(
+            "actor IN ('user', 'aura', 'system')",
+            name="chk_relationship_event_actor",
+        ),
+        CheckConstraint(
+            "target IN ('user', 'aura', 'relationship')",
+            name="chk_relationship_event_target",
+        ),
+        CheckConstraint(
+            "importance IN ('low', 'medium', 'high')",
+            name="chk_relationship_event_importance",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "source_turn_id",
+            "event_type",
+            name="uq_relationship_event_turn_type",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    target: Mapped[str] = mapped_column(String(16), nullable=False)
+    importance: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", server_default="medium")
+    summary: Mapped[str | None] = mapped_column(Text)
+    source_turn_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[dict] = mapped_column("payload", JSONB, nullable=False, default=dict, server_default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AffectState(Base, TimestampMixin):
+    """玲凌当前情绪余韵的权威投影，按类型持续、强化、衰减或解决。"""
+
+    __tablename__ = "affect_state"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('jealousy', 'hurt', 'longing', 'unsettled')",
+            name="chk_affect_state_kind",
+        ),
+        CheckConstraint(
+            "intensity IN ('low', 'medium', 'high')",
+            name="chk_affect_state_intensity",
+        ),
+        CheckConstraint("version >= 1", name="chk_affect_state_version"),
+        UniqueConstraint("user_id", "kind", name="uq_affect_state_user_kind"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    intensity: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_reinforced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decay_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_event_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("relationship_event.id", ondelete="SET NULL"),
+    )
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
@@ -714,7 +713,6 @@ class AuraDailyState(Base, TimestampMixin):
     energy: Mapped[str] = mapped_column(String(16), nullable=False)
     mood: Mapped[str] = mapped_column(String(24), nullable=False)
     location: Mapped[str] = mapped_column(String(160), nullable=False)
-    pet_event: Mapped[str | None] = mapped_column(Text)
     current_content: Mapped[str | None] = mapped_column(Text)
     daily_event: Mapped[str | None] = mapped_column(Text)
     generated_by: Mapped[str] = mapped_column(
@@ -899,203 +897,6 @@ class AuraSleepCycle(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
 
 
-class BashGameSession(Base, TimestampMixin):
-    """一局巴什博弈的当前权威状态和并发版本。"""
-
-    __tablename__ = "bash_game_session"
-    __table_args__ = (
-        CheckConstraint("initial_stones BETWEEN 5 AND 100", name="chk_bash_game_initial_stones"),
-        CheckConstraint("max_take BETWEEN 1 AND 10 AND max_take < initial_stones", name="chk_bash_game_max_take"),
-        CheckConstraint(
-            "remaining_stones BETWEEN 0 AND initial_stones",
-            name="chk_bash_game_remaining_stones",
-        ),
-        CheckConstraint("first_player IN ('user', 'aura')", name="chk_bash_game_first_player"),
-        CheckConstraint(
-            "current_player IS NULL OR current_player IN ('user', 'aura')",
-            name="chk_bash_game_current_player",
-        ),
-        CheckConstraint(
-            "difficulty IN ('serious', 'casual', 'teaching')",
-            name="chk_bash_game_difficulty",
-        ),
-        CheckConstraint(
-            "status IN ('active', 'finished', 'resigned')",
-            name="chk_bash_game_status",
-        ),
-        CheckConstraint(
-            "winner IS NULL OR winner IN ('user', 'aura')",
-            name="chk_bash_game_winner",
-        ),
-        UniqueConstraint("user_id", "start_request_id", name="uq_bash_game_start_request"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    initial_stones: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=15, server_default="15")
-    remaining_stones: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    max_take: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=3, server_default="3")
-    first_player: Mapped[str] = mapped_column(String(16), nullable=False)
-    current_player: Mapped[str | None] = mapped_column(String(16))
-    difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="serious", server_default="serious")
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
-    winner: Mapped[str | None] = mapped_column(String(16))
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    start_request_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class BashGameMove(Base):
-    """巴什博弈不可变的单步行动事件。"""
-
-    __tablename__ = "bash_game_move"
-    __table_args__ = (
-        CheckConstraint("turn_no >= 1", name="chk_bash_move_turn_no"),
-        CheckConstraint("player IN ('user', 'aura')", name="chk_bash_move_player"),
-        CheckConstraint("take_count >= 1", name="chk_bash_move_take_count"),
-        CheckConstraint(
-            "remaining_before - remaining_after = take_count AND remaining_after >= 0",
-            name="chk_bash_move_remaining",
-        ),
-        CheckConstraint(
-            "(player = 'user' AND client_move_id IS NOT NULL) OR "
-            "(player = 'aura' AND client_move_id IS NULL)",
-            name="chk_bash_move_client_id",
-        ),
-        UniqueConstraint("session_id", "turn_no", name="uq_bash_move_turn"),
-        UniqueConstraint("session_id", "client_move_id", name="uq_bash_move_client_id"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    session_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("bash_game_session.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    turn_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    player: Mapped[str] = mapped_column(String(16), nullable=False)
-    take_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    remaining_before: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    remaining_after: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    strategy: Mapped[str | None] = mapped_column(String(32))
-    client_move_id: Mapped[str | None] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-
-class CompanionPet(Base, TimestampMixin):
-    """用户与 Aura 共同照顾的一只温和型陪伴宠物。"""
-
-    __tablename__ = "companion_pet"
-    __table_args__ = (
-        CheckConstraint("species IN ('cat', 'dog', 'rabbit')", name="chk_companion_pet_species"),
-        CheckConstraint(
-            "personality IN ('gentle', 'playful', 'curious', 'quiet')",
-            name="chk_companion_pet_personality",
-        ),
-        CheckConstraint(
-            "growth_stage IN ('baby', 'young', 'adult')",
-            name="chk_companion_pet_growth_stage",
-        ),
-        CheckConstraint("satiety BETWEEN 0 AND 100", name="chk_companion_pet_satiety"),
-        CheckConstraint("energy BETWEEN 0 AND 100", name="chk_companion_pet_energy"),
-        CheckConstraint("cleanliness BETWEEN 0 AND 100", name="chk_companion_pet_cleanliness"),
-        CheckConstraint(
-            "mood IN ('calm', 'content', 'playful', 'curious', 'sleepy')",
-            name="chk_companion_pet_mood",
-        ),
-        CheckConstraint(
-            "current_activity IN ('idle', 'eating', 'playing', 'grooming', 'bathing', 'cuddling', 'sleeping')",
-            name="chk_companion_pet_activity",
-        ),
-        CheckConstraint("version >= 1", name="chk_companion_pet_version"),
-        UniqueConstraint("user_id", name="uq_companion_pet_user"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(32), nullable=False)
-    species: Mapped[str] = mapped_column(String(16), nullable=False)
-    personality: Mapped[str] = mapped_column(String(16), nullable=False)
-    growth_stage: Mapped[str] = mapped_column(String(16), nullable=False, default="baby", server_default="baby")
-    satiety: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
-    energy: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
-    cleanliness: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=80, server_default="80")
-    mood: Mapped[str] = mapped_column(String(24), nullable=False, default="calm", server_default="calm")
-    current_activity: Mapped[str] = mapped_column(String(24), nullable=False, default="idle", server_default="idle")
-    adopted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    mood_until_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    activity_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
-
-
-class PetEvent(Base):
-    """一次宠物领养、照顾、改名或成长的不可变事实事件。"""
-
-    __tablename__ = "pet_event"
-    __table_args__ = (
-        CheckConstraint("actor IN ('user', 'aura', 'system')", name="chk_pet_event_actor"),
-        CheckConstraint(
-            "event_type IN ('adoption', 'action', 'rename', 'growth', 'system')",
-            name="chk_pet_event_type",
-        ),
-        UniqueConstraint("pet_id", "client_action_id", name="uq_pet_event_client_action"),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    pet_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("companion_pet.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    actor: Mapped[str] = mapped_column(String(16), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
-    action: Mapped[str] = mapped_column(String(32), nullable=False)
-    state_before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
-    state_after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
-    narrative: Mapped[str] = mapped_column(Text, nullable=False)
-    client_action_id: Mapped[str | None] = mapped_column(String(128))
-    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict, server_default="{}")
-    occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-
 class LangchainPgCollection(Base):
     """LangChain PGVector 使用的向量集合元数据表。"""
 
@@ -1158,27 +959,6 @@ Index(
     ConditionalMessageEvent.occurred_at.desc(),
 )
 Index(
-    "uq_focus_session_running_user",
-    FocusSession.user_id,
-    unique=True,
-    postgresql_where=text("((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'check_in_queued'::character varying])::text[]))"),
-)
-Index(
-    "idx_focus_session_user_created",
-    FocusSession.user_id,
-    FocusSession.created_at.desc(),
-)
-Index(
-    "idx_focus_session_due",
-    FocusSession.status,
-    FocusSession.ends_at,
-)
-Index(
-    "idx_focus_session_event_session_time",
-    FocusSessionEvent.session_id,
-    FocusSessionEvent.occurred_at,
-)
-Index(
     "idx_relationship_thread_user_status_follow_up",
     RelationshipThread.user_id,
     RelationshipThread.status,
@@ -1217,6 +997,17 @@ Index(
     RelationshipDynamics.updated_at.desc(),
 )
 Index(
+    "idx_relationship_event_user_occurred",
+    RelationshipEvent.user_id,
+    RelationshipEvent.occurred_at.desc(),
+)
+Index(
+    "idx_affect_state_user_decay",
+    AffectState.user_id,
+    AffectState.resolved,
+    AffectState.decay_after,
+)
+Index(
     "idx_aura_daily_state_user_date",
     AuraDailyState.user_id,
     AuraDailyState.local_date.desc(),
@@ -1252,27 +1043,6 @@ Index(
     "idx_aura_sleep_cycle_user_date",
     AuraSleepCycle.user_id,
     AuraSleepCycle.local_date.desc(),
-)
-Index(
-    "uq_bash_game_active_user",
-    BashGameSession.user_id,
-    unique=True,
-    postgresql_where=text("((status)::text = 'active'::text)"),
-)
-Index(
-    "idx_bash_game_user_created",
-    BashGameSession.user_id,
-    BashGameSession.created_at.desc(),
-)
-Index(
-    "idx_bash_move_session_created",
-    BashGameMove.session_id,
-    BashGameMove.created_at,
-)
-Index(
-    "idx_pet_event_pet_occurred",
-    PetEvent.pet_id,
-    PetEvent.occurred_at.desc(),
 )
 Index(
     "ix_cmetadata_gin",

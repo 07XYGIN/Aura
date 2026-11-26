@@ -26,7 +26,6 @@ class TurnOrchestratorTests(unittest.IsolatedAsyncioTestCase):
     async def test_registry_claims_activity_without_router_branching(self) -> None:
         orchestrator = TurnOrchestrator(
             ActivityRegistry([FakeActivity()]),
-            activities_enabled=True,
         )
 
         plan = await orchestrator.prepare(TurnRequest(user_id="u1", message="activity"))
@@ -37,7 +36,6 @@ class TurnOrchestratorTests(unittest.IsolatedAsyncioTestCase):
     async def test_branch_turn_bypasses_activity_plugins(self) -> None:
         orchestrator = TurnOrchestrator(
             ActivityRegistry([FakeActivity()]),
-            activities_enabled=True,
         )
 
         plan = await orchestrator.prepare(

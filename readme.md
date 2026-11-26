@@ -23,7 +23,7 @@
 ### AI
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-Qwen3-000000?logo=ollama&logoColor=white)
+![Qwen](https://img.shields.io/badge/Qwen-3.8_Max-4169E1)
 
 ### 数据库
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)
@@ -36,9 +36,9 @@
 
 ## 📖 简介
 
-**Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，前端覆盖 Vue3 管理后台、Vue3 PC 客户端、Next.js Web 工作台与 Flutter 移动端。
+**Aura** 是一个 AI 陪伴聊天项目，围绕实时对话、长期记忆、情绪感知、主动陪伴和多端体验构建。当前主线由 FastAPI AI 服务承担后端能力，用户端使用 Next.js Web，管理端使用 Vue3，Flutter 移动端保留并待后续接入。
 
-历史上的 Java Core Service 与 NestJS BFF 已弃用，保留在仓库中仅用于代码追溯，不再作为当前开发、联调或部署入口。
+历史上的 Java Core Service 与 NestJS BFF 已从主线移除；认证、业务 API、对话编排与持久化统一由 FastAPI 模块化单体承担。
 
 ---
 
@@ -47,12 +47,12 @@
 ### 🤖 AI 对话
 - 基于 LangGraph 的多轮对话编排，支持工具调用与对话状态管理
 - 通过 Server-Sent Events（SSE）返回流式响应
-- 使用本地模型与外部模型组合承载对话、判断和记忆相关任务
-- 长期记忆通过 PostgreSQL + pgvector 进行语义检索，并按用户隔离存储
+- 对话、结构化回复、记忆判断和情绪判断统一使用线上 `qwen3.8-max`
+- 记忆保留在 PostgreSQL + pgvector；线上 Embedding 待接入，语义检索与新记忆写入暂不可用
 - 天气查询、记忆保存、记忆搜索等工具已接入 Agent 流程
 
 ### 🧠 记忆与陪伴能力
-- 支持聊天历史、长期记忆、语义检索和记忆清理
+- 支持聊天历史、已有记忆查看和清理；向量能力恢复条件见[重构方案](Server/ai-service/docs/refactoring-plan.md)
 - 支持情绪状态识别、互动目标判断与上下文注入
 - 支持主动消息调度、附件、位置和自我更新管理等扩展能力
 
@@ -61,9 +61,8 @@
 - 登录、注册、用户信息页面与 Pinia 状态管理
 - 面向用户、会话、消息、记忆和配置管理继续扩展
 
-### 🖥️ Web / PC 客户端
-- `AI-Web/apps/PC`：Vue3 PC 聊天端，包含登录、注册、聊天、记忆、设置等页面
-- `AI-Web/apps/web`：Next.js 16 + React 19 的新版 Aura 工作台，包含聊天、登录、记忆和设置界面
+### 🖥️ Web 客户端
+- `AI-Web/apps/web`：Next.js 16 + React 19 的 Aura 用户端，包含聊天、登录、记忆和设置界面
 - 支持主题切换、路由过渡、请求封装和基础 UI 组件
 
 ### 📱 移动端
@@ -78,7 +77,7 @@
 ```text
 ┌────────────────────────────────────────────────────────┐
 │                      客户端层                           │
-│  Admin(Vue3)  PC(Vue3)  Web(Next/React)  Mobile(Flutter)│
+│       Admin(Vue3)  Web(Next/React)  Mobile(Flutter)     │
 └──────────────────────────┬─────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────▼─────────────────────────────┐
@@ -110,18 +109,13 @@
 AI-Web/                       # 前端 Monorepo（pnpm workspace）
 ├── apps/
 │   ├── admin/                # Vue3 管理后台
-│   ├── PC/                   # Vue3 PC 聊天端
 │   ├── web/                  # Next.js + React 新版 Web 工作台
-│   ├── mobile/               # Monorepo 内保留的移动端目录
-│   └── bff/                  # 已弃用：历史 NestJS BFF
 └── package/
     ├── Types/                # 共享 TypeScript 类型包
     └── ...
 
 Server/                       # 后端服务
-├── ai-service/               # 当前主线：FastAPI + LangGraph AI 服务
-├── core-service/             # 已弃用：历史 Java Core Service
-└── ...
+└── ai-service/               # FastAPI 模块化单体 + LangGraph
 
 app/                          # Flutter 移动端
 ├── lib/                      # Dart 应用代码
@@ -129,7 +123,7 @@ app/                          # Flutter 移动端
 └── web/                      # Flutter Web 调试入口
 
 tools/                        # 项目辅助脚本
-main.sql                      # 数据库初始化 / 参考 SQL
+main.sql                      # 唯一 PostgreSQL 完整导入基线
 ```
 
 ---
@@ -143,7 +137,7 @@ main.sql                      # 数据库初始化 / 参考 SQL
 - Python 3.12+ 与 uv
 - PostgreSQL 16+
 - Redis 7+
-- Ollama，并准备 `qwen3:8b`、`qwen3:0.6b`、`nomic-embed-text:latest`
+- 阿里云 DashScope API Key，用于 `qwen3.8-max`；当前无需本地模型
 
 ### 启动 AI 服务
 ```bash
@@ -163,7 +157,6 @@ http://127.0.0.1:8000
 cd AI-Web
 pnpm install
 pnpm dev:admin               # Vue3 管理后台
-pnpm --filter @ai-web/pc dev  # Vue3 PC 聊天端
 pnpm dev:web                 # Next.js Web 工作台
 ```
 
@@ -184,5 +177,5 @@ flutter run
 
 ## 🧾 说明
 
-- `AI-Web/apps/bff` 已弃用，不再作为统一 API 聚合层维护。
-- `Server/core-service` 已弃用，不再作为当前认证或业务服务入口维护。
+- 所有客户端通过 `NEXT_PUBLIC_AI_SERVICE_URL` / `VITE_AI_SERVICE_URL` 直连 FastAPI。
+- 聊天事件使用版本化 SSE v1，同时保留一版旧 `event` 字段兼容窗口。
